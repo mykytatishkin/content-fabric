@@ -1,0 +1,157 @@
+# Social Media Auto-Posting Configuration
+
+# Platform-specific settings (отключены для безопасного тестирования)
+platforms:
+  instagram:
+    enabled: false  # отключено для тестирования
+    max_duration: 90  # seconds
+    min_duration: 15  # seconds
+    aspect_ratio: "9:16"
+    file_formats: ["mp4", "mov"]
+    
+  tiktok:
+    enabled: false  # отключено для тестирования
+    max_duration: 180  # seconds
+    min_duration: 15   # seconds
+    aspect_ratio: "9:16"
+    file_formats: ["mp4", "mov"]
+    
+  youtube:
+    enabled: false  # отключено для тестирования
+    max_duration: 60   # seconds
+    min_duration: 15   # seconds
+    aspect_ratio: "9:16"
+    file_formats: ["mp4", "mov"]
+
+# Account management (тестовые аккаунты)
+accounts:
+  instagram:
+    - name: "test_account1"
+      username: "test_username1"
+      access_token: "test_token1"
+      app_id: "test_app_id"
+      app_secret: "test_app_secret"
+      enabled: false  # отключено для тестирования
+    - name: "test_account2"
+      username: "test_username2"
+      access_token: "test_token2"
+      app_id: "test_app_id"
+      app_secret: "test_app_secret"
+      enabled: false
+      
+  tiktok:
+    - name: "test_account1"
+      username: "test_username1"
+      access_token: "test_token1"
+      client_key: "test_client_key"
+      client_secret: "test_client_secret"
+      enabled: false  # отключено для тестирования
+    - name: "test_account2"
+      username: "test_username2"
+      access_token: "test_token2"
+      client_key: "test_client_key"
+      client_secret: "test_client_secret"
+      enabled: false
+      
+  youtube:
+    - name: "test_account1"
+      channel_id: "test_channel1"
+      access_token: "test_token1"
+      client_id: "test_client_id"
+      client_secret: "test_client_secret"
+      credentials_file: "credentials.json"
+      enabled: false  # отключено для тестирования
+    - name: "test_account2"
+      channel_id: "test_channel2"
+      access_token: "test_token2"
+      client_id: "test_client_id"
+      client_secret: "test_client_secret"
+      credentials_file: "credentials.json"
+      enabled: false
+
+# Posting schedule
+schedule:
+  # Specific times (24-hour format)
+  specific_times:
+    - "09:00"
+    - "12:00"
+    - "15:00"
+    - "18:00"
+    - "21:00"
+  
+  # Random time ranges (24-hour format)
+  random_ranges:
+    - start: "08:00"
+      end: "10:00"
+    - start: "11:00"
+      end: "13:00"
+    - start: "14:00"
+      end: "16:00"
+    - start: "17:00"
+      end: "19:00"
+    - start: "20:00"
+      end: "22:00"
+  
+  # Days of week (0=Monday, 6=Sunday)
+  posting_days: [0, 1, 2, 3, 4, 5, 6]
+  
+  # Timezone
+  timezone: "UTC"
+
+# Content settings
+content:
+  # Default hashtags (will be added to all posts)
+  default_hashtags:
+    - "#shorts"
+    - "#viral"
+    - "#trending"
+  
+  # Platform-specific hashtags
+  platform_hashtags:
+    instagram:
+      - "#reels"
+      - "#instagram"
+    tiktok:
+      - "#tiktok"
+      - "#fyp"
+    youtube:
+      - "#youtubeshorts"
+      - "#shorts"
+  
+  # Content folder structure
+  folders:
+    videos: "./content/videos"
+    descriptions: "./content/descriptions"
+    thumbnails: "./content/thumbnails"
+    processed: "./content/processed"
+
+# Notification settings
+notifications:
+  telegram:
+    enabled: true
+    send_success: true
+    send_failure: true
+    
+  email:
+    enabled: true
+    send_success: false
+    send_failure: true
+    
+  # Notification recipients
+  recipients:
+    - "nikita.tishkin.13+admin@gmail.com"
+    - "nikita.tishkin.13+manager@gmail.com"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "./logs/auto_posting.log"
+  max_size: "10MB"
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Retry settings
+retry:
+  max_attempts: 3
+  delay_seconds: 60
+  backoff_multiplier: 2
