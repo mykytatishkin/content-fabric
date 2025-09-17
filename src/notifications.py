@@ -4,6 +4,7 @@ Notification system for success/failure alerts via Telegram and Email.
 
 import smtplib
 import ssl
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, List, Optional
@@ -11,6 +12,7 @@ from datetime import datetime
 import requests
 import yaml
 from dataclasses import dataclass
+from dotenv import load_dotenv
 
 from .logger import get_logger
 
@@ -35,6 +37,8 @@ class NotificationManager:
     """Manages notifications for posting success/failure."""
     
     def __init__(self, config_path: str = "config.yaml"):
+        # Load environment variables from .env file
+        load_dotenv()
         self.config = self._load_config(config_path)
         self.notification_config = self._parse_notification_config()
         self.logger = get_logger("notifications")
@@ -49,22 +53,22 @@ class NotificationManager:
             return {}
     
     def _parse_notification_config(self) -> NotificationConfig:
-        """Parse notification configuration from config file."""
+        """Parse notification configuration from config file and environment variables."""
         notification_section = self.config.get('notifications', {})
         
-        # Telegram configuration
+        # Telegram configuration - read credentials from environment variables
         telegram_config = notification_section.get('telegram', {})
         telegram_enabled = telegram_config.get('enabled', False)
-        telegram_bot_token = telegram_config.get('bot_token')
-        telegram_chat_id = telegram_config.get('chat_id')
+        telegram_bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        telegram_chat_id = os.getenv('TELEGRAM_CHAT_ID')
         
-        # Email configuration
+        # Email configuration - read credentials from environment variables
         email_config = notification_section.get('email', {})
         email_enabled = email_config.get('enabled', False)
-        email_smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
-        email_smtp_port = email_config.get('smtp_port', 587)
-        email_username = email_config.get('username')
-        email_password = email_config.get('password')
+        email_smtp_server = os.getenv('EMAIL_SMTP_SERVER', 'smtp.gmail.com')
+        email_smtp_port = int(os.getenv('EMAIL_SMTP_PORT', '587'))
+        email_username = os.getenv('EMAIL_USERNAME')
+        email_password = os.getenv('EMAIL_PASSWORD')
         email_recipients = notification_section.get('recipients', []) or []
         
         return NotificationConfig(
