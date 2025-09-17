@@ -13,7 +13,7 @@ import yaml
 import argparse
 
 from .logger import get_logger
-from .content_processor import ContentProcessor
+# from .content_processor import ContentProcessor  # отключено для упрощения
 from .scheduler import PostingScheduler, ScheduledPost
 from .notifications import NotificationManager
 from .api_clients.instagram_client import InstagramClient
@@ -29,8 +29,8 @@ class SocialMediaAutoPoster:
         self.config = self._load_config()
         self.logger = get_logger("auto_poster")
         
-        # Initialize components
-        self.content_processor = ContentProcessor(config_path)
+        # Initialize components (content_processor отключен для упрощения)
+        # self.content_processor = ContentProcessor(config_path)
         self.scheduler = PostingScheduler(config_path)
         self.notification_manager = NotificationManager(config_path)
         
@@ -190,17 +190,15 @@ class SocialMediaAutoPoster:
         }
         
         try:
-            # Process content for all platforms
-            self.logger.info(f"Processing content: {content_path}")
-            processed_files = self.content_processor.process_content(
-                content_path, platforms, caption, metadata
-            )
+            # Используем готовый файл без обработки
+            self.logger.info(f"Using ready content: {content_path}")
+            
+            # Проверяем, что файл существует
+            if not os.path.exists(content_path):
+                raise FileNotFoundError(f"Content file not found: {content_path}")
             
             # Post to each platform
             for platform in platforms:
-                if platform not in processed_files:
-                    self.logger.error(f"No processed file for platform: {platform}")
-                    continue
                 
                 # Get accounts for this platform
                 platform_accounts = self._get_platform_accounts(platform, accounts)
@@ -212,10 +210,10 @@ class SocialMediaAutoPoster:
                         if not client:
                             raise Exception(f"No API client for {platform}")
                         
-                        # Post the content
+                        # Post the content (используем оригинальный файл)
                         result = client.post_video(
                             account_info=account,
-                            video_path=processed_files[platform],
+                            video_path=content_path,
                             caption=caption,
                             metadata=metadata
                         )
@@ -292,17 +290,15 @@ class SocialMediaAutoPoster:
         scheduled_post_ids = []
         
         try:
-            # Process content for all platforms
-            self.logger.info(f"Processing content for scheduling: {content_path}")
-            processed_files = self.content_processor.process_content(
-                content_path, platforms, caption, metadata
-            )
+            # Используем готовый файл для планирования
+            self.logger.info(f"Scheduling ready content: {content_path}")
+            
+            # Проверяем, что файл существует
+            if not os.path.exists(content_path):
+                raise FileNotFoundError(f"Content file not found: {content_path}")
             
             # Schedule posts for each platform
             for platform in platforms:
-                if platform not in processed_files:
-                    self.logger.error(f"No processed file for platform: {platform}")
-                    continue
                 
                 # Get accounts for this platform
                 platform_accounts = self._get_platform_accounts(platform, accounts)
@@ -311,7 +307,7 @@ class SocialMediaAutoPoster:
                     post_id = self.scheduler.schedule_post(
                         platform=platform,
                         account=account['name'],
-                        content_path=processed_files[platform],
+                        content_path=content_path,
                         caption=caption,
                         scheduled_time=scheduled_time,
                         metadata=metadata
