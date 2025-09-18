@@ -16,6 +16,8 @@ from .logger import get_logger
 # from .content_processor import ContentProcessor  # отключено для упрощения
 from .scheduler import PostingScheduler, ScheduledPost
 from .notifications import NotificationManager
+from .token_manager import TokenManager
+from .oauth_manager import OAuthManager
 from .api_clients.instagram_client import InstagramClient
 from .api_clients.tiktok_client import TikTokClient
 from .api_clients.youtube_client import YouTubeClient
@@ -33,6 +35,8 @@ class SocialMediaAutoPoster:
         # self.content_processor = ContentProcessor(config_path)
         self.scheduler = PostingScheduler(config_path)
         self.notification_manager = NotificationManager(config_path)
+        self.token_manager = TokenManager(config_path)
+        self.oauth_manager = OAuthManager(config_path)
         
         # Initialize API clients
         self.api_clients = self._initialize_api_clients()
@@ -164,6 +168,13 @@ class SocialMediaAutoPoster:
         accounts = self.config.get('accounts', {}).get(platform, [])
         for account in accounts:
             if account.get('name') == account_name:
+                # Обновить токен доступа из TokenManager
+                token_info = self.token_manager.get_token(platform, account_name)
+                if token_info:
+                    account = account.copy()  # Создать копию, чтобы не изменить оригинал
+                    account['access_token'] = token_info.access_token
+                    if token_info.refresh_token:
+                        account['refresh_token'] = token_info.refresh_token
                 return account
         return None
     
@@ -325,12 +336,33 @@ class SocialMediaAutoPoster:
         """Get accounts for a specific platform."""
         all_accounts = self.config.get('accounts', {}).get(platform, [])
         
+        filtered_accounts = []
         if account_names is None:
             # Return all enabled accounts
-            return [acc for acc in all_accounts if acc.get('enabled', True)]
+            candidate_accounts = [acc for acc in all_accounts if acc.get('enabled', True)]
         else:
             # Return specified accounts
-            return [acc for acc in all_accounts if acc.get('name') in account_names and acc.get('enabled', True)]
+            candidate_accounts = [acc for acc in all_accounts if acc.get('name') in account_names and acc.get('enabled', True)]
+        
+        # Обновить токены для каждого аккаунта
+        for account in candidate_accounts:
+            account_name = account.get('name')
+            if account_name:
+                token_info = self.token_manager.get_token(platform, account_name)
+                if token_info:
+                    account = account.copy()  # Создать копию
+                    account['access_token'] = token_info.access_token
+                    if token_info.refresh_token:
+                        account['refresh_token'] = token_info.refresh_token
+                    filtered_accounts.append(account)
+                else:
+                    self.logger.warning(f"Нет токена для аккаунта {platform}:{account_name}")
+                    # Можно добавить аккаунт без токена, если есть другие способы аутентификации
+                    filtered_accounts.append(account)
+            else:
+                filtered_accounts.append(account)
+        
+        return filtered_accounts
     
     def start_scheduler(self):
         """Start the posting scheduler."""
@@ -388,6 +420,144 @@ class SocialMediaAutoPoster:
             'scheduler_running': self.scheduler.running,
             'notification_status': self.notification_manager.get_notification_status(),
             'scheduled_posts_count': len(self.scheduler.scheduled_posts),
-            'config_loaded': bool(self.config)
+            'config_loaded': bool(self.config),
+            'token_status': self.token_manager.get_token_status(),
+            'account_status': self.oauth_manager.get_account_status()
+        }
+    
+    def authorize_account(self, platform: str, account_name: str, 
+                         custom_scopes: Optional[list] = None, 
+                         auto_open_browser: bool = True) -> Dict[str, Any]:
+        """Авторизовать конкретный аккаунт."""
+        return self.oauth_manager.authorize_account(
+            platform=platform,
+            account_name=account_name,
+            custom_scopes=custom_scopes,
+            auto_open_browser=auto_open_browser
+        )
+    
+    def authorize_all_accounts(self, platform: Optional[str] = None) -> Dict[str, Any]:
+        """Авторизовать все аккаунты для платформы или всех платформ."""
+        return self.oauth_manager.authorize_all_accounts(platform)
+    
+    def refresh_account_tokens(self, platform: Optional[str] = None, 
+                              account_name: Optional[str] = None) -> Dict[str, Any]:
+        """Обновить токены для аккаунтов."""
+        results = {}
+        
+        if platform and account_name:
+            # Обновить конкретный аккаунт
+            success = self.token_manager.refresh_token_if_needed(platform, account_name)
+            results[f"{platform}:{account_name}"] = success
+        else:
+            # Обновить все токены или для конкретной платформы
+            all_tokens = self.token_manager.get_all_tokens(platform)
+            
+            for plat, accounts in all_tokens.items():
+                for acc_name in accounts.keys():
+                    success = self.token_manager.refresh_token_if_needed(plat, acc_name)
+                    results[f"{plat}:{acc_name}"] = success
+        
+        return results
+    
+    def validate_all_accounts_extended(self) -> Dict[str, Any]:
+        """Расширенная валидация всех аккаунтов с проверкой токенов."""
+        validation_results = {}
+        
+        for platform, client in self.api_clients.items():
+            validation_results[platform] = {}
+            accounts = self.config.get('accounts', {}).get(platform, [])
+            
+            for account in accounts:
+                account_name = account.get('name', 'Unknown')
+                if not account.get('enabled', True):
+                    validation_results[platform][account_name] = {
+                        'enabled': False,
+                        'valid': False,
+                        'has_token': False,
+                        'token_valid': False,
+                        'error': 'Аккаунт отключен в конфигурации'
+                    }
+                    continue
+                
+                # Проверить наличие токена
+                token_info = self.token_manager.get_token(platform, account_name)
+                has_token = token_info is not None
+                
+                # Проверить валидность токена
+                token_valid = False
+                if has_token:
+                    token_valid = not self.token_manager.is_token_expired(token_info)
+                    if not token_valid:
+                        # Попробовать обновить токен
+                        token_valid = self.token_manager.refresh_token_if_needed(platform, account_name)
+                
+                # Проверить API соединение
+                api_valid = False
+                error_message = None
+                
+                if token_valid:
+                    try:
+                        # Обновить конфигурацию аккаунта с актуальным токеном
+                        updated_account = account.copy()
+                        updated_account['access_token'] = token_info.access_token
+                        
+                        api_valid = client.validate_account(updated_account)
+                        if not api_valid:
+                            error_message = "API валидация не прошла"
+                    except Exception as e:
+                        error_message = str(e)
+                else:
+                    error_message = "Нет действительного токена"
+                
+                validation_results[platform][account_name] = {
+                    'enabled': True,
+                    'valid': api_valid,
+                    'has_token': has_token,
+                    'token_valid': token_valid,
+                    'error': error_message
+                }
+                
+                self.logger.log_account_validation(platform, account_name, api_valid)
+        
+        return validation_results
+    
+    def get_account_authorization_url(self, platform: str, account_name: str, 
+                                    custom_scopes: Optional[list] = None) -> Optional[str]:
+        """Получить URL для ручной авторизации аккаунта."""
+        return self.oauth_manager.get_authorization_url(platform, account_name, custom_scopes)
+    
+    def add_account_token(self, platform: str, account_name: str, access_token: str,
+                         refresh_token: Optional[str] = None, expires_in: Optional[int] = None,
+                         scope: Optional[str] = None) -> bool:
+        """Добавить токен для аккаунта вручную."""
+        return self.token_manager.add_token(
+            platform=platform,
+            account_name=account_name,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=expires_in,
+            scope=scope
+        )
+    
+    def remove_account_token(self, platform: str, account_name: str) -> bool:
+        """Удалить токен аккаунта."""
+        return self.token_manager.remove_token(platform, account_name)
+    
+    def get_account_token_info(self, platform: str, account_name: str) -> Optional[Dict[str, Any]]:
+        """Получить информацию о токене аккаунта."""
+        token_info = self.token_manager.get_token(platform, account_name)
+        if not token_info:
+            return None
+        
+        return {
+            'platform': token_info.platform,
+            'account_name': token_info.account_name,
+            'has_refresh_token': bool(token_info.refresh_token),
+            'expires_at': token_info.expires_at.isoformat() if token_info.expires_at else None,
+            'scope': token_info.scope,
+            'created_at': token_info.created_at.isoformat() if token_info.created_at else None,
+            'last_refreshed': token_info.last_refreshed.isoformat() if token_info.last_refreshed else None,
+            'is_expired': self.token_manager.is_token_expired(token_info)
         }
 

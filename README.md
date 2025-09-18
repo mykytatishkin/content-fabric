@@ -2,6 +2,14 @@
 
 A comprehensive Python tool for automatically posting content to Instagram, TikTok, and YouTube Shorts with support for scheduling, content optimization, and multi-account management.
 
+## 🆕 Enhanced Multi-Account Features
+
+- ✅ **Unlimited Accounts** - Support for unlimited accounts per platform
+- ✅ **Automated OAuth** - Automatic token generation and refresh
+- ✅ **Smart Validation** - Real-time account and token validation
+- ✅ **CLI Management** - Powerful command-line tools for account management
+- ✅ **Secure Storage** - Protected token storage with automatic encryption
+
 ## Features
 
 - **Multi-Platform Support**: Post to Instagram Reels, TikTok, and YouTube Shorts
@@ -128,6 +136,82 @@ python main.py status
 ```bash
 python main.py stats
 ```
+
+## 🆕 Multi-Account Management
+
+### Account Manager CLI
+
+The new `account_manager.py` provides powerful tools for managing multiple accounts:
+
+#### Check Account Status
+```bash
+# Check all accounts
+python account_manager.py status
+
+# Check specific platform
+python account_manager.py status --platform instagram
+
+# JSON output
+python account_manager.py status --json
+```
+
+#### Authorize Accounts
+```bash
+# Authorize all accounts automatically
+python account_manager.py authorize --all
+
+# Authorize specific platform
+python account_manager.py authorize --platform instagram --all
+
+# Authorize specific account
+python account_manager.py authorize --platform instagram --account main_account
+
+# Manual authorization (no auto-browser)
+python account_manager.py authorize --platform instagram --account main_account --no-browser
+```
+
+#### Token Management
+```bash
+# Refresh all tokens
+python account_manager.py refresh
+
+# Refresh specific platform
+python account_manager.py refresh --platform youtube
+
+# Get authorization URL for manual setup
+python account_manager.py auth-url instagram main_account
+
+# Add token manually
+python account_manager.py add-token instagram main_account "your_access_token" --refresh-token "refresh_token" --expires-in 3600
+
+# Remove token
+python account_manager.py remove-token instagram main_account
+
+# Get token info
+python account_manager.py token-info instagram main_account
+```
+
+#### Account Validation
+```bash
+# Validate all accounts
+python account_manager.py validate
+
+# Validate specific platform
+python account_manager.py validate --platform tiktok --json
+```
+
+### Interactive Management
+```bash
+# Launch interactive multi-account manager
+python example_multiple_accounts.py
+```
+
+This provides a user-friendly interface for:
+- 📊 Account status monitoring
+- 🔐 Account authorization
+- 📤 Content publishing
+- ⏰ Post scheduling
+- 🛠️ Token management
 
 ## Content Requirements
 
