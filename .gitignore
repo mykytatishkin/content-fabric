@@ -58,6 +58,9 @@ scheduled_posts.json
 youtube_token.json
 credentials.json
 
+# Token storage for multiple accounts
+tokens.json
+
 # IDE
 .vscode/
 .idea/

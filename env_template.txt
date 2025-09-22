@@ -1,0 +1,48 @@
+# =================================================================
+# ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ДЛЯ МНОЖЕСТВЕННЫХ АККАУНТОВ
+# =================================================================
+# Скопируйте этот файл в .env и заполните реальными значениями
+# НЕ коммитьте .env файл в git!
+
+# Instagram API Configuration
+# Получите эти данные в Facebook Developer Console
+INSTAGRAM_MAIN_APP_ID=your_main_instagram_app_id_here
+INSTAGRAM_MAIN_APP_SECRET=your_main_instagram_app_secret_here
+INSTAGRAM_BACKUP_APP_ID=your_backup_instagram_app_id_here
+INSTAGRAM_BACKUP_APP_SECRET=your_backup_instagram_app_secret_here
+
+# TikTok API Configuration  
+# Получите эти данные в TikTok for Developers
+TIKTOK_MAIN_CLIENT_KEY=your_main_tiktok_client_key_here
+TIKTOK_MAIN_CLIENT_SECRET=your_main_tiktok_client_secret_here
+TIKTOK_BACKUP_CLIENT_KEY=your_backup_tiktok_client_key_here
+TIKTOK_BACKUP_CLIENT_SECRET=your_backup_tiktok_client_secret_here
+
+# YouTube API Configuration
+# Получите эти данные в Google Cloud Console
+YOUTUBE_MAIN_CLIENT_ID=your_main_youtube_client_id_here
+YOUTUBE_MAIN_CLIENT_SECRET=your_main_youtube_client_secret_here
+YOUTUBE_BACKUP_CLIENT_ID=your_backup_youtube_client_id_here
+YOUTUBE_BACKUP_CLIENT_SECRET=your_backup_youtube_client_secret_here
+
+# Notification Configuration (опционально)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_telegram_chat_id_here
+EMAIL_SMTP_SERVER=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_USERNAME=your_email@gmail.com
+EMAIL_PASSWORD=your_email_app_password_here
+
+# General Configuration
+LOG_LEVEL=INFO
+CONTENT_FOLDER=./content
+OUTPUT_FOLDER=./output
+
+# =================================================================
+# ИНСТРУКЦИИ ПО НАСТРОЙКЕ:
+# =================================================================
+# 1. Скопируйте этот файл: cp env_template.txt .env
+# 2. Отредактируйте .env и замените значения на реальные
+# 3. Запустите: python secure_setup.py для интерактивной настройки
+# 4. Авторизуйте аккаунты: python account_manager.py authorize --all
+# =================================================================

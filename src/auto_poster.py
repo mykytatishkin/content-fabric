@@ -18,6 +18,7 @@ from .scheduler import PostingScheduler, ScheduledPost
 from .notifications import NotificationManager
 from .token_manager import TokenManager
 from .oauth_manager import OAuthManager
+from .config_loader import ConfigLoader
 from .api_clients.instagram_client import InstagramClient
 from .api_clients.tiktok_client import TikTokClient
 from .api_clients.youtube_client import YouTubeClient
@@ -47,12 +48,15 @@ class SocialMediaAutoPoster:
         self.logger.info("Social Media Auto-Poster initialized")
     
     def _load_config(self) -> dict:
-        """Load configuration from YAML file."""
+        """Load configuration from YAML file with environment variables support."""
         try:
-            with open(self.config_path, 'r') as file:
-                return yaml.safe_load(file)
+            config_loader = ConfigLoader(self.config_path)
+            return config_loader.load_config()
         except FileNotFoundError:
             self.logger.error(f"Configuration file not found: {self.config_path}")
+            sys.exit(1)
+        except Exception as e:
+            self.logger.error(f"Configuration loading error: {str(e)}")
             sys.exit(1)
     
     def _initialize_api_clients(self) -> Dict[str, Any]:

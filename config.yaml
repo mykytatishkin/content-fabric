@@ -23,51 +23,45 @@ platforms:
     aspect_ratio: "9:16"
     file_formats: ["mp4", "mov"]
 
-# Account management (тестовые аккаунты)
+# Account management (используем переменные окружения для безопасности)
 accounts:
   instagram:
-    - name: "test_account1"
-      username: "test_username1"
-      access_token: "test_token1"
-      app_id: "test_app_id"
-      app_secret: "test_app_secret"
-      enabled: false  # отключено для тестирования
-    - name: "test_account2"
-      username: "test_username2"
-      access_token: "test_token2"
-      app_id: "test_app_id"
-      app_secret: "test_app_secret"
-      enabled: false
+    - name: "main_account"
+      username: "your_main_instagram_username"
+      app_id: "${INSTAGRAM_MAIN_APP_ID}"
+      app_secret: "${INSTAGRAM_MAIN_APP_SECRET}"
+      enabled: false  # включите после настройки .env
+    - name: "backup_account"
+      username: "your_backup_instagram_username"
+      app_id: "${INSTAGRAM_BACKUP_APP_ID}"
+      app_secret: "${INSTAGRAM_BACKUP_APP_SECRET}"
+      enabled: false  # включите после настройки .env
       
   tiktok:
-    - name: "test_account1"
-      username: "test_username1"
-      access_token: "test_token1"
-      client_key: "test_client_key"
-      client_secret: "test_client_secret"
-      enabled: false  # отключено для тестирования
-    - name: "test_account2"
-      username: "test_username2"
-      access_token: "test_token2"
-      client_key: "test_client_key"
-      client_secret: "test_client_secret"
-      enabled: false
+    - name: "main_account"
+      username: "your_main_tiktok_username"
+      client_key: "${TIKTOK_MAIN_CLIENT_KEY}"
+      client_secret: "${TIKTOK_MAIN_CLIENT_SECRET}"
+      enabled: false  # включите после настройки .env
+    - name: "backup_account"
+      username: "your_backup_tiktok_username"
+      client_key: "${TIKTOK_BACKUP_CLIENT_KEY}"
+      client_secret: "${TIKTOK_BACKUP_CLIENT_SECRET}"
+      enabled: false  # включите после настройки .env
       
   youtube:
-    - name: "test_account1"
-      channel_id: "test_channel1"
-      access_token: "test_token1"
-      client_id: "test_client_id"
-      client_secret: "test_client_secret"
-      credentials_file: "credentials.json"
-      enabled: false  # отключено для тестирования
-    - name: "test_account2"
-      channel_id: "test_channel2"
-      access_token: "test_token2"
-      client_id: "test_client_id"
-      client_secret: "test_client_secret"
-      credentials_file: "credentials.json"
-      enabled: false
+    - name: "main_channel"
+      channel_id: "your_main_channel_id"  # опционально
+      client_id: "${YOUTUBE_MAIN_CLIENT_ID}"
+      client_secret: "${YOUTUBE_MAIN_CLIENT_SECRET}"
+      credentials_file: "credentials.json"  # опционально
+      enabled: false  # включите после настройки .env
+    - name: "backup_channel"
+      channel_id: "your_backup_channel_id"  # опционально
+      client_id: "${YOUTUBE_BACKUP_CLIENT_ID}"
+      client_secret: "${YOUTUBE_BACKUP_CLIENT_SECRET}"
+      credentials_file: "credentials.json"  # опционально
+      enabled: false  # включите после настройки .env
 
 # Posting schedule
 schedule:
