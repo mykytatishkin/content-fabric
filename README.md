@@ -9,6 +9,8 @@ A comprehensive Python tool for automatically posting content to Instagram, TikT
 - ✅ **Smart Validation** - Real-time account and token validation
 - ✅ **CLI Management** - Powerful command-line tools for account management
 - ✅ **Secure Storage** - Protected token storage with automatic encryption
+- ✅ **YouTube Shorts Support** - Full automation for YouTube Shorts posting
+- ✅ **Channel Management** - Easy addition and management of YouTube channels
 
 ## Features
 
@@ -62,8 +64,12 @@ A comprehensive Python tool for automatically posting content to Instagram, TikT
 #### YouTube
 1. Create a Google Cloud Console project
 2. Enable YouTube Data API v3
-3. Create OAuth 2.0 credentials
-4. Download the credentials JSON file
+3. Set up OAuth consent screen with required scopes:
+   - `https://www.googleapis.com/auth/youtube.upload`
+   - `https://www.googleapis.com/auth/youtube`
+4. Create OAuth 2.0 Desktop application credentials
+5. Download the credentials JSON file as `credentials.json`
+6. Add your Google account to Test Users
 
 ### Configuration Files
 
@@ -213,6 +219,29 @@ This provides a user-friendly interface for:
 - ⏰ Post scheduling
 - 🛠️ Token management
 
+## 🆕 YouTube Channel Management
+
+### Automatic Channel Addition
+Use the new `add_youtube_channel.py` script to easily add YouTube channels:
+
+```bash
+# Add a new YouTube channel
+python add_youtube_channel.py add "ChannelName" --channel-id "UC123456789"
+
+# List all YouTube channels
+python add_youtube_channel.py list
+
+# Add a channel as disabled
+python add_youtube_channel.py add "ChannelName" --disabled
+```
+
+### YouTube Shorts Features
+- ✅ **Automatic Shorts Detection** - Detects 9:16 aspect ratio videos
+- ✅ **Optimized Metadata** - Auto-adds #Shorts hashtag and category
+- ✅ **Resumable Upload** - Handles large video files with retry logic
+- ✅ **Quota Management** - Tracks YouTube API quota usage
+- ✅ **Multiple Channels** - Support for unlimited YouTube channels
+
 ## Content Requirements
 
 ### Video Specifications
@@ -312,8 +341,12 @@ content-fabric/
 ├── logs/                      # Log files
 ├── config.yaml               # Main configuration
 ├── config.env.example        # Environment variables template
+├── credentials.json          # YouTube OAuth credentials
+├── youtube_token.json        # YouTube access tokens
 ├── requirements.txt          # Python dependencies
 ├── main.py                   # CLI interface
+├── account_manager.py        # Multi-account management
+├── add_youtube_channel.py    # YouTube channel management
 └── README.md                 # This file
 ```
 
@@ -328,8 +361,10 @@ content-fabric/
 - Automatic retry with exponential backoff
 
 ### YouTube
-- 10,000 quota units per day
-- Video upload costs 1,600 units
+- 10,000 quota units per day (free tier)
+- Video upload costs 1,600 units (~6 uploads per day)
+- Automatic quota tracking and management
+- Built-in retry logic for quota exceeded errors
 
 ## Error Handling
 

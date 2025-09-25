@@ -17,7 +17,7 @@ platforms:
     file_formats: ["mp4", "mov"]
     
   youtube:
-    enabled: false  # отключено для тестирования
+    enabled: true  # включено для тестирования
     max_duration: 60   # seconds
     min_duration: 15   # seconds
     aspect_ratio: "9:16"
@@ -50,18 +50,18 @@ accounts:
       enabled: false  # включите после настройки .env
       
   youtube:
-    - name: "main_channel"
-      channel_id: "your_main_channel_id"  # опционально
+    - name: "Teasera"
+      channel_id: "teasera-git"  # опционально
       client_id: "${YOUTUBE_MAIN_CLIENT_ID}"
       client_secret: "${YOUTUBE_MAIN_CLIENT_SECRET}"
       credentials_file: "credentials.json"  # опционально
-      enabled: false  # включите после настройки .env
+      enabled: true  # включите после настройки .env
     - name: "backup_channel"
       channel_id: "your_backup_channel_id"  # опционально
-      client_id: "${YOUTUBE_BACKUP_CLIENT_ID}"
-      client_secret: "${YOUTUBE_BACKUP_CLIENT_SECRET}"
+      client_id: "${YOUTUBE_MAIN_CLIENT_ID}"  # используем тот же OAuth клиент
+      client_secret: "${YOUTUBE_MAIN_CLIENT_SECRET}"  # используем тот же OAuth клиент
       credentials_file: "credentials.json"  # опционально
-      enabled: false  # включите после настройки .env
+      enabled: true  # включено для тестирования
 
 # Posting schedule
 schedule:

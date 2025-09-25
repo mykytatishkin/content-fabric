@@ -5,9 +5,10 @@
 2. [Структура проекта](#структура-проекта)
 3. [Компоненты системы](#компоненты-системы)
 4. [Настройка API платформ](#настройка-api-платформ)
-5. [Конфигурационные файлы](#конфигурационные-файлы)
-6. [Установка и запуск](#установка-и-запуск)
-7. [Troubleshooting](#troubleshooting)
+5. [YouTube Shorts Automation](#youtube-shorts-automation)
+6. [Конфигурационные файлы](#конфигурационные-файлы)
+7. [Установка и запуск](#установка-и-запуск)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -45,9 +46,13 @@ content-fabric/
 ├── 📄 main.py                    # Основной CLI интерфейс
 ├── 📄 setup.py                   # Скрипт установки
 ├── 📄 example_usage.py           # Примеры использования
+├── 📄 account_manager.py         # Управление множественными аккаунтами
+├── 📄 add_youtube_channel.py     # Управление YouTube каналами
 ├── 📄 requirements.txt           # Python зависимости
 ├── 📄 config.yaml               # Основная конфигурация
 ├── 📄 config.env.example        # Шаблон переменных окружения
+├── 📄 credentials.json          # YouTube OAuth credentials
+├── 📄 youtube_token.json        # YouTube access tokens
 ├── 📄 README.md                 # Пользовательская документация
 ├── 📄 TECHNICAL_DOCS.md         # Техническая документация
 ├── 📄 .gitignore               # Git исключения
@@ -236,7 +241,11 @@ accounts:
 #### Шаг 1: Google Cloud Console
 1. Создайте проект в [Google Cloud Console](https://console.cloud.google.com/)
 2. Включите YouTube Data API v3
-3. Создайте OAuth 2.0 credentials
+3. Настройте OAuth consent screen с scopes:
+   - `https://www.googleapis.com/auth/youtube.upload`
+   - `https://www.googleapis.com/auth/youtube`
+4. Создайте OAuth 2.0 Desktop application credentials
+5. Скачайте `credentials.json`
 
 #### Шаг 2: Настройка credentials
 ```yaml
@@ -268,6 +277,165 @@ accounts:
 - 10,000 единиц квоты в день
 - Загрузка видео = 1,600 единиц
 - ~6 загрузок в день на бесплатном тарифе
+
+---
+
+## 📺 YouTube Shorts Automation
+
+### Архитектура YouTube клиента
+
+```python
+class YouTubeClient(BaseAPIClient):
+    """YouTube API client using YouTube Data API v3."""
+    
+    SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+    
+    def __init__(self, client_id, client_secret, credentials_file):
+        # OAuth 2.0 аутентификация
+        # Автоматическое обновление токенов
+        # Quota management
+```
+
+### Ключевые особенности
+
+#### 1. OAuth 2.0 Authentication
+- **Desktop application** credentials
+- **Automatic token refresh**
+- **Secure token storage** в `youtube_token.json`
+- **Multiple account support**
+
+#### 2. Video Upload Features
+- **Resumable upload** для больших файлов
+- **Automatic Shorts detection** (9:16 aspect ratio)
+- **Metadata optimization**:
+  - Auto #Shorts hashtag
+  - Category: People & Blogs
+  - Title length: 100 characters max
+  - Hashtag extraction from description
+
+#### 3. Quota Management
+- **Daily quota tracking** (10,000 units/day)
+- **Upload cost calculation** (1,600 units per upload)
+- **Automatic retry** for quota exceeded
+- **Usage monitoring** and alerts
+
+#### 4. Error Handling
+- **Network retry logic** with exponential backoff
+- **API error parsing** and user-friendly messages
+- **Token expiration handling**
+- **Rate limit compliance**
+
+### Channel Management
+
+#### Автоматическое добавление каналов
+```bash
+# Добавить новый канал
+python add_youtube_channel.py add "ChannelName" --channel-id "UC123456789"
+
+# Список всех каналов
+python add_youtube_channel.py list
+```
+
+#### Конфигурация множественных каналов
+```yaml
+accounts:
+  youtube:
+    - name: "main_channel"
+      channel_id: "UC123456789"
+      client_id: "${YOUTUBE_MAIN_CLIENT_ID}"
+      client_secret: "${YOUTUBE_MAIN_CLIENT_SECRET}"
+      credentials_file: "credentials.json"
+      enabled: true
+    - name: "backup_channel"
+      channel_id: "UC987654321"
+      client_id: "${YOUTUBE_MAIN_CLIENT_ID}"
+      client_secret: "${YOUTUBE_MAIN_CLIENT_SECRET}"
+      credentials_file: "credentials.json"
+      enabled: true
+```
+
+### API Endpoints
+
+#### Video Upload
+```python
+def post_video(self, account_info, video_path, caption, metadata=None):
+    """Post a video to YouTube as a Short."""
+    # 1. Prepare video metadata
+    # 2. Create MediaFileUpload
+    # 3. Execute resumable upload
+    # 4. Return PostResult
+```
+
+#### Account Validation
+```python
+def validate_account(self, account_info):
+    """Validate YouTube account credentials."""
+    # Test API connection
+    # Check channel access
+    # Verify permissions
+```
+
+#### Quota Management
+```python
+def _update_rate_limit_info(self, response):
+    """Update rate limit info from YouTube API headers."""
+    # Track quota usage
+    # Calculate remaining uploads
+    # Set reset time
+```
+
+### File Structure
+
+```
+youtube_automation/
+├── credentials.json          # OAuth 2.0 credentials
+├── youtube_token.json       # Access tokens
+├── add_youtube_channel.py   # Channel management
+└── src/api_clients/
+    └── youtube_client.py    # Main YouTube client
+```
+
+### Security Considerations
+
+#### Token Security
+- **Encrypted storage** of access tokens
+- **Automatic refresh** before expiration
+- **Secure file permissions** (600)
+- **Environment variable** for credentials
+
+#### API Security
+- **Minimal scopes** required
+- **Rate limit compliance**
+- **Error handling** without exposing sensitive data
+- **Audit logging** of all API calls
+
+### Performance Optimization
+
+#### Upload Optimization
+- **Chunked uploads** for large files
+- **Resumable uploads** with retry logic
+- **Parallel processing** for multiple channels
+- **Memory-efficient** file handling
+
+#### Quota Optimization
+- **Smart scheduling** to avoid quota exhaustion
+- **Batch operations** where possible
+- **Usage monitoring** and alerts
+- **Fallback strategies** for quota exceeded
+
+### Monitoring and Logging
+
+#### Logging Levels
+- **INFO**: Successful uploads, quota usage
+- **WARNING**: Rate limits, retry attempts
+- **ERROR**: Upload failures, API errors
+- **DEBUG**: Detailed API interactions
+
+#### Metrics Tracking
+- **Upload success rate**
+- **Quota consumption**
+- **Average upload time**
+- **Error frequency**
 
 ---
 
