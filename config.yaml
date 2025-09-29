@@ -24,28 +24,8 @@ platforms:
     - mp4
     - mov
 accounts:
-  instagram:
-  - name: main_account
-    username: your_main_instagram_username
-    app_id: ${INSTAGRAM_MAIN_APP_ID}
-    app_secret: ${INSTAGRAM_MAIN_APP_SECRET}
-    enabled: false
-  - name: backup_account
-    username: your_backup_instagram_username
-    app_id: ${INSTAGRAM_BACKUP_APP_ID}
-    app_secret: ${INSTAGRAM_BACKUP_APP_SECRET}
-    enabled: false
-  tiktok:
-  - name: main_account
-    username: your_main_tiktok_username
-    client_key: ${TIKTOK_MAIN_CLIENT_KEY}
-    client_secret: ${TIKTOK_MAIN_CLIENT_SECRET}
-    enabled: false
-  - name: backup_account
-    username: your_backup_tiktok_username
-    client_key: ${TIKTOK_BACKUP_CLIENT_KEY}
-    client_secret: ${TIKTOK_BACKUP_CLIENT_SECRET}
-    enabled: false
+  instagram: []
+  tiktok: []
   youtube:
   - name: Teasera
     channel_id: teasera-git
@@ -53,12 +33,6 @@ accounts:
     client_secret: ${YOUTUBE_MAIN_CLIENT_SECRET}
     credentials_file: credentials.json
     enabled: true
-  - name: backup_channel
-    channel_id: your_backup_channel_id
-    client_id: ${YOUTUBE_MAIN_CLIENT_ID}
-    client_secret: ${YOUTUBE_MAIN_CLIENT_SECRET}
-    credentials_file: credentials.json
-    enabled: false
   - name: Andrew Garle
     channel_id: '@AndrewGarle'
     client_id: ${YOUTUBE_MAIN_CLIENT_ID}

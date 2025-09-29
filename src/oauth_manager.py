@@ -16,6 +16,7 @@ import yaml
 
 from .logger import get_logger
 from .token_manager import TokenManager
+from .config_loader import ConfigLoader
 
 
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
@@ -28,6 +29,12 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Обработать GET запрос с OAuth кодом."""
         try:
+            # Игнорировать запросы на favicon.ico
+            if self.path == '/favicon.ico':
+                self.send_response(404)
+                self.end_headers()
+                return
+            
             parsed_url = urlparse(self.path)
             query_params = parse_qs(parsed_url.query)
             
@@ -40,26 +47,26 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
                 self.send_response(400)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write(f'<html><body><h1>Ошибка авторизации: {error}</h1></body></html>'.encode())
+                self.wfile.write(f'<html><body><h1>Authorization Error: {error}</h1></body></html>'.encode())
                 self.callback_func(None, error, state)
             elif code:
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write('<html><body><h1>Авторизация успешна!</h1><p>Можете закрыть это окно.</p></body></html>'.encode())
+                self.wfile.write('<html><body><h1>Authorization Successful!</h1><p>You can close this window.</p></body></html>'.encode())
                 self.callback_func(code, None, state)
             else:
                 self.send_response(400)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write('<html><body><h1>Неверные параметры авторизации</h1></body></html>'.encode())
+                self.wfile.write('<html><body><h1>Invalid Authorization Parameters</h1><p>No code or error parameter found.</p></body></html>'.encode())
                 self.callback_func(None, "Неверные параметры", state)
                 
         except Exception as e:
             self.send_response(500)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-            self.wfile.write(f'<html><body><h1>Внутренняя ошибка: {str(e)}</h1></body></html>'.encode())
+            self.wfile.write(f'<html><body><h1>Internal Error: {str(e)}</h1></body></html>'.encode())
             self.callback_func(None, str(e), None)
     
     def log_message(self, format, *args):
@@ -80,12 +87,12 @@ class OAuthManager:
         self.auth_result = None
         
     def _load_config(self) -> dict:
-        """Загрузить конфигурацию из YAML файла."""
+        """Загрузить конфигурацию из YAML файла с подстановкой переменных окружения."""
         try:
-            with open(self.config_path, 'r') as file:
-                return yaml.safe_load(file)
-        except FileNotFoundError:
-            self.logger.error(f"Файл конфигурации не найден: {self.config_path}")
+            config_loader = ConfigLoader(self.config_path)
+            return config_loader.load_config()
+        except Exception as e:
+            self.logger.error(f"Ошибка загрузки конфигурации: {e}")
             return {}
     
     def get_authorization_url(self, platform: str, account_name: str, 
