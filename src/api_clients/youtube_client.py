@@ -19,7 +19,10 @@ class YouTubeClient(BaseAPIClient):
     """YouTube API client using YouTube Data API v3."""
     
     # YouTube API scopes
-    SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+    SCOPES = [
+        'https://www.googleapis.com/auth/youtube.upload',
+        'https://www.googleapis.com/auth/youtube'
+    ]
     
     def __init__(self, client_id: str, client_secret: str, credentials_file: str = None):
         super().__init__("YouTube", "https://www.googleapis.com/youtube/v3")

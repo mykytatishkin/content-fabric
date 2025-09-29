@@ -1,150 +1,135 @@
-# Social Media Auto-Posting Configuration
-
-# Platform-specific settings (отключены для безопасного тестирования)
 platforms:
   instagram:
-    enabled: false  # отключено для тестирования
-    max_duration: 90  # seconds
-    min_duration: 15  # seconds
-    aspect_ratio: "9:16"
-    file_formats: ["mp4", "mov"]
-    
+    enabled: false
+    max_duration: 90
+    min_duration: 15
+    aspect_ratio: '9:16'
+    file_formats:
+    - mp4
+    - mov
   tiktok:
-    enabled: false  # отключено для тестирования
-    max_duration: 180  # seconds
-    min_duration: 15   # seconds
-    aspect_ratio: "9:16"
-    file_formats: ["mp4", "mov"]
-    
+    enabled: false
+    max_duration: 180
+    min_duration: 15
+    aspect_ratio: '9:16'
+    file_formats:
+    - mp4
+    - mov
   youtube:
-    enabled: true  # включено для тестирования
-    max_duration: 60   # seconds
-    min_duration: 15   # seconds
-    aspect_ratio: "9:16"
-    file_formats: ["mp4", "mov"]
-
-# Account management (используем переменные окружения для безопасности)
+    enabled: true
+    max_duration: 60
+    min_duration: 15
+    aspect_ratio: '9:16'
+    file_formats:
+    - mp4
+    - mov
 accounts:
   instagram:
-    - name: "main_account"
-      username: "your_main_instagram_username"
-      app_id: "${INSTAGRAM_MAIN_APP_ID}"
-      app_secret: "${INSTAGRAM_MAIN_APP_SECRET}"
-      enabled: false  # включите после настройки .env
-    - name: "backup_account"
-      username: "your_backup_instagram_username"
-      app_id: "${INSTAGRAM_BACKUP_APP_ID}"
-      app_secret: "${INSTAGRAM_BACKUP_APP_SECRET}"
-      enabled: false  # включите после настройки .env
-      
+  - name: main_account
+    username: your_main_instagram_username
+    app_id: ${INSTAGRAM_MAIN_APP_ID}
+    app_secret: ${INSTAGRAM_MAIN_APP_SECRET}
+    enabled: false
+  - name: backup_account
+    username: your_backup_instagram_username
+    app_id: ${INSTAGRAM_BACKUP_APP_ID}
+    app_secret: ${INSTAGRAM_BACKUP_APP_SECRET}
+    enabled: false
   tiktok:
-    - name: "main_account"
-      username: "your_main_tiktok_username"
-      client_key: "${TIKTOK_MAIN_CLIENT_KEY}"
-      client_secret: "${TIKTOK_MAIN_CLIENT_SECRET}"
-      enabled: false  # включите после настройки .env
-    - name: "backup_account"
-      username: "your_backup_tiktok_username"
-      client_key: "${TIKTOK_BACKUP_CLIENT_KEY}"
-      client_secret: "${TIKTOK_BACKUP_CLIENT_SECRET}"
-      enabled: false  # включите после настройки .env
-      
+  - name: main_account
+    username: your_main_tiktok_username
+    client_key: ${TIKTOK_MAIN_CLIENT_KEY}
+    client_secret: ${TIKTOK_MAIN_CLIENT_SECRET}
+    enabled: false
+  - name: backup_account
+    username: your_backup_tiktok_username
+    client_key: ${TIKTOK_BACKUP_CLIENT_KEY}
+    client_secret: ${TIKTOK_BACKUP_CLIENT_SECRET}
+    enabled: false
   youtube:
-    - name: "Teasera"
-      channel_id: "teasera-git"  # опционально
-      client_id: "${YOUTUBE_MAIN_CLIENT_ID}"
-      client_secret: "${YOUTUBE_MAIN_CLIENT_SECRET}"
-      credentials_file: "credentials.json"  # опционально
-      enabled: true  # включите после настройки .env
-    - name: "backup_channel"
-      channel_id: "your_backup_channel_id"  # опционально
-      client_id: "${YOUTUBE_MAIN_CLIENT_ID}"  # используем тот же OAuth клиент
-      client_secret: "${YOUTUBE_MAIN_CLIENT_SECRET}"  # используем тот же OAuth клиент
-      credentials_file: "credentials.json"  # опционально
-      enabled: true  # включено для тестирования
-
-# Posting schedule
+  - name: Teasera
+    channel_id: teasera-git
+    client_id: ${YOUTUBE_MAIN_CLIENT_ID}
+    client_secret: ${YOUTUBE_MAIN_CLIENT_SECRET}
+    credentials_file: credentials.json
+    enabled: true
+  - name: backup_channel
+    channel_id: your_backup_channel_id
+    client_id: ${YOUTUBE_MAIN_CLIENT_ID}
+    client_secret: ${YOUTUBE_MAIN_CLIENT_SECRET}
+    credentials_file: credentials.json
+    enabled: false
+  - name: Andrew Garle
+    channel_id: '@AndrewGarle'
+    client_id: ${YOUTUBE_MAIN_CLIENT_ID}
+    client_secret: ${YOUTUBE_MAIN_CLIENT_SECRET}
+    credentials_file: credentials.json
+    enabled: true
 schedule:
-  # Specific times (24-hour format)
   specific_times:
-    - "09:00"
-    - "12:00"
-    - "15:00"
-    - "18:00"
-    - "21:00"
-  
-  # Random time ranges (24-hour format)
+  - 09:00
+  - '12:00'
+  - '15:00'
+  - '18:00'
+  - '21:00'
   random_ranges:
-    - start: "08:00"
-      end: "10:00"
-    - start: "11:00"
-      end: "13:00"
-    - start: "14:00"
-      end: "16:00"
-    - start: "17:00"
-      end: "19:00"
-    - start: "20:00"
-      end: "22:00"
-  
-  # Days of week (0=Monday, 6=Sunday)
-  posting_days: [0, 1, 2, 3, 4, 5, 6]
-  
-  # Timezone
-  timezone: "UTC"
-
-# Content settings
+  - start: 08:00
+    end: '10:00'
+  - start: '11:00'
+    end: '13:00'
+  - start: '14:00'
+    end: '16:00'
+  - start: '17:00'
+    end: '19:00'
+  - start: '20:00'
+    end: '22:00'
+  posting_days:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  timezone: UTC
 content:
-  # Default hashtags (will be added to all posts)
   default_hashtags:
-    - "#shorts"
-    - "#viral"
-    - "#trending"
-  
-  # Platform-specific hashtags
+  - '#shorts'
+  - '#viral'
+  - '#trending'
   platform_hashtags:
     instagram:
-      - "#reels"
-      - "#instagram"
+    - '#reels'
+    - '#instagram'
     tiktok:
-      - "#tiktok"
-      - "#fyp"
+    - '#tiktok'
+    - '#fyp'
     youtube:
-      - "#youtubeshorts"
-      - "#shorts"
-  
-  # Content folder structure
+    - '#youtubeshorts'
+    - '#shorts'
   folders:
-    videos: "./content/videos"
-    descriptions: "./content/descriptions"
-    thumbnails: "./content/thumbnails"
-    processed: "./content/processed"
-
-# Notification settings
+    videos: ./content/videos
+    descriptions: ./content/descriptions
+    thumbnails: ./content/thumbnails
+    processed: ./content/processed
 notifications:
   telegram:
     enabled: true
     send_success: true
     send_failure: true
-    
   email:
     enabled: true
     send_success: false
     send_failure: true
-    
-  # Notification recipients
   recipients:
-    - "nikita.tishkin.13+admin@gmail.com"
-    - "nikita.tishkin.13+manager@gmail.com"
-
-# Logging configuration
+  - nikita.tishkin.13+admin@gmail.com
+  - nikita.tishkin.13+manager@gmail.com
 logging:
-  level: "INFO"
-  file: "./logs/auto_posting.log"
-  max_size: "10MB"
+  level: INFO
+  file: ./logs/auto_posting.log
+  max_size: 10MB
   backup_count: 5
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-# Retry settings
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 retry:
   max_attempts: 3
   delay_seconds: 60

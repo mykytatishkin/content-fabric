@@ -11,6 +11,9 @@ A comprehensive Python tool for automatically posting content to Instagram, TikT
 - ✅ **Secure Storage** - Protected token storage with automatic encryption
 - ✅ **YouTube Shorts Support** - Full automation for YouTube Shorts posting
 - ✅ **Channel Management** - Easy addition and management of YouTube channels
+- ✅ **Database Integration** - SQLite database for managing multiple YouTube channels
+- ✅ **Single OAuth Setup** - One credentials.json file for all channels
+- ✅ **Token Management** - Automatic token refresh and expiration handling
 
 ## Features
 
@@ -219,21 +222,40 @@ This provides a user-friendly interface for:
 - ⏰ Post scheduling
 - 🛠️ Token management
 
-## 🆕 YouTube Channel Management
+## 🆕 YouTube Database Integration
 
-### Automatic Channel Addition
-Use the new `add_youtube_channel.py` script to easily add YouTube channels:
+### 🗄️ Database-Powered Channel Management
+The new YouTube Database Integration provides a powerful, scalable solution for managing multiple YouTube channels:
 
 ```bash
-# Add a new YouTube channel
-python add_youtube_channel.py add "ChannelName" --channel-id "UC123456789"
+# Migrate existing channels to database
+python migrate_to_db.py
 
-# List all YouTube channels
-python add_youtube_channel.py list
+# Manage channels through database
+python youtube_db_manager.py list
+python youtube_db_manager.py add "ChannelName" --channel-id "UC123456789" --client-id "ID" --client-secret "SECRET"
 
-# Add a channel as disabled
-python add_youtube_channel.py add "ChannelName" --disabled
+# Check token status
+python youtube_db_manager.py check-tokens
+
+# Publish to multiple channels simultaneously
+python main.py post --platforms youtube --accounts "Teasera,Andrew Garle"
 ```
+
+### 🎯 Key Benefits
+- ✅ **Single OAuth Setup** - One `credentials.json` file for all channels
+- ✅ **Database Storage** - Tokens stored securely in SQLite database
+- ✅ **Automatic Token Refresh** - No manual token management needed
+- ✅ **Scalable Architecture** - Easy to add unlimited channels
+- ✅ **CLI Management** - Powerful command-line tools
+- ✅ **Migration Support** - Easy migration from config.yaml
+
+### 📋 Quick Setup
+1. **Create OAuth Client** in Google Cloud Console (Desktop application)
+2. **Download credentials.json** to project root
+3. **Migrate channels**: `python migrate_to_db.py`
+4. **Update .env** with client credentials
+5. **Test**: `python youtube_db_manager.py list`
 
 ### YouTube Shorts Features
 - ✅ **Automatic Shorts Detection** - Detects 9:16 aspect ratio videos
@@ -241,6 +263,7 @@ python add_youtube_channel.py add "ChannelName" --disabled
 - ✅ **Resumable Upload** - Handles large video files with retry logic
 - ✅ **Quota Management** - Tracks YouTube API quota usage
 - ✅ **Multiple Channels** - Support for unlimited YouTube channels
+- ✅ **Database Integration** - Centralized channel and token management
 
 ## Content Requirements
 
