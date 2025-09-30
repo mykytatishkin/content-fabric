@@ -206,6 +206,17 @@ class YouTubeDatabase:
         except Exception:
             return False
     
+    def remove_channel(self, name: str) -> bool:
+        """Remove a channel from database."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM youtube_channels WHERE name = ?", (name,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            return False
+    
     def is_token_expired(self, name: str) -> bool:
         """Check if channel token is expired."""
         channel = self.get_channel(name)

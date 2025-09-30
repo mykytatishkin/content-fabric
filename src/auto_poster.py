@@ -19,6 +19,7 @@ from .notifications import NotificationManager
 from .token_manager import TokenManager
 from .oauth_manager import OAuthManager
 from .config_loader import ConfigLoader
+from .database_config_loader import DatabaseConfigLoader
 from .api_clients.instagram_client import InstagramClient
 from .api_clients.tiktok_client import TikTokClient
 from .api_clients.youtube_client import YouTubeClient
@@ -27,8 +28,9 @@ from .api_clients.youtube_client import YouTubeClient
 class SocialMediaAutoPoster:
     """Main class that coordinates all components of the auto-posting system."""
     
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", use_database: bool = True):
         self.config_path = config_path
+        self.use_database = use_database
         self.config = self._load_config()
         self.logger = get_logger("auto_poster")
         
@@ -48,10 +50,14 @@ class SocialMediaAutoPoster:
         self.logger.info("Social Media Auto-Poster initialized")
     
     def _load_config(self) -> dict:
-        """Load configuration from YAML file with environment variables support."""
+        """Load configuration from YAML file or database with environment variables support."""
         try:
-            config_loader = ConfigLoader(self.config_path)
-            return config_loader.load_config()
+            if self.use_database:
+                config_loader = DatabaseConfigLoader(self.config_path)
+                return config_loader.load_config()
+            else:
+                config_loader = ConfigLoader(self.config_path)
+                return config_loader.load_config()
         except FileNotFoundError:
             self.logger.error(f"Configuration file not found: {self.config_path}")
             sys.exit(1)

@@ -17,6 +17,7 @@ import yaml
 from .logger import get_logger
 from .token_manager import TokenManager
 from .config_loader import ConfigLoader
+from .database_config_loader import DatabaseConfigLoader
 
 
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
@@ -77,8 +78,9 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
 class OAuthManager:
     """Менеджер для автоматизированного получения OAuth токенов."""
     
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", use_database: bool = True):
         self.config_path = config_path
+        self.use_database = use_database
         self.config = self._load_config()
         self.logger = get_logger("oauth_manager")
         self.token_manager = TokenManager(config_path)
@@ -87,10 +89,14 @@ class OAuthManager:
         self.auth_result = None
         
     def _load_config(self) -> dict:
-        """Загрузить конфигурацию из YAML файла с подстановкой переменных окружения."""
+        """Загрузить конфигурацию из YAML файла или базы данных с подстановкой переменных окружения."""
         try:
-            config_loader = ConfigLoader(self.config_path)
-            return config_loader.load_config()
+            if self.use_database:
+                config_loader = DatabaseConfigLoader(self.config_path)
+                return config_loader.load_config()
+            else:
+                config_loader = ConfigLoader(self.config_path)
+                return config_loader.load_config()
         except Exception as e:
             self.logger.error(f"Ошибка загрузки конфигурации: {e}")
             return {}
@@ -172,6 +178,7 @@ class OAuthManager:
             'client_key': client_key,
             'redirect_uri': redirect_uri,
             'scope': ','.join(scopes),
+            
             'response_type': 'code',
             'state': state
         }
@@ -604,3 +611,4 @@ class OAuthManager:
             status['authorized_accounts'] += platform_status['authorized']
         
         return status
+

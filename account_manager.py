@@ -75,6 +75,38 @@ def main():
     info_parser.add_argument('platform', choices=['instagram', 'tiktok', 'youtube'], 
                             help='Платформа')
     info_parser.add_argument('account', help='Имя аккаунта')
+    
+    # Команда для добавления нового канала
+    add_channel_parser = subparsers.add_parser('add-channel', help='Добавить новый YouTube канал')
+    add_channel_parser.add_argument('name', help='Имя канала в системе')
+    add_channel_parser.add_argument('channel_id', help='ID YouTube канала')
+    add_channel_parser.add_argument('--auto-auth', action='store_true', 
+                                   help='Автоматически авторизовать канал после добавления')
+    
+    # Команда для миграции из YAML в базу данных
+    migrate_parser = subparsers.add_parser('migrate', help='Мигрировать каналы из YAML в базу данных')
+    migrate_parser.add_argument('--dry-run', action='store_true', 
+                               help='Показать что будет мигрировано без выполнения')
+    
+    # Команда для работы с базой данных
+    db_parser = subparsers.add_parser('db', help='Управление базой данных каналов')
+    db_subparsers = db_parser.add_subparsers(dest='db_command', help='Команды базы данных')
+    
+    # db list - список каналов в БД
+    db_list_parser = db_subparsers.add_parser('list', help='Показать все каналы в базе данных')
+    db_list_parser.add_argument('--enabled-only', action='store_true', help='Показать только включенные каналы')
+    
+    # db add - добавить канал в БД
+    db_add_parser = db_subparsers.add_parser('add', help='Добавить канал в базу данных')
+    db_add_parser.add_argument('name', help='Имя канала')
+    db_add_parser.add_argument('channel_id', help='ID YouTube канала')
+    db_add_parser.add_argument('--client-id', help='OAuth Client ID (по умолчанию из .env)')
+    db_add_parser.add_argument('--client-secret', help='OAuth Client Secret (по умолчанию из .env)')
+    db_add_parser.add_argument('--disabled', action='store_true', help='Добавить как отключенный')
+    
+    # db remove - удалить канал из БД
+    db_remove_parser = db_subparsers.add_parser('remove', help='Удалить канал из базы данных')
+    db_remove_parser.add_argument('name', help='Имя канала для удаления')
     info_parser.add_argument('--json', action='store_true', help='Вывод в JSON формате')
     
     args = parser.parse_args()
@@ -109,6 +141,12 @@ def main():
             handle_remove_token(auto_poster, args)
         elif args.command == 'token-info':
             handle_token_info(auto_poster, args)
+        elif args.command == 'add-channel':
+            handle_add_channel(auto_poster, args)
+        elif args.command == 'migrate':
+            handle_migrate(auto_poster, args)
+        elif args.command == 'db':
+            handle_db_command(auto_poster, args)
             
     except Exception as e:
         print(f"❌ Ошибка выполнения команды: {e}")
@@ -302,6 +340,127 @@ def handle_token_info(auto_poster: SocialMediaAutoPoster, args):
     
     if info.get('scope'):
         print(f"   Права доступа: {info['scope']}")
+
+
+def handle_add_channel(auto_poster: SocialMediaAutoPoster, args):
+    """Обработать команду add-channel."""
+    from src.database_config_loader import DatabaseConfigLoader
+    
+    print(f"➕ Добавление нового YouTube канала: {args.name}")
+    
+    # Создаем DatabaseConfigLoader для работы с БД
+    db_loader = DatabaseConfigLoader()
+    
+    # Добавляем канал в базу данных
+    success = db_loader.add_youtube_channel(
+        name=args.name,
+        channel_id=args.channel_id
+    )
+    
+    if success:
+        print(f"✅ Канал '{args.name}' успешно добавлен в базу данных!")
+        
+        if args.auto_auth:
+            print(f"🔐 Авторизация канала '{args.name}'...")
+            auth_result = auto_poster.oauth_manager.authorize_account("youtube", args.name)
+            if auth_result.get('success'):
+                print(f"✅ Канал '{args.name}' успешно авторизован!")
+            else:
+                print(f"❌ Ошибка авторизации: {auth_result.get('error')}")
+    else:
+        print(f"❌ Ошибка: Канал '{args.name}' уже существует или произошла ошибка")
+
+
+def handle_migrate(auto_poster: SocialMediaAutoPoster, args):
+    """Обработать команду migrate."""
+    from src.database_config_loader import DatabaseConfigLoader
+    
+    print("🔄 Миграция каналов из YAML в базу данных...")
+    
+    db_loader = DatabaseConfigLoader()
+    
+    if args.dry_run:
+        print("🔍 Режим предварительного просмотра:")
+        # Загружаем YAML конфигурацию
+        yaml_config = auto_poster.config
+        youtube_accounts = yaml_config.get('accounts', {}).get('youtube', [])
+        
+        print(f"📋 Найдено {len(youtube_accounts)} каналов в YAML:")
+        for account in youtube_accounts:
+            name = account.get('name', 'Unknown')
+            channel_id = account.get('channel_id', 'Unknown')
+            enabled = account.get('enabled', True)
+            status = "✅" if enabled else "❌"
+            print(f"   {status} {name} ({channel_id})")
+        
+        print("\n💡 Для выполнения миграции запустите команду без --dry-run")
+    else:
+        migrated_count = db_loader.migrate_from_yaml()
+        print(f"✅ Мигрировано {migrated_count} каналов из YAML в базу данных")
+        
+        if migrated_count > 0:
+            print("💡 Теперь вы можете использовать базу данных для управления каналами")
+            print("   Используйте: python3 account_manager.py db list")
+
+
+def handle_db_command(auto_poster: SocialMediaAutoPoster, args):
+    """Обработать команды работы с базой данных."""
+    from src.database_config_loader import DatabaseConfigLoader
+    
+    db_loader = DatabaseConfigLoader()
+    
+    if args.db_command == 'list':
+        print("📺 Каналы в базе данных:")
+        status = db_loader.get_channel_status()
+        
+        if status['total'] == 0:
+            print("📭 Каналы не найдены")
+            return
+        
+        print(f"   Всего: {status['total']}")
+        print(f"   Включенных: {status['enabled']}")
+        print(f"   Авторизованных: {status['authorized']}")
+        print(f"   Действительных токенов: {status['valid_tokens']}")
+        print(f"   Истекших токенов: {status['expired_tokens']}")
+        print()
+        
+        for name, info in status['channels'].items():
+            if args.enabled_only and not info['enabled']:
+                continue
+                
+            status_icon = "✅" if info['enabled'] else "❌"
+            auth_icon = "🔑" if info['authorized'] else "🔒"
+            token_icon = "🟢" if info['token_valid'] else "🔴"
+            
+            print(f"   {status_icon} {auth_icon} {token_icon} {name}")
+            if info['expires_at']:
+                print(f"      Токен истекает: {info['expires_at']}")
+            if info['created_at']:
+                print(f"      Создан: {info['created_at']}")
+    
+    elif args.db_command == 'add':
+        print(f"➕ Добавление канала '{args.name}' в базу данных...")
+        success = db_loader.add_youtube_channel(
+            name=args.name,
+            channel_id=args.channel_id,
+            client_id=args.client_id,
+            client_secret=args.client_secret,
+            enabled=not args.disabled
+        )
+        
+        if success:
+            print(f"✅ Канал '{args.name}' успешно добавлен!")
+        else:
+            print(f"❌ Ошибка: Канал '{args.name}' уже существует")
+    
+    elif args.db_command == 'remove':
+        print(f"🗑️ Удаление канала '{args.name}' из базы данных...")
+        success = db_loader.remove_youtube_channel(args.name)
+        
+        if success:
+            print(f"✅ Канал '{args.name}' успешно удален!")
+        else:
+            print(f"❌ Ошибка: Канал '{args.name}' не найден")
 
 
 if __name__ == "__main__":

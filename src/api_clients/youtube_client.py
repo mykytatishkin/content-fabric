@@ -67,6 +67,34 @@ class YouTubeClient(BaseAPIClient):
             self.logger.error(f"YouTube authentication error: {str(e)}")
             self.youtube_service = None
     
+    def _create_service_with_token(self, account_info: Dict[str, Any]):
+        """Create YouTube service with account-specific token."""
+        try:
+            access_token = account_info.get('access_token')
+            refresh_token = account_info.get('refresh_token')
+            
+            if not access_token:
+                self.logger.error(f"No access token for account {account_info.get('name', 'Unknown')}")
+                return None
+            
+            # Create credentials from account token
+            creds = Credentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                scopes=self.SCOPES
+            )
+            
+            # Build YouTube service with account credentials
+            youtube_service = build('youtube', 'v3', credentials=creds)
+            return youtube_service
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create YouTube service for account {account_info.get('name', 'Unknown')}: {str(e)}")
+            return None
+    
     def _update_rate_limit_info(self, response):
         """Update rate limit info from YouTube API headers."""
         # YouTube doesn't provide rate limit info in headers
@@ -142,10 +170,12 @@ class YouTubeClient(BaseAPIClient):
                   caption: str, metadata: Optional[Dict[str, Any]] = None) -> PostResult:
         """Post a video to YouTube as a Short."""
         try:
-            if not self.youtube_service:
+            # Create YouTube service with account-specific token
+            youtube_service = self._create_service_with_token(account_info)
+            if not youtube_service:
                 return PostResult(
                     success=False,
-                    error_message="YouTube service not authenticated",
+                    error_message="Failed to create YouTube service with account token",
                     platform="YouTube",
                     account=account_info.get('name', 'Unknown')
                 )
@@ -188,7 +218,7 @@ class YouTubeClient(BaseAPIClient):
             )
             
             # Upload video
-            insert_request = self.youtube_service.videos().insert(
+            insert_request = youtube_service.videos().insert(
                 part=','.join(video_metadata.keys()),
                 body=video_metadata,
                 media_body=media
