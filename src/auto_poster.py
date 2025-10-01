@@ -354,21 +354,30 @@ class SocialMediaAutoPoster:
             # Return specified accounts
             candidate_accounts = [acc for acc in all_accounts if acc.get('name') in account_names and acc.get('enabled', True)]
         
-        # Обновить токены для каждого аккаунта
+        # Добавить аккаунты (токены уже загружены DatabaseConfigLoader)
         for account in candidate_accounts:
             account_name = account.get('name')
             if account_name:
-                token_info = self.token_manager.get_token(platform, account_name)
-                if token_info:
-                    account = account.copy()  # Создать копию
-                    account['access_token'] = token_info.access_token
-                    if token_info.refresh_token:
-                        account['refresh_token'] = token_info.refresh_token
-                    filtered_accounts.append(account)
+                # Проверить наличие токенов
+                if platform == 'youtube' and self.use_database:
+                    # Для YouTube токены уже загружены DatabaseConfigLoader
+                    if account.get('access_token'):
+                        filtered_accounts.append(account)
+                    else:
+                        self.logger.warning(f"Нет токена для аккаунта {platform}:{account_name}")
+                        filtered_accounts.append(account)
                 else:
-                    self.logger.warning(f"Нет токена для аккаунта {platform}:{account_name}")
-                    # Можно добавить аккаунт без токена, если есть другие способы аутентификации
-                    filtered_accounts.append(account)
+                    # Для других платформ использовать TokenManager
+                    token_info = self.token_manager.get_token(platform, account_name)
+                    if token_info:
+                        account = account.copy()  # Создать копию
+                        account['access_token'] = token_info.access_token
+                        if token_info.refresh_token:
+                            account['refresh_token'] = token_info.refresh_token
+                        filtered_accounts.append(account)
+                    else:
+                        self.logger.warning(f"Нет токена для аккаунта {platform}:{account_name}")
+                        filtered_accounts.append(account)
             else:
                 filtered_accounts.append(account)
         

@@ -87,6 +87,34 @@ class YouTubeClient(BaseAPIClient):
                 scopes=self.SCOPES
             )
             
+            # Check if token is expired and refresh if needed
+            if not creds.valid:
+                if creds.expired and creds.refresh_token:
+                    try:
+                        self.logger.info(f"Refreshing expired token for account {account_info.get('name', 'Unknown')}")
+                        creds.refresh(Request())
+                        
+                        # Update the account_info with new token
+                        account_info['access_token'] = creds.token
+                        if creds.expiry:
+                            account_info['token_expires_at'] = creds.expiry.isoformat()
+                        
+                        # Update database with new token
+                        self._update_database_token(account_info, creds)
+                        
+                        self.logger.info(f"Token refreshed successfully for account {account_info.get('name', 'Unknown')}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to refresh token for account {account_info.get('name', 'Unknown')}: {str(e)}")
+                        return None
+                else:
+                    self.logger.error(f"No valid credentials for account {account_info.get('name', 'Unknown')}")
+                    return None
+            else:
+                self.logger.info(f"Token is valid for account {account_info.get('name', 'Unknown')}")
+                # Even if token is valid, update database with current token info
+                # This ensures database stays in sync with actual token state
+                self._update_database_token(account_info, creds)
+            
             # Build YouTube service with account credentials
             youtube_service = build('youtube', 'v3', credentials=creds)
             return youtube_service
@@ -94,6 +122,32 @@ class YouTubeClient(BaseAPIClient):
         except Exception as e:
             self.logger.error(f"Failed to create YouTube service for account {account_info.get('name', 'Unknown')}: {str(e)}")
             return None
+    
+    def _update_database_token(self, account_info: Dict[str, Any], creds):
+        """Update database with refreshed token."""
+        try:
+            from ..database import get_database
+            
+            db = get_database()
+            account_name = account_info.get('name')
+            
+            if account_name and db:
+                # Calculate expiry time if not provided
+                expires_at = creds.expiry
+                if not expires_at and creds.token:
+                    # Default to 1 hour from now if no expiry provided
+                    from datetime import datetime, timedelta
+                    expires_at = datetime.now() + timedelta(hours=1)
+                
+                db.update_channel_tokens(
+                    name=account_name,
+                    access_token=creds.token,
+                    refresh_token=creds.refresh_token,
+                    expires_at=expires_at
+                )
+                self.logger.info(f"Updated database token for account {account_name}")
+        except Exception as e:
+            self.logger.error(f"Failed to update database token: {str(e)}")
     
     def _update_rate_limit_info(self, response):
         """Update rate limit info from YouTube API headers."""

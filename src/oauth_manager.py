@@ -499,7 +499,7 @@ class OAuthManager:
         expires_in = token_data.get('expires_in', 3600)  # 1 час
         scope = token_data.get('scope')
         
-        # Сохранить токен
+        # Сохранить токен в TokenManager
         success = self.token_manager.add_token(
             platform="youtube",
             account_name=account_name,
@@ -508,6 +508,25 @@ class OAuthManager:
             expires_in=expires_in,
             scope=scope
         )
+        
+        # Также сохранить в базу данных
+        if success:
+            try:
+                from .database import get_database
+                from datetime import datetime, timedelta
+                
+                db = get_database()
+                if db:
+                    expires_at = datetime.now() + timedelta(seconds=expires_in)
+                    db.update_channel_tokens(
+                        name=account_name,
+                        access_token=access_token,
+                        refresh_token=refresh_token,
+                        expires_at=expires_at
+                    )
+                    self.logger.info(f"Токен сохранен в базу данных для {account_name}")
+            except Exception as e:
+                self.logger.error(f"Ошибка сохранения токена в базу данных: {str(e)}")
         
         if success:
             return {
