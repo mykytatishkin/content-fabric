@@ -202,7 +202,7 @@ class OAuthManager:
         
         scopes = custom_scopes or [
             'https://www.googleapis.com/auth/youtube.upload',
-            'https://www.googleapis.com/auth/youtube.readonly'
+            'https://www.googleapis.com/auth/youtube'
         ]
         
         redirect_uri = f"http://localhost:{self.callback_port}/callback"
