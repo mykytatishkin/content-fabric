@@ -72,10 +72,22 @@ class YouTubeClient(BaseAPIClient):
         try:
             access_token = account_info.get('access_token')
             refresh_token = account_info.get('refresh_token')
+            token_expires_at = account_info.get('token_expires_at')
             
             if not access_token:
                 self.logger.error(f"No access token for account {account_info.get('name', 'Unknown')}")
                 return None
+            
+            # Parse expiry time if available
+            expiry = None
+            if token_expires_at:
+                if isinstance(token_expires_at, str):
+                    try:
+                        expiry = datetime.fromisoformat(token_expires_at.replace('Z', '+00:00'))
+                    except (ValueError, AttributeError):
+                        pass
+                elif isinstance(token_expires_at, datetime):
+                    expiry = token_expires_at
             
             # Create credentials from account token
             creds = Credentials(
@@ -84,7 +96,8 @@ class YouTubeClient(BaseAPIClient):
                 token_uri="https://oauth2.googleapis.com/token",
                 client_id=self.client_id,
                 client_secret=self.client_secret,
-                scopes=self.SCOPES
+                scopes=self.SCOPES,
+                expiry=expiry
             )
             
             # Check if token is expired and refresh if needed
