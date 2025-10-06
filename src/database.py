@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Database module for managing YouTube channels and tokens.
+Supports both SQLite and MySQL backends.
 """
 
 import sqlite3
@@ -10,6 +11,13 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
+
+# Import MySQL database if available
+try:
+    from .mysql_database import YouTubeMySQLDatabase, get_mysql_database
+    MYSQL_AVAILABLE = True
+except ImportError:
+    MYSQL_AVAILABLE = False
 
 
 @dataclass
@@ -279,3 +287,25 @@ def get_database() -> YouTubeDatabase:
     if _db_instance is None:
         _db_instance = YouTubeDatabase()
     return _db_instance
+
+
+def get_database_by_type(db_type: str = None, config: Dict[str, Any] = None):
+    """
+    Get database instance by type.
+    
+    Args:
+        db_type: 'sqlite' or 'mysql'. If None, uses environment variable DB_TYPE
+        config: Database configuration (for MySQL)
+    
+    Returns:
+        Database instance
+    """
+    if db_type is None:
+        db_type = os.getenv('DB_TYPE', 'sqlite').lower()
+    
+    if db_type == 'mysql':
+        if not MYSQL_AVAILABLE:
+            raise ImportError("MySQL support not available. Install mysql-connector-python")
+        return get_mysql_database(config)
+    else:
+        return get_database()
