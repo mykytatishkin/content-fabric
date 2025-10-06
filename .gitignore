@@ -48,6 +48,7 @@ content/videos/*
 content/processed/*
 content/thumbnails/*
 !content/videos/.gitkeep
+!content/videos/your_video.mp4
 !content/processed/.gitkeep
 !content/thumbnails/.gitkeep
 
@@ -85,6 +86,7 @@ tmp/
 
 # Media files
 *.mp4
+!content/videos/your_video.mp4
 *.mov
 *.avi
 *.mkv
