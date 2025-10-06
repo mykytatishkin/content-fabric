@@ -69,7 +69,14 @@ def setup_mysql_database(config: dict) -> bool:
             statements = [stmt.strip() for stmt in schema_sql.split(';') if stmt.strip()]
             for statement in statements:
                 if statement and not statement.startswith('--'):
-                    cursor.execute(statement)
+                    try:
+                        cursor.execute(statement)
+                    except Error as e:
+                        if e.errno == 1061:  # Duplicate key name
+                            print(f"⚠️ Index already exists, skipping: {statement[:50]}...")
+                            continue
+                        else:
+                            raise e
             
             connection.commit()
             print("✅ Database schema created successfully")
