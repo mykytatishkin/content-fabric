@@ -5,7 +5,7 @@ Replaces YAML-based account configuration with database storage.
 
 import os
 from typing import Dict, Any, List, Optional
-from .database import get_database, YouTubeChannel
+from .database import get_database_by_type, YouTubeChannel
 from .config_loader import ConfigLoader
 from .logger import get_logger
 
@@ -16,7 +16,7 @@ class DatabaseConfigLoader:
     def __init__(self, config_path: str = "config.yaml"):
         self.config_path = config_path
         self.logger = get_logger("database_config_loader")
-        self.db = get_database()
+        self.db = get_database_by_type()
         
         # Load base config from YAML (platforms, schedule, etc.)
         self.yaml_loader = ConfigLoader(config_path)

@@ -12,12 +12,12 @@ from datetime import datetime
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from src.database import get_database, YouTubeChannel
+from src.database import get_database_by_type, YouTubeChannel
 
 
 def cmd_add_channel(args):
     """Add a new YouTube channel."""
-    db = get_database()
+    db = get_database_by_type()
     
     success = db.add_channel(
         name=args.name,
@@ -35,7 +35,7 @@ def cmd_add_channel(args):
 
 def cmd_list_channels(args):
     """List all YouTube channels."""
-    db = get_database()
+    db = get_database_by_type()
     channels = db.get_all_channels(enabled_only=args.enabled_only)
     
     if not channels:
@@ -56,7 +56,7 @@ def cmd_list_channels(args):
 
 def cmd_enable_channel(args):
     """Enable a channel."""
-    db = get_database()
+    db = get_database_by_type()
     if db.enable_channel(args.name):
         print(f"✅ Канал '{args.name}' включен")
     else:
@@ -65,7 +65,7 @@ def cmd_enable_channel(args):
 
 def cmd_disable_channel(args):
     """Disable a channel."""
-    db = get_database()
+    db = get_database_by_type()
     if db.disable_channel(args.name):
         print(f"✅ Канал '{args.name}' отключен")
     else:
@@ -74,7 +74,7 @@ def cmd_disable_channel(args):
 
 def cmd_delete_channel(args):
     """Delete a channel."""
-    db = get_database()
+    db = get_database_by_type()
     if db.delete_channel(args.name):
         print(f"✅ Канал '{args.name}' удален")
     else:
@@ -83,7 +83,7 @@ def cmd_delete_channel(args):
 
 def cmd_show_channel(args):
     """Show detailed channel information."""
-    db = get_database()
+    db = get_database_by_type()
     channel = db.get_channel(args.name)
     
     if not channel:
@@ -102,7 +102,7 @@ def cmd_show_channel(args):
 
 def cmd_export_config(args):
     """Export configuration to config.yaml format."""
-    db = get_database()
+    db = get_database_by_type()
     config = db.export_config()
     
     if args.output:
@@ -115,7 +115,7 @@ def cmd_export_config(args):
 
 def cmd_import_config(args):
     """Import configuration from config.yaml."""
-    db = get_database()
+    db = get_database_by_type()
     
     with open(args.file, 'r', encoding='utf-8') as f:
         config = json.load(f)
@@ -126,7 +126,7 @@ def cmd_import_config(args):
 
 def cmd_check_tokens(args):
     """Check token status for all channels."""
-    db = get_database()
+    db = get_database_by_type()
     channels = db.get_all_channels(enabled_only=True)
     
     print("🔑 Статус токенов:")
@@ -139,7 +139,7 @@ def cmd_check_tokens(args):
 
 def cmd_setup_demo():
     """Setup demo channels."""
-    db = get_database()
+    db = get_database_by_type()
     
     # Add demo channels
     demo_channels = [

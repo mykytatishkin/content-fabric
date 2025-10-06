@@ -512,10 +512,10 @@ class OAuthManager:
         # Также сохранить в базу данных
         if success:
             try:
-                from .database import get_database
+                from .database import get_database_by_type
                 from datetime import datetime, timedelta
                 
-                db = get_database()
+                db = get_database_by_type()
                 if db:
                     expires_at = datetime.now() + timedelta(seconds=expires_in)
                     db.update_channel_tokens(
