@@ -8,6 +8,10 @@ import sys
 import yaml
 import argparse
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add core directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'core'))
@@ -38,6 +42,12 @@ def load_mysql_config(config_file: str = None) -> dict:
 def setup_mysql_database(config: dict) -> bool:
     """Setup MySQL database and tables."""
     print("🔧 Setting up MySQL database...")
+    
+    # Check if password is provided
+    if not config.get('password'):
+        print("❌ MySQL password not provided!")
+        print("Set MYSQL_PASSWORD environment variable or update config file")
+        return False
     
     try:
         # Connect to MySQL (without specifying database first)
