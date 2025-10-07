@@ -301,7 +301,7 @@ def get_database_by_type(db_type: str = None, config: Dict[str, Any] = None):
         Database instance
     """
     if db_type is None:
-        db_type = os.getenv('DB_TYPE', 'sqlite').lower()
+        db_type = os.getenv('DB_TYPE', 'mysql').lower()
     
     if db_type == 'mysql':
         if not MYSQL_AVAILABLE:
