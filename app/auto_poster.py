@@ -58,7 +58,13 @@ class SocialMediaAutoPoster:
                     self.mysql_db = YouTubeMySQLDatabase()
                 
                 # Initialize Task Worker
-                self.task_worker = TaskWorker(self.mysql_db, check_interval=60, max_retries=3)
+                # auto_cleanup=True означає що файли автоматично видаляються після успішної публікації
+                self.task_worker = TaskWorker(
+                    self.mysql_db, 
+                    check_interval=60, 
+                    max_retries=3,
+                    auto_cleanup=True  # Змініть на False щоб зберігати файли
+                )
                 self.logger.info("Task Worker initialized")
             except Exception as e:
                 self.logger.error(f"Failed to initialize Task Worker: {str(e)}")
