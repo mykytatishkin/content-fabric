@@ -176,8 +176,16 @@ class YouTubeDatabase:
                 """, (access_token, refresh_token, 
                      expires_at.isoformat() if expires_at else None, name))
                 conn.commit()
-                return cursor.rowcount > 0
-        except Exception:
+                
+                rows_affected = cursor.rowcount
+                if rows_affected == 0:
+                    print(f"⚠️ Канал '{name}' не найден в базе данных SQLite")
+                    return False
+                
+                print(f"✅ Токены обновлены для канала '{name}' в SQLite")
+                return True
+        except Exception as e:
+            print(f"❌ Ошибка обновления токенов в SQLite для канала '{name}': {e}")
             return False
     
     def enable_channel(self, name: str) -> bool:

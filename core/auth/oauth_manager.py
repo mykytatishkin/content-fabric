@@ -512,19 +512,21 @@ class OAuthManager:
         # Также сохранить в базу данных
         if success:
             try:
-                from .database import get_database_by_type
-                from datetime import datetime, timedelta
+                from core.database import get_database_by_type
                 
                 db = get_database_by_type()
                 if db:
                     expires_at = datetime.now() + timedelta(seconds=expires_in)
-                    db.update_channel_tokens(
+                    db_success = db.update_channel_tokens(
                         name=account_name,
                         access_token=access_token,
                         refresh_token=refresh_token,
                         expires_at=expires_at
                     )
-                    self.logger.info(f"Токен сохранен в базу данных для {account_name}")
+                    if db_success:
+                        self.logger.info(f"Токен сохранен в базу данных для {account_name}")
+                    else:
+                        self.logger.warning(f"Канал '{account_name}' не найден в базе данных. Токен сохранен только в TokenManager")
             except Exception as e:
                 self.logger.error(f"Ошибка сохранения токена в базу данных: {str(e)}")
         

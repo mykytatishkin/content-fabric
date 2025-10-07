@@ -179,15 +179,29 @@ class YouTubeMySQLDatabase:
                             expires_at: Optional[datetime] = None) -> bool:
         """Update channel tokens."""
         try:
+            self._ensure_connection()
+            cursor = self.connection.cursor()
             query = """
                 UPDATE youtube_channels 
                 SET access_token = %s, refresh_token = %s, 
                     token_expires_at = %s, updated_at = NOW()
                 WHERE name = %s
             """
-            self._execute_query(query, (access_token, refresh_token, expires_at, name))
+            cursor.execute(query, (access_token, refresh_token, expires_at, name))
+            self.connection.commit()
+            
+            # Проверить, была ли обновлена хотя бы одна запись
+            rows_affected = cursor.rowcount
+            cursor.close()
+            
+            if rows_affected == 0:
+                print(f"⚠️ Канал '{name}' не найден в базе данных")
+                return False
+            
+            print(f"✅ Токены обновлены для канала '{name}'")
             return True
-        except Error:
+        except Error as e:
+            print(f"❌ Ошибка обновления токенов для канала '{name}': {e}")
             return False
     
     def enable_channel(self, name: str) -> bool:
