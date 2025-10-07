@@ -40,6 +40,9 @@ class TaskWorker:
             'failed': 0,
             'retried': 0
         }
+        
+        # In-memory retry tracking (task_id -> retry_count)
+        self.task_retries = {}
     
     def set_youtube_client(self, client: YouTubeClient):
         """Set YouTube API client."""
@@ -213,6 +216,8 @@ class TaskWorker:
             if result.success:
                 self.logger.info(f"Task #{task.id} completed successfully. Video ID: {result.post_id}")
                 self.db.mark_task_completed(task.id)
+                # Видалити з retry tracking після успіху
+                self.task_retries.pop(task.id, None)
                 
                 # Post comment if specified
                 if task.post_comment and result.post_id:
@@ -223,15 +228,18 @@ class TaskWorker:
                 error_msg = result.error_message or "Unknown error during upload"
                 self.logger.error(f"Task #{task.id} failed: {error_msg}")
                 
-                # Check if we should retry
-                if task.retry_count < self.max_retries:
-                    self.db.increment_task_retry(task.id)
+                # Check if we should retry (відстежуємо в пам'яті)
+                current_retries = self.task_retries.get(task.id, 0)
+                if current_retries < self.max_retries:
+                    self.task_retries[task.id] = current_retries + 1
                     self.db.update_task_status(task.id, 0)  # Reset to pending
-                    self.logger.info(f"Task #{task.id} will be retried (attempt {task.retry_count + 1}/{self.max_retries})")
+                    self.logger.info(f"Task #{task.id} will be retried (attempt {self.task_retries[task.id]}/{self.max_retries})")
                     self.stats['retried'] += 1
                 else:
                     self.db.mark_task_failed(task.id, error_msg)
                     self.logger.error(f"Task #{task.id} exceeded max retries")
+                    # Видалити з tracking після максимальних спроб
+                    self.task_retries.pop(task.id, None)
                 
                 return False
                 
@@ -239,14 +247,17 @@ class TaskWorker:
             error_msg = f"YouTube upload error: {str(e)}"
             self.logger.error(error_msg)
             
-            # Check if we should retry
-            if task.retry_count < self.max_retries:
-                self.db.increment_task_retry(task.id)
+            # Check if we should retry (відстежуємо в пам'яті)
+            current_retries = self.task_retries.get(task.id, 0)
+            if current_retries < self.max_retries:
+                self.task_retries[task.id] = current_retries + 1
                 self.db.update_task_status(task.id, 0)  # Reset to pending
-                self.logger.info(f"Task #{task.id} will be retried (attempt {task.retry_count + 1}/{self.max_retries})")
+                self.logger.info(f"Task #{task.id} will be retried (attempt {self.task_retries[task.id]}/{self.max_retries})")
                 self.stats['retried'] += 1
             else:
                 self.db.mark_task_failed(task.id, error_msg)
+                # Видалити з tracking після максимальних спроб
+                self.task_retries.pop(task.id, None)
             
             return False
     

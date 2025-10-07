@@ -316,7 +316,7 @@ class YouTubeMySQLDatabase:
                 pending_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 0", fetch=True)[0][0]
                 completed_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 1", fetch=True)[0][0]
                 failed_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 2", fetch=True)[0][0]
-            except:
+            except (Error, IndexError, TypeError):
                 task_count = pending_count = completed_count = failed_count = 0
             
             return {
@@ -369,7 +369,7 @@ class YouTubeMySQLDatabase:
         query = """
             SELECT id, account_id, media_type, status, date_add, att_file_path,
                    cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done, error_message, retry_count
+                   date_post, date_done
             FROM tasks WHERE id = %s
         """
         results = self._execute_query(query, (task_id,), fetch=True)
@@ -384,7 +384,7 @@ class YouTubeMySQLDatabase:
         query = """
             SELECT id, account_id, media_type, status, date_add, att_file_path,
                    cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done, error_message, retry_count
+                   date_post, date_done
             FROM tasks 
             WHERE status = 0 AND date_post <= NOW()
             ORDER BY date_post ASC
@@ -402,7 +402,7 @@ class YouTubeMySQLDatabase:
         query = """
             SELECT id, account_id, media_type, status, date_add, att_file_path,
                    cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done, error_message, retry_count
+                   date_post, date_done
             FROM tasks WHERE 1=1
         """
         params = []
@@ -433,10 +433,10 @@ class YouTubeMySQLDatabase:
             
             query = """
                 UPDATE tasks 
-                SET status = %s, error_message = %s, date_done = %s
+                SET status = %s, date_done = %s
                 WHERE id = %s
             """
-            self._execute_query(query, (status, error_message, date_done, task_id))
+            self._execute_query(query, (status, date_done, task_id))
             return True
         except Error as e:
             print(f"❌ Error updating task status: {e}")
@@ -450,18 +450,15 @@ class YouTubeMySQLDatabase:
         """Mark task as completed."""
         return self.update_task_status(task_id, 1)
     
-    def mark_task_failed(self, task_id: int, error_message: str) -> bool:
+    def mark_task_failed(self, task_id: int, error_message: str = None) -> bool:
         """Mark task as failed."""
-        return self.update_task_status(task_id, 2, error_message=error_message)
+        # error_message тільки для логування, не зберігаємо в БД
+        return self.update_task_status(task_id, 2)
     
     def increment_task_retry(self, task_id: int) -> bool:
-        """Increment task retry count."""
-        try:
-            query = "UPDATE tasks SET retry_count = retry_count + 1 WHERE id = %s"
-            self._execute_query(query, (task_id,))
-            return True
-        except Error:
-            return False
+        """Increment task retry count (in memory only, not in DB)."""
+        # retry_count тільки в пам'яті Task Worker
+        return True
     
     def delete_task(self, task_id: int) -> bool:
         """Delete a task."""
@@ -478,7 +475,7 @@ class YouTubeMySQLDatabase:
         if row[11]:  # add_info field
             try:
                 add_info = json.loads(row[11])
-            except:
+            except (json.JSONDecodeError, TypeError):
                 pass
         
         return Task(
@@ -496,8 +493,8 @@ class YouTubeMySQLDatabase:
             add_info=add_info,
             date_post=row[12],
             date_done=row[13],
-            error_message=row[14],
-            retry_count=row[15]
+            error_message=None,  # Не зберігаємо в БД
+            retry_count=0  # Не зберігаємо в БД
         )
     
     def close(self):

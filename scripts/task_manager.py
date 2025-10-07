@@ -175,9 +175,6 @@ class TaskManagerCLI:
             print(f"Scheduled:      {task.date_post}")
             print(f"Created:        {task.date_add}")
             print(f"Completed:      {task.date_done or 'N/A'}")
-            print(f"Retry Count:    {task.retry_count}")
-            if task.error_message:
-                print(f"Error:          {task.error_message}")
             print(f"{'='*60}\n")
             
         except Exception as e:
