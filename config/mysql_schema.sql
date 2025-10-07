@@ -56,8 +56,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     add_info JSON COMMENT 'Additional information in JSON format',
     date_post DATETIME NOT NULL COMMENT 'Scheduled posting time',
     date_done DATETIME COMMENT 'Actual execution time',
-    error_message TEXT COMMENT 'Error message if failed',
-    retry_count INT DEFAULT 0 COMMENT 'Number of retry attempts',
     
     FOREIGN KEY (account_id) REFERENCES youtube_channels(id) ON DELETE CASCADE,
     INDEX idx_account_id (account_id),

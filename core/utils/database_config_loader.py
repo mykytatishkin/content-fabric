@@ -16,7 +16,20 @@ class DatabaseConfigLoader:
     def __init__(self, config_path: str = "config/config.yaml"):
         self.config_path = config_path
         self.logger = get_logger("database_config_loader")
-        self.db = get_database_by_type()
+        
+        # Load MySQL config if available
+        mysql_config = None
+        mysql_config_path = os.path.join(os.path.dirname(config_path), "mysql_config.yaml")
+        if os.path.exists(mysql_config_path):
+            try:
+                import yaml
+                with open(mysql_config_path, 'r') as f:
+                    mysql_config = yaml.safe_load(f)
+                self.logger.info(f"Loaded MySQL config from {mysql_config_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to load MySQL config: {e}")
+        
+        self.db = get_database_by_type(config=mysql_config)
         
         # Load base config from YAML (platforms, schedule, etc.)
         self.yaml_loader = ConfigLoader(config_path)
