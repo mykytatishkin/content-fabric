@@ -38,6 +38,14 @@ LOG_LEVEL=INFO
 CONTENT_FOLDER=./content
 OUTPUT_FOLDER=./output
 
+# Database Configuration (MySQL)
+DB_TYPE=mysql
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=content_fabric
+MYSQL_USER=content_fabric_user
+MYSQL_PASSWORD=your_mysql_password_here
+
 # =================================================================
 # ИНСТРУКЦИИ ПО НАСТРОЙКЕ:
 # =================================================================
