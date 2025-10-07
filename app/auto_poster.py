@@ -15,6 +15,7 @@ import argparse
 from core.utils.logger import get_logger
 # from core.utils.content_processor import ContentProcessor  # отключено для упрощения
 from app.scheduler import PostingScheduler, ScheduledPost
+from app.task_worker import TaskWorker
 from core.utils.notifications import NotificationManager
 from core.auth.token_manager import TokenManager
 from core.auth.oauth_manager import OAuthManager
@@ -23,6 +24,7 @@ from core.utils.database_config_loader import DatabaseConfigLoader
 from core.api_clients.instagram_client import InstagramClient
 from core.api_clients.tiktok_client import TikTokClient
 from core.api_clients.youtube_client import YouTubeClient
+from core.database.mysql_db import YouTubeMySQLDatabase
 
 
 class SocialMediaAutoPoster:
@@ -41,8 +43,32 @@ class SocialMediaAutoPoster:
         self.token_manager = TokenManager(config_path)
         self.oauth_manager = OAuthManager(config_path)
         
+        # Initialize MySQL database for tasks (if using database)
+        self.mysql_db = None
+        self.task_worker = None
+        if self.use_database:
+            try:
+                mysql_config_path = Path("config/mysql_config.yaml")
+                if mysql_config_path.exists():
+                    import yaml
+                    with open(mysql_config_path, 'r') as f:
+                        mysql_config = yaml.safe_load(f)
+                    self.mysql_db = YouTubeMySQLDatabase(mysql_config)
+                else:
+                    self.mysql_db = YouTubeMySQLDatabase()
+                
+                # Initialize Task Worker
+                self.task_worker = TaskWorker(self.mysql_db, check_interval=60, max_retries=3)
+                self.logger.info("Task Worker initialized")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Task Worker: {str(e)}")
+        
         # Initialize API clients
         self.api_clients = self._initialize_api_clients()
+        
+        # Set YouTube client for task worker
+        if self.task_worker and 'youtube' in self.api_clients:
+            self.task_worker.set_youtube_client(self.api_clients['youtube'])
         
         # Set up scheduler callback
         self.scheduler.set_posting_callback(self._posting_callback)
@@ -393,6 +419,26 @@ class SocialMediaAutoPoster:
         self.scheduler.stop_scheduler()
         self.logger.info("Auto-poster scheduler stopped")
     
+    def start_task_worker(self):
+        """Start the task worker for processing database tasks."""
+        if self.task_worker:
+            self.task_worker.start()
+            self.logger.info("Task worker started")
+        else:
+            self.logger.warning("Task worker not initialized")
+    
+    def stop_task_worker(self):
+        """Stop the task worker."""
+        if self.task_worker:
+            self.task_worker.stop()
+            self.logger.info("Task worker stopped")
+    
+    def get_task_worker_stats(self) -> Dict[str, Any]:
+        """Get task worker statistics."""
+        if self.task_worker:
+            return self.task_worker.get_stats()
+        return {'error': 'Task worker not initialized'}
+    
     def validate_accounts(self) -> Dict[str, List[Dict[str, Any]]]:
         """Validate all configured accounts."""
         validation_results = {}
@@ -434,7 +480,7 @@ class SocialMediaAutoPoster:
     
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status."""
-        return {
+        status = {
             'api_clients': {platform: client.test_connection() for platform, client in self.api_clients.items()},
             'scheduler_running': self.scheduler.running,
             'notification_status': self.notification_manager.get_notification_status(),
@@ -443,6 +489,19 @@ class SocialMediaAutoPoster:
             'token_status': self.token_manager.get_token_status(),
             'account_status': self.oauth_manager.get_account_status()
         }
+        
+        # Add task worker status if available
+        if self.task_worker:
+            status['task_worker'] = self.get_task_worker_stats()
+        
+        # Add database stats if available
+        if self.mysql_db:
+            try:
+                status['database_stats'] = self.mysql_db.get_database_stats()
+            except:
+                pass
+        
+        return status
     
     def authorize_account(self, platform: str, account_name: str, 
                          custom_scopes: Optional[list] = None, 
