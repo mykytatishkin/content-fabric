@@ -31,8 +31,8 @@ class SocialMediaAutoPoster:
     def __init__(self, config_path: str = "config/config.yaml", use_database: bool = True):
         self.config_path = config_path
         self.use_database = use_database
-        self.config = self._load_config()
         self.logger = get_logger("auto_poster")
+        self.config = self._load_config()
         
         # Initialize components (content_processor отключен для упрощения)
         # self.content_processor = ContentProcessor(config_path)
