@@ -8,10 +8,16 @@ import json
 import sys
 from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
+
+# Загрузить переменные окружения из .env файла
+load_dotenv()
 
 # Добавить путь к модулям
-sys.path.append(str(Path(__file__).parent.parent / "app"))
-sys.path.append(str(Path(__file__).parent.parent / "core"))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "app"))
+sys.path.insert(0, str(project_root / "core"))
 
 from app.auto_poster import SocialMediaAutoPoster
 from core.utils.logger import get_logger
