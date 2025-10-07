@@ -29,6 +29,27 @@ class YouTubeChannel:
     updated_at: Optional[datetime] = None
 
 
+@dataclass
+class Task:
+    """Task data structure for scheduled posting."""
+    id: int
+    account_id: int
+    media_type: str
+    status: int  # 0=pending, 1=completed, 2=failed, 3=processing
+    att_file_path: str
+    title: str
+    date_post: datetime
+    date_add: Optional[datetime] = None
+    cover: Optional[str] = None
+    description: Optional[str] = None
+    keywords: Optional[str] = None
+    post_comment: Optional[str] = None
+    add_info: Optional[Dict[str, Any]] = None
+    date_done: Optional[datetime] = None
+    error_message: Optional[str] = None
+    retry_count: int = 0
+
+
 class YouTubeMySQLDatabase:
     """MySQL Database manager for YouTube channels and tokens."""
     
@@ -303,16 +324,192 @@ class YouTubeMySQLDatabase:
             # Get expired tokens count
             expired_count = len(self.get_expired_tokens())
             
+            # Get task stats
+            try:
+                task_count = self._execute_query("SELECT COUNT(*) FROM tasks", fetch=True)[0][0]
+                pending_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 0", fetch=True)[0][0]
+                completed_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 1", fetch=True)[0][0]
+                failed_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 2", fetch=True)[0][0]
+            except (Error, IndexError, TypeError):
+                task_count = pending_count = completed_count = failed_count = 0
+            
             return {
                 'total_channels': channel_count,
                 'enabled_channels': enabled_count,
                 'disabled_channels': channel_count - enabled_count,
                 'total_tokens': token_count,
-                'expired_tokens': expired_count
+                'expired_tokens': expired_count,
+                'total_tasks': task_count,
+                'pending_tasks': pending_count,
+                'completed_tasks': completed_count,
+                'failed_tasks': failed_count
             }
         except Error as e:
             print(f"❌ Error getting database stats: {e}")
             return {}
+    
+    # ==================== Task Management Methods ====================
+    
+    def create_task(self, account_id: int, att_file_path: str, title: str,
+                   date_post: datetime, media_type: str = 'youtube',
+                   cover: Optional[str] = None, description: Optional[str] = None,
+                   keywords: Optional[str] = None, post_comment: Optional[str] = None,
+                   add_info: Optional[Dict[str, Any]] = None) -> Optional[int]:
+        """Create a new task."""
+        try:
+            add_info_json = json.dumps(add_info) if add_info else None
+            
+            query = """
+                INSERT INTO tasks 
+                (account_id, media_type, att_file_path, cover, title, description, 
+                 keywords, post_comment, add_info, date_post)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            self._execute_query(query, (
+                account_id, media_type, att_file_path, cover, title, 
+                description, keywords, post_comment, add_info_json, date_post
+            ))
+            
+            # Get the last inserted ID
+            result = self._execute_query("SELECT LAST_INSERT_ID()", fetch=True)
+            return result[0][0] if result else None
+            
+        except Error as e:
+            print(f"❌ Error creating task: {e}")
+            return None
+    
+    def get_task(self, task_id: int) -> Optional[Task]:
+        """Get task by ID."""
+        query = """
+            SELECT id, account_id, media_type, status, date_add, att_file_path,
+                   cover, title, description, keywords, post_comment, add_info,
+                   date_post, date_done
+            FROM tasks WHERE id = %s
+        """
+        results = self._execute_query(query, (task_id,), fetch=True)
+        
+        if results:
+            row = results[0]
+            return self._row_to_task(row)
+        return None
+    
+    def get_pending_tasks(self, limit: Optional[int] = None) -> List[Task]:
+        """Get all pending tasks that are ready to be executed."""
+        query = """
+            SELECT id, account_id, media_type, status, date_add, att_file_path,
+                   cover, title, description, keywords, post_comment, add_info,
+                   date_post, date_done
+            FROM tasks 
+            WHERE status = 0 AND date_post <= NOW()
+            ORDER BY date_post ASC
+        """
+        if limit:
+            query += f" LIMIT {limit}"
+        
+        results = self._execute_query(query, fetch=True)
+        return [self._row_to_task(row) for row in results]
+    
+    def get_all_tasks(self, status: Optional[int] = None, 
+                     account_id: Optional[int] = None,
+                     limit: Optional[int] = None) -> List[Task]:
+        """Get all tasks with optional filtering."""
+        query = """
+            SELECT id, account_id, media_type, status, date_add, att_file_path,
+                   cover, title, description, keywords, post_comment, add_info,
+                   date_post, date_done
+            FROM tasks WHERE 1=1
+        """
+        params = []
+        
+        if status is not None:
+            query += " AND status = %s"
+            params.append(status)
+        
+        if account_id is not None:
+            query += " AND account_id = %s"
+            params.append(account_id)
+        
+        query += " ORDER BY date_post DESC"
+        
+        if limit:
+            query += f" LIMIT {limit}"
+        
+        results = self._execute_query(query, tuple(params) if params else None, fetch=True)
+        return [self._row_to_task(row) for row in results]
+    
+    def update_task_status(self, task_id: int, status: int, 
+                          error_message: Optional[str] = None,
+                          date_done: Optional[datetime] = None) -> bool:
+        """Update task status."""
+        try:
+            if date_done is None and status == 1:  # Completed
+                date_done = datetime.now()
+            
+            query = """
+                UPDATE tasks 
+                SET status = %s, date_done = %s
+                WHERE id = %s
+            """
+            self._execute_query(query, (status, date_done, task_id))
+            return True
+        except Error as e:
+            print(f"❌ Error updating task status: {e}")
+            return False
+    
+    def mark_task_processing(self, task_id: int) -> bool:
+        """Mark task as processing."""
+        return self.update_task_status(task_id, 3)
+    
+    def mark_task_completed(self, task_id: int) -> bool:
+        """Mark task as completed."""
+        return self.update_task_status(task_id, 1)
+    
+    def mark_task_failed(self, task_id: int, error_message: str = None) -> bool:
+        """Mark task as failed."""
+        # error_message тільки для логування, не зберігаємо в БД
+        return self.update_task_status(task_id, 2)
+    
+    def increment_task_retry(self, task_id: int) -> bool:
+        """Increment task retry count (in memory only, not in DB)."""
+        # retry_count тільки в пам'яті Task Worker
+        return True
+    
+    def delete_task(self, task_id: int) -> bool:
+        """Delete a task."""
+        try:
+            query = "DELETE FROM tasks WHERE id = %s"
+            self._execute_query(query, (task_id,))
+            return True
+        except Error:
+            return False
+    
+    def _row_to_task(self, row: tuple) -> Task:
+        """Convert database row to Task object."""
+        add_info = None
+        if row[11]:  # add_info field
+            try:
+                add_info = json.loads(row[11])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        return Task(
+            id=row[0],
+            account_id=row[1],
+            media_type=row[2],
+            status=row[3],
+            date_add=row[4],
+            att_file_path=row[5],
+            cover=row[6],
+            title=row[7],
+            description=row[8],
+            keywords=row[9],
+            post_comment=row[10],
+            add_info=add_info,
+            date_post=row[12],
+            date_done=row[13],
+            error_message=None,  # Не зберігаємо в БД
+            retry_count=0  # Не зберігаємо в БД
+        )
     
     def close(self):
         """Close database connection."""

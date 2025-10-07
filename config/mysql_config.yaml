@@ -1,20 +1,20 @@
 # MySQL Configuration for Content Fabric
-# Copy this file and update with your MySQL settings
+# Direct configuration format (without 'mysql:' wrapper)
 
-mysql:
-  host: 46.21.250.43
-  port: 3306
-  database: content_fabric
-  user: content_fabric_user
-  password: mysqlpassword
-  charset: utf8mb4
-  collation: utf8mb4_unicode_ci
+host: 46.21.250.43
+port: 3306
+database: content_fabric
+user: content_fabric_user
+password: mysqlpassword
+charset: utf8mb4
+collation: utf8mb4_unicode_ci
+autocommit: true
 
 # Environment variables (alternative to config file)
 # Set these in your .env file or environment:
 # DB_TYPE=mysql
-# MYSQL_HOST=localhost
+# MYSQL_HOST=46.21.250.43
 # MYSQL_PORT=3306
 # MYSQL_DATABASE=content_fabric
 # MYSQL_USER=content_fabric_user
-# MYSQL_PASSWORD=your_secure_password_here
+# MYSQL_PASSWORD=mysqlpassword

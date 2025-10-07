@@ -15,6 +15,41 @@ A comprehensive Python tool for automatically posting content to Instagram, TikT
 - ✅ **Single OAuth Setup** - One credentials.json file for all channels
 - ✅ **Token Management** - Automatic token refresh and expiration handling
 
+## 🎯 Task Management System (NEW!)
+
+**Автоматична система обробки задач з бази даних MySQL**
+
+- 📋 **Database-Driven Tasks** - Задачі зберігаються в MySQL і автоматично виконуються
+- ⏰ **Scheduled Posting** - Публікація за розкладом (дата і час)
+- 🔄 **Auto-Retry** - Автоматичні повтори при помилках
+- 🛠️ **CLI Management** - Повний CLI для управління задачами
+- 📊 **Status Tracking** - Відстеження статусу кожної задачі
+- 🎬 **Video Publishing** - Публікація відео з назвою, описом, хештегами
+- 💬 **Post Comments** - Автоматичне додавання коментарів після публікації
+- 📈 **Statistics** - Детальна статистика виконання
+
+### Quick Start
+
+```bash
+# Створити задачу
+python3 run_task_manager.py create \
+    --account "Channel Name" \
+    --video "/path/to/video.mp4" \
+    --title "Video Title" \
+    --description "Description" \
+    --keywords "tag1,tag2,tag3" \
+    --schedule "2024-12-25 18:00:00"
+
+# Переглянути задачі
+python3 run_task_manager.py list --status pending
+
+# Статистика
+python3 run_task_manager.py stats
+```
+
+📖 **Документація**: [Task Management Guide](docs/guides/TASK_MANAGEMENT.md)  
+⚡ **Quick Start**: [Task Quick Start](docs/guides/TASK_QUICK_START.md)
+
 ## Features
 
 - **Multi-Platform Support**: Post to Instagram Reels, TikTok, and YouTube Shorts

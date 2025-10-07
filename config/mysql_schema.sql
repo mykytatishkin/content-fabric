@@ -40,6 +40,31 @@ CREATE TABLE IF NOT EXISTS youtube_tokens (
     INDEX idx_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Create tasks table for scheduled posting
+CREATE TABLE IF NOT EXISTS tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    account_id INT NOT NULL,
+    media_type VARCHAR(50) NOT NULL DEFAULT 'youtube',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '0=pending, 1=completed, 2=failed, 3=processing',
+    date_add TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    att_file_path TEXT NOT NULL COMMENT 'Path to video file',
+    cover TEXT COMMENT 'Path to thumbnail/cover image',
+    title VARCHAR(500) NOT NULL COMMENT 'Video title',
+    description TEXT COMMENT 'Video description',
+    keywords TEXT COMMENT 'Keywords/hashtags',
+    post_comment TEXT COMMENT 'Comment to post after upload',
+    add_info JSON COMMENT 'Additional information in JSON format',
+    date_post DATETIME NOT NULL COMMENT 'Scheduled posting time',
+    date_done DATETIME COMMENT 'Actual execution time',
+    
+    FOREIGN KEY (account_id) REFERENCES youtube_channels(id) ON DELETE CASCADE,
+    INDEX idx_account_id (account_id),
+    INDEX idx_media_type (media_type),
+    INDEX idx_status (status),
+    INDEX idx_date_post (date_post),
+    INDEX idx_status_date_post (status, date_post)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Create indexes for better performance
 CREATE INDEX idx_youtube_channels_enabled_created ON youtube_channels(enabled, created_at);
 CREATE INDEX idx_youtube_tokens_channel_expires ON youtube_tokens(channel_name, expires_at);
@@ -72,6 +97,29 @@ SELECT
 FROM youtube_channels c
 WHERE c.enabled = TRUE 
   AND (c.token_expires_at IS NULL OR c.token_expires_at < NOW());
+
+CREATE VIEW pending_tasks AS
+SELECT 
+    t.id,
+    t.account_id,
+    c.name as account_name,
+    t.media_type,
+    t.title,
+    t.date_post,
+    t.status,
+    CASE 
+        WHEN t.status = 0 THEN 'Pending'
+        WHEN t.status = 1 THEN 'Completed'
+        WHEN t.status = 2 THEN 'Failed'
+        WHEN t.status = 3 THEN 'Processing'
+        ELSE 'Unknown'
+    END as status_text,
+    t.date_add,
+    t.retry_count
+FROM tasks t
+LEFT JOIN youtube_channels c ON t.account_id = c.id
+WHERE t.status = 0 AND t.date_post <= NOW()
+ORDER BY t.date_post ASC;
 
 -- Grant permissions to application user (replace with your actual user)
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON content_fabric.* TO 'content_fabric_user'@'%';
