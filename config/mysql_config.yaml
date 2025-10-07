@@ -2,7 +2,7 @@
 # Copy this file and update with your MySQL settings
 
 mysql:
-  host: localhost
+  host: 46.21.250.43
   port: 3306
   database: content_fabric
   user: content_fabric_user
