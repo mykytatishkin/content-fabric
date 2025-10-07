@@ -16,7 +16,7 @@ from core.utils.logger import get_logger
 class TaskWorker:
     """Worker that processes scheduled tasks from database."""
     
-    def __init__(self, db: YouTubeMySQLDatabase, check_interval: int = 60, max_retries: int = 3):
+    def __init__(self, db: YouTubeMySQLDatabase, check_interval: int = 60, max_retries: int = 3, auto_cleanup: bool = True):
         """
         Initialize Task Worker.
         
@@ -24,10 +24,12 @@ class TaskWorker:
             db: MySQL database instance
             check_interval: Interval in seconds to check for new tasks (default: 60)
             max_retries: Maximum number of retries for failed tasks (default: 3)
+            auto_cleanup: Automatically delete files after successful upload (default: True)
         """
         self.db = db
         self.check_interval = check_interval
         self.max_retries = max_retries
+        self.auto_cleanup = auto_cleanup
         self.logger = get_logger("task_worker")
         self.running = False
         self.worker_thread: Optional[threading.Thread] = None
@@ -223,6 +225,12 @@ class TaskWorker:
                 if task.post_comment and result.post_id:
                     self._post_comment(result.post_id, task.post_comment, account_info)
                 
+                # Видалити файли після успішної публікації (якщо увімкнено)
+                if self.auto_cleanup:
+                    self._cleanup_files(task)
+                else:
+                    self.logger.info(f"Auto-cleanup disabled, files kept: {task.att_file_path}")
+                
                 return True
             else:
                 error_msg = result.error_message or "Unknown error during upload"
@@ -271,6 +279,47 @@ class TaskWorker:
         except Exception as e:
             self.logger.error(f"Failed to post comment: {str(e)}")
     
+    def _cleanup_files(self, task: Task):
+        """Delete video and cover files after successful upload."""
+        import os
+        
+        deleted_files = []
+        failed_files = []
+        
+        # Delete video file
+        if task.att_file_path:
+            try:
+                if os.path.exists(task.att_file_path):
+                    file_size = os.path.getsize(task.att_file_path)
+                    os.remove(task.att_file_path)
+                    deleted_files.append(f"Video: {task.att_file_path} ({file_size / (1024*1024):.2f} MB)")
+                    self.logger.info(f"🗑️  Deleted video file: {task.att_file_path}")
+                else:
+                    self.logger.warning(f"Video file not found: {task.att_file_path}")
+            except Exception as e:
+                failed_files.append(f"Video: {task.att_file_path} - {str(e)}")
+                self.logger.error(f"Failed to delete video file: {task.att_file_path} - {str(e)}")
+        
+        # Delete cover file
+        if task.cover:
+            try:
+                if os.path.exists(task.cover):
+                    file_size = os.path.getsize(task.cover)
+                    os.remove(task.cover)
+                    deleted_files.append(f"Cover: {task.cover} ({file_size / 1024:.2f} KB)")
+                    self.logger.info(f"🗑️  Deleted cover file: {task.cover}")
+                else:
+                    self.logger.warning(f"Cover file not found: {task.cover}")
+            except Exception as e:
+                failed_files.append(f"Cover: {task.cover} - {str(e)}")
+                self.logger.error(f"Failed to delete cover file: {task.cover} - {str(e)}")
+        
+        # Summary log
+        if deleted_files:
+            self.logger.info(f"✅ Cleanup complete for task #{task.id}. Deleted: {', '.join(deleted_files)}")
+        if failed_files:
+            self.logger.warning(f"⚠️  Some files could not be deleted: {', '.join(failed_files)}")
+    
     def _get_channel_by_id(self, channel_id: int):
         """Get channel from database by ID."""
         try:
@@ -313,6 +362,7 @@ class TaskWorker:
             'running': self.running,
             'check_interval': self.check_interval,
             'max_retries': self.max_retries,
+            'auto_cleanup': self.auto_cleanup,
             'statistics': self.stats.copy()
         }
     
