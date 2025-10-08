@@ -99,6 +99,29 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         help='List available Silero Russian voices'
     )
     parser.add_argument(
+        '--preserve-background',
+        action='store_true',
+        help='Separate voice from background, process only voice, then mix back (keeps music/effects)'
+    )
+    parser.add_argument(
+        '--separation-model',
+        type=str,
+        default='UVR-MDX-NET-Inst_HQ_3',
+        help='Model for voice/background separation (default: UVR-MDX-NET-Inst_HQ_3)'
+    )
+    parser.add_argument(
+        '--vocals-gain',
+        type=float,
+        default=0.0,
+        help='Volume adjustment for processed vocals in dB (default: 0)'
+    )
+    parser.add_argument(
+        '--background-gain',
+        type=float,
+        default=-3.0,
+        help='Volume adjustment for background in dB (default: -3)'
+    )
+    parser.add_argument(
         '--no-preserve-quality',
         action='store_true',
         help='Disable quality preservation (faster but lower quality)'
@@ -201,20 +224,59 @@ def process_file(changer: VoiceChanger, args) -> dict:
         print(f"Pitch:  {args.pitch} semitones")
     if args.formant:
         print(f"Formant: {args.formant}x")
+    if args.preserve_background:
+        print(f"Background: Will be preserved ✨")
+        print(f"Sep. model: {args.separation_model}")
     print(f"{'='*60}\n")
     
     print("⏳ Processing...")
     
-    result = changer.process_file(
-        input_file=args.input,
-        output_file=args.output,
-        conversion_type=args.type,
-        pitch_shift=args.pitch,
-        formant_shift=args.formant,
-        preserve_quality=not args.no_preserve_quality,
-        voice_model=args.voice_model,
-        method=args.method
-    )
+    # Check if we need to preserve background
+    if args.preserve_background:
+        from core.utils.audio_background_mixer import AudioBackgroundMixer
+        
+        mixer = AudioBackgroundMixer(model_name=args.separation_model)
+        
+        # Create voice processor function
+        def voice_processor(vocals_file, output_vocals_file):
+            changer.process_file(
+                input_file=vocals_file,
+                output_file=output_vocals_file,
+                conversion_type=args.type,
+                pitch_shift=args.pitch,
+                formant_shift=args.formant,
+                preserve_quality=not args.no_preserve_quality,
+                voice_model=args.voice_model,
+                method=args.method
+            )
+        
+        # Process with background preservation
+        mixer.process_with_background_preservation(
+            input_file=args.input,
+            voice_processor_func=voice_processor,
+            output_file=args.output,
+            vocals_gain=args.vocals_gain,
+            background_gain=args.background_gain
+        )
+        
+        result = {
+            'output_file': args.output,
+            'method': f'{args.method} + background preservation',
+            'voice': args.voice_model,
+            'separation_model': args.separation_model
+        }
+    else:
+        # Normal processing without background preservation
+        result = changer.process_file(
+            input_file=args.input,
+            output_file=args.output,
+            conversion_type=args.type,
+            pitch_shift=args.pitch,
+            formant_shift=args.formant,
+            preserve_quality=not args.no_preserve_quality,
+            voice_model=args.voice_model,
+            method=args.method
+        )
     
     return result
 
