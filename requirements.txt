@@ -15,7 +15,7 @@ pyyaml>=6.0.0
 pytz>=2023.3
 mysql-connector-python>=8.0.0
 
-# Voice changing dependencies (RVC-based)
+# Voice changing dependencies (so-vits-svc)
 torch>=2.0.0
 torchaudio>=2.0.0
 soundfile>=0.12.1
@@ -28,6 +28,17 @@ ffmpeg-python>=0.2.0
 resampy>=0.4.2
 pyworld>=0.3.2
 torchcrepe>=0.0.20
+
+# so-vits-svc for realistic voice conversion
+onnxruntime>=1.15.0
 fairseq>=0.12.2
-gradio-client>=0.5.0
 huggingface-hub>=0.16.0
+pydub>=0.25.1
+gradio>=3.40.0
+
+# Silero TTS for natural Russian voice
+omegaconf>=2.3.0
+
+# Whisper for speech-to-text transcription
+openai-whisper>=20231117
+tiktoken>=0.5.0

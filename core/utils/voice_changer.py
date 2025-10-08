@@ -47,6 +47,8 @@ except ImportError:
 from core.utils.logger import get_logger
 from core.utils.rvc_model_manager import RVCModelManager
 from core.utils.rvc_inference import RVCInference
+from core.utils.sovits_converter import SoVITSConverter
+from core.utils.silero_voice_changer import SileroVoiceChanger
 
 logger = get_logger(__name__)
 
@@ -107,11 +109,13 @@ class VoiceChanger:
         else:
             self.device = device
         
-        # Initialize RVC components
+        # Initialize voice conversion components
         self.model_manager = RVCModelManager()
         self.rvc_inference = RVCInference(self.model_manager, self.device)
+        self.sovits_converter = SoVITSConverter(self.device)
+        self.silero_changer = SileroVoiceChanger(self.device)
         
-        logger.info(f"RVC Voice Changer initialized")
+        logger.info(f"Voice Changer initialized with RVC + So-VITS-SVC + Silero")
         logger.info(f"Device: {self.device}")
         logger.info(f"Temp dir: {self.temp_dir}")
     
@@ -123,7 +127,8 @@ class VoiceChanger:
         pitch_shift: Optional[int] = None,
         formant_shift: Optional[float] = None,
         preserve_quality: bool = True,
-        voice_model: Optional[str] = None
+        voice_model: Optional[str] = None,
+        method: str = 'sovits'
     ) -> Dict[str, any]:
         """
         Process audio or video file with AI voice conversion
@@ -156,6 +161,10 @@ class VoiceChanger:
         is_video = file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv']
         
         try:
+            # Use Silero for Russian (if specified)
+            if method == 'silero':
+                return self._process_with_silero(input_file, output_file, voice_model or 'kseniya')
+            
             if is_video:
                 result = self._process_video(
                     input_file, output_file, pitch_shift, formant_shift, preserve_quality, voice_model
@@ -301,14 +310,18 @@ class VoiceChanger:
         
         logger.info(f"Loaded audio: {duration:.2f}s, {sr}Hz")
         
-        # Use RVC model if specified
+        # Use voice model if specified (So-VITS-SVC for better quality)
         if voice_model:
-            logger.info(f"Using RVC model: {voice_model}")
-            audio_converted, sr = self.rvc_inference.convert_voice(
-                audio, sr, voice_model, f0_method='harvest', pitch_shift=pitch_shift
+            logger.info(f"Using So-VITS-SVC with model: {voice_model}")
+            audio_converted, sr = self.sovits_converter.convert_voice(
+                audio, sr, 
+                target_voice=voice_model,
+                f0_method='harvest',
+                pitch_shift=pitch_shift,
+                cluster_ratio=0.5  # Balance between source and target
             )
             sf.write(output_file, audio_converted, sr)
-            logger.info(f"RVC model conversion completed: {output_file}")
+            logger.info(f"So-VITS-SVC conversion completed: {output_file}")
             return duration
         
         # Extract F0 (pitch), spectral envelope, and aperiodicity using WORLD
@@ -443,9 +456,31 @@ class VoiceChanger:
         logger.info(f"RVC batch processing completed: {results['successful']} successful, {results['failed']} failed")
         return results
     
+    def _process_with_silero(
+        self,
+        input_file: str,
+        output_file: str,
+        voice: str
+    ) -> Dict[str, any]:
+        """Process with Silero TTS (for Russian)"""
+        logger.info(f"Processing with Silero TTS (Russian)")
+        
+        result = self.silero_changer.convert_voice(
+            input_file,
+            output_file,
+            target_voice=voice,
+            sample_rate=48000
+        )
+        
+        return result
+    
     def get_available_presets(self) -> Dict[str, Dict]:
         """Get available RVC voice conversion presets"""
         return self.VOICE_PRESETS.copy()
+    
+    def get_silero_voices(self) -> Dict[str, Dict]:
+        """Get available Silero Russian voices"""
+        return self.silero_changer.get_available_voices()
 
 
 # Convenience function

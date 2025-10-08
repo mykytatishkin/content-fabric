@@ -88,6 +88,17 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         help='List available RVC voice models'
     )
     parser.add_argument(
+        '--method',
+        choices=['sovits', 'silero'],
+        default='sovits',
+        help='Conversion method: sovits (voice-to-voice) or silero (TTS for Russian)'
+    )
+    parser.add_argument(
+        '--list-silero-voices',
+        action='store_true',
+        help='List available Silero Russian voices'
+    )
+    parser.add_argument(
         '--no-preserve-quality',
         action='store_true',
         help='Disable quality preservation (faster but lower quality)'
@@ -136,6 +147,11 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
     # List models
     if args.list_models:
         print_models()
+        return 0
+    
+    # List Silero voices
+    if args.list_silero_voices:
+        print_silero_voices()
         return 0
     
     # Validate required arguments
@@ -196,7 +212,8 @@ def process_file(changer: VoiceChanger, args) -> dict:
         pitch_shift=args.pitch,
         formant_shift=args.formant,
         preserve_quality=not args.no_preserve_quality,
-        voice_model=args.voice_model
+        voice_model=args.voice_model,
+        method=args.method
     )
     
     return result
@@ -330,6 +347,26 @@ def print_models():
     print(f"{'='*60}")
     print("ℹ️  Use --voice-model MODEL_ID to use a specific model")
     print("   Models download automatically on first use (~300-500 MB each)")
+    print(f"{'='*60}\n")
+
+
+def print_silero_voices():
+    """Print available Silero Russian voices"""
+    changer = VoiceChanger()
+    voices = changer.get_silero_voices()
+    
+    print("\n🎙️  Silero Russian Voices (Natural TTS)")
+    print(f"{'='*60}\n")
+    
+    for voice_id, info in voices.items():
+        print(f"  🇷🇺 {voice_id}")
+        print(f"     {info['description']}")
+        print(f"     Gender: {info['gender']}")
+        print()
+    
+    print(f"{'='*60}")
+    print("ℹ️  Use --method silero --voice-model VOICE_ID")
+    print("   Example: python3 run_voice_changer.py --method silero --voice-model kseniya input.mp3 output.mp3")
     print(f"{'='*60}\n")
 
 
