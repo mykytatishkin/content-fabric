@@ -7,7 +7,7 @@ import os
 import torch
 import tempfile
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 import numpy as np
 
 try:
@@ -16,11 +16,17 @@ except ImportError:
     sf = None
 
 try:
+    import librosa
+except ImportError:
+    librosa = None
+
+try:
     import whisper
 except ImportError:
     whisper = None
 
 from core.utils.logger import get_logger
+from core.utils.prosody_transfer import ProsodyTransfer
 
 logger = get_logger(__name__)
 
@@ -56,6 +62,7 @@ class SileroVoiceChanger:
         
         self.silero_model = None
         self.whisper_model = None
+        self.prosody_transfer = ProsodyTransfer()
         
         logger.info(f"Silero Voice Changer initialized on {self.device}")
     
@@ -104,7 +111,8 @@ class SileroVoiceChanger:
         input_file: str,
         output_file: str,
         target_voice: str = 'kseniya',
-        sample_rate: int = 48000
+        sample_rate: int = 48000,
+        preserve_prosody: bool = True
     ) -> dict:
         """
         Convert voice using Silero TTS
@@ -125,23 +133,48 @@ class SileroVoiceChanger:
         logger.info(f"  Input: {input_file}")
         logger.info(f"  Output: {output_file}")
         logger.info(f"  Target voice: {target_voice}")
+        logger.info(f"  Preserve prosody: {preserve_prosody}")
+        
+        # Load original audio for prosody extraction
+        if preserve_prosody:
+            logger.info("Loading original audio for prosody extraction...")
+            original_audio, original_sr = librosa.load(input_file, sr=None, mono=True)
         
         # Step 1: Transcribe audio to text
         logger.info("Step 1: Transcribing audio...")
-        transcript = self._transcribe(input_file)
+        result = self._transcribe_with_timestamps(input_file)
+        transcript = result['text']
+        word_timestamps = result.get('segments', [])
         
         if not transcript:
             raise ValueError("Failed to transcribe audio")
         
         logger.info(f"Transcribed text: {transcript[:100]}...")
         
-        # Step 2: Synthesize with Silero
-        logger.info(f"Step 2: Synthesizing with Silero voice '{target_voice}'...")
+        # Step 2: Extract prosody from original
+        source_prosody = None
+        if preserve_prosody:
+            logger.info("Step 2: Extracting prosody from original...")
+            source_prosody = self.prosody_transfer.extract_prosody(
+                original_audio, original_sr, word_timestamps
+            )
+        
+        # Step 3: Synthesize with Silero
+        logger.info(f"Step 3: Synthesizing with Silero voice '{target_voice}'...")
         audio_synthesized = self._synthesize(transcript, target_voice, sample_rate)
         
-        # Step 3: Save result
-        logger.info("Step 3: Saving result...")
-        sf.write(output_file, audio_synthesized, sample_rate)
+        # Step 4: Apply prosody transfer
+        if preserve_prosody and source_prosody:
+            logger.info("Step 4: Applying prosody transfer...")
+            audio_final = self.prosody_transfer.apply_prosody(
+                audio_synthesized, sample_rate, source_prosody
+            )
+        else:
+            audio_final = audio_synthesized
+        
+        # Step 5: Save result
+        logger.info("Step 5: Saving result...")
+        sf.write(output_file, audio_final, sample_rate)
         
         logger.info(f"Silero conversion completed: {output_file}")
         
@@ -153,28 +186,38 @@ class SileroVoiceChanger:
             'method': 'Silero TTS'
         }
     
-    def _transcribe(self, audio_file: str) -> str:
-        """Transcribe audio using Whisper"""
+    def _transcribe_with_timestamps(self, audio_file: str) -> Dict:
+        """Transcribe audio using Whisper with word-level timestamps"""
         
         if self.whisper_model is None:
             logger.error("Whisper model not loaded")
-            return ""
+            return {'text': '', 'segments': []}
         
         try:
             result = self.whisper_model.transcribe(
                 audio_file,
                 language='ru',
-                fp16=False if self.device == 'cpu' else True
+                fp16=False if self.device == 'cpu' else True,
+                word_timestamps=True  # Get word-level timestamps
             )
             
             transcript = result['text'].strip()
             logger.info(f"Transcription completed: {len(transcript)} characters")
             
-            return transcript
+            return result
             
         except Exception as e:
             logger.error(f"Transcription failed: {str(e)}")
-            return ""
+            # Try without word timestamps as fallback
+            try:
+                result = self.whisper_model.transcribe(
+                    audio_file,
+                    language='ru',
+                    fp16=False if self.device == 'cpu' else True
+                )
+                return result
+            except:
+                return {'text': '', 'segments': []}
     
     def _synthesize(
         self,
