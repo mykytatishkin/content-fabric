@@ -29,12 +29,10 @@ resampy>=0.4.2
 pyworld>=0.3.2
 torchcrepe>=0.0.20
 
-# so-vits-svc for realistic voice conversion
+# Voice conversion dependencies
 onnxruntime>=1.15.0
-fairseq>=0.12.2
 huggingface-hub>=0.16.0
 pydub>=0.25.1
-gradio>=3.40.0
 
 # Silero TTS for natural Russian voice
 omegaconf>=2.3.0
@@ -47,4 +45,3 @@ tiktoken>=0.5.0
 
 # Audio separation (voice/background separation)
 audio-separator>=0.17.0
-onnxruntime
