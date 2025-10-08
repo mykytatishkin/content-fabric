@@ -78,6 +78,16 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         help='Custom formant shift multiplier (RVC: 1.4-1.8 recommended, overrides preset)'
     )
     parser.add_argument(
+        '--voice-model',
+        type=str,
+        help='RVC voice model to use (female_voice_1, male_voice_1, anime_female)'
+    )
+    parser.add_argument(
+        '--list-models',
+        action='store_true',
+        help='List available RVC voice models'
+    )
+    parser.add_argument(
         '--no-preserve-quality',
         action='store_true',
         help='Disable quality preservation (faster but lower quality)'
@@ -123,6 +133,11 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         print_presets()
         return 0
     
+    # List models
+    if args.list_models:
+        print_models()
+        return 0
+    
     # Validate required arguments
     if not args.input or not args.output:
         parser.error("Input and output files/directories are required")
@@ -159,11 +174,13 @@ def process_file(changer: VoiceChanger, args) -> dict:
     Returns:
         Processing results
     """
-    print(f"\n🎙️  Voice Changer")
+    print(f"\n🎙️  RVC Voice Changer")
     print(f"{'='*60}")
     print(f"Input:  {args.input}")
     print(f"Output: {args.output}")
     print(f"Type:   {args.type}")
+    if args.voice_model:
+        print(f"Model:  {args.voice_model} (RVC)")
     if args.pitch:
         print(f"Pitch:  {args.pitch} semitones")
     if args.formant:
@@ -178,7 +195,8 @@ def process_file(changer: VoiceChanger, args) -> dict:
         conversion_type=args.type,
         pitch_shift=args.pitch,
         formant_shift=args.formant,
-        preserve_quality=not args.no_preserve_quality
+        preserve_quality=not args.no_preserve_quality,
+        voice_model=args.voice_model
     )
     
     return result
@@ -284,6 +302,34 @@ def print_presets():
     
     print(f"{'='*60}")
     print("ℹ️  RVC uses WORLD vocoder for realistic voice transformation")
+    print(f"{'='*60}\n")
+
+
+def print_models():
+    """Print available RVC voice models"""
+    from core.utils.rvc_model_manager import RVCModelManager
+    
+    manager = RVCModelManager()
+    available = manager.list_available_models()
+    installed = manager.list_installed_models()
+    
+    print("\n🎙️  RVC Voice Models")
+    print(f"{'='*60}\n")
+    
+    print("📦 Available Models:\n")
+    for model_id, info in available.items():
+        is_installed = model_id in installed
+        status = "✅ INSTALLED" if is_installed else "⬇️  AVAILABLE"
+        
+        print(f"  {status} - {model_id}")
+        print(f"  Name: {info['name']}")
+        print(f"  Type: {info['type']}")
+        print(f"  Desc: {info['description']}")
+        print()
+    
+    print(f"{'='*60}")
+    print("ℹ️  Use --voice-model MODEL_ID to use a specific model")
+    print("   Models download automatically on first use (~300-500 MB each)")
     print(f"{'='*60}\n")
 
 
