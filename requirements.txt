@@ -14,3 +14,37 @@ pydantic>=2.0.0
 pyyaml>=6.0.0
 pytz>=2023.3
 mysql-connector-python>=8.0.0
+
+# Voice changing dependencies (so-vits-svc)
+torch>=2.0.0
+torchaudio>=2.0.0
+soundfile>=0.12.1
+numpy>=1.24.0
+librosa>=0.10.0
+scipy>=1.10.0
+faiss-cpu>=1.7.4
+praat-parselmouth>=0.4.3
+ffmpeg-python>=0.2.0
+resampy>=0.4.2
+pyworld>=0.3.2
+torchcrepe>=0.0.20
+
+# so-vits-svc for realistic voice conversion
+onnxruntime>=1.15.0
+fairseq>=0.12.2
+huggingface-hub>=0.16.0
+pydub>=0.25.1
+gradio>=3.40.0
+
+# Silero TTS for natural Russian voice
+omegaconf>=2.3.0
+
+# Whisper for speech-to-text transcription
+openai-whisper>=20231117
+tiktoken>=0.5.0
+
+# Russian accent/stress marking (manual, no heavy dependencies)
+
+# Audio separation (voice/background separation)
+audio-separator>=0.17.0
+onnxruntime
