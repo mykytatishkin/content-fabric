@@ -44,3 +44,7 @@ openai-whisper>=20231117
 tiktoken>=0.5.0
 
 # Russian accent/stress marking (manual, no heavy dependencies)
+
+# Audio separation (voice/background separation)
+audio-separator>=0.17.0
+onnxruntime
