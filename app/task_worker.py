@@ -11,6 +11,7 @@ from pathlib import Path
 from core.database.mysql_db import YouTubeMySQLDatabase, Task
 from core.api_clients.youtube_client import YouTubeClient
 from core.utils.logger import get_logger
+from core.utils.voice_changer import VoiceChanger
 
 
 class TaskWorker:
@@ -34,6 +35,7 @@ class TaskWorker:
         self.running = False
         self.worker_thread: Optional[threading.Thread] = None
         self.youtube_client: Optional[YouTubeClient] = None
+        self.voice_changer: Optional[VoiceChanger] = None
         
         # Statistics
         self.stats = {
@@ -49,6 +51,10 @@ class TaskWorker:
     def set_youtube_client(self, client: YouTubeClient):
         """Set YouTube API client."""
         self.youtube_client = client
+    
+    def set_voice_changer(self, changer: VoiceChanger):
+        """Set voice changer instance."""
+        self.voice_changer = changer
     
     def start(self):
         """Start the task worker."""
@@ -104,22 +110,24 @@ class TaskWorker:
             # Mark task as processing
             self.db.mark_task_processing(task.id)
             
-            # Get channel information
-            channel = self._get_channel_by_id(task.account_id)
-            if not channel:
-                error_msg = f"Channel with ID {task.account_id} not found"
-                self.logger.error(error_msg)
-                self.db.mark_task_failed(task.id, error_msg)
-                self.stats['failed'] += 1
-                return
-            
-            # Check if channel is enabled
-            if not channel.enabled:
-                error_msg = f"Channel {channel.name} is disabled"
-                self.logger.error(error_msg)
-                self.db.mark_task_failed(task.id, error_msg)
-                self.stats['failed'] += 1
-                return
+            # Get channel information (not needed for voice_change tasks)
+            channel = None
+            if task.media_type != 'voice_change':
+                channel = self._get_channel_by_id(task.account_id)
+                if not channel:
+                    error_msg = f"Channel with ID {task.account_id} not found"
+                    self.logger.error(error_msg)
+                    self.db.mark_task_failed(task.id, error_msg)
+                    self.stats['failed'] += 1
+                    return
+                
+                # Check if channel is enabled
+                if not channel.enabled:
+                    error_msg = f"Channel {channel.name} is disabled"
+                    self.logger.error(error_msg)
+                    self.db.mark_task_failed(task.id, error_msg)
+                    self.stats['failed'] += 1
+                    return
             
             # Check if video file exists
             video_path = Path(task.att_file_path)
@@ -133,6 +141,8 @@ class TaskWorker:
             # Process based on media type
             if task.media_type == 'youtube':
                 success = self._process_youtube_task(task, channel)
+            elif task.media_type == 'voice_change':
+                success = self._process_voice_change_task(task)
             else:
                 error_msg = f"Unsupported media type: {task.media_type}"
                 self.logger.error(error_msg)
@@ -265,6 +275,109 @@ class TaskWorker:
             else:
                 self.db.mark_task_failed(task.id, error_msg)
                 # Видалити з tracking після максимальних спроб
+                self.task_retries.pop(task.id, None)
+            
+            return False
+    
+    def _process_voice_change_task(self, task: Task) -> bool:
+        """
+        Process a voice change task.
+        
+        Args:
+            task: Task object
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Initialize voice changer if not already set
+            if not self.voice_changer:
+                self.voice_changer = VoiceChanger()
+            
+            # Get voice change parameters from add_info
+            conversion_type = 'male_to_female'  # Default
+            pitch_shift = None
+            formant_shift = None
+            
+            if task.add_info:
+                conversion_type = task.add_info.get('conversion_type', 'male_to_female')
+                pitch_shift = task.add_info.get('pitch_shift')
+                formant_shift = task.add_info.get('formant_shift')
+            
+            # Determine output file path
+            input_path = Path(task.att_file_path)
+            output_dir = input_path.parent / 'voice_converted'
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            output_filename = f"voice_converted_{input_path.name}"
+            output_path = output_dir / output_filename
+            
+            self.logger.info(f"Converting voice: {conversion_type}")
+            self.logger.info(f"Input: {input_path}")
+            self.logger.info(f"Output: {output_path}")
+            
+            # Process the file
+            result = self.voice_changer.process_file(
+                input_file=str(input_path),
+                output_file=str(output_path),
+                conversion_type=conversion_type,
+                pitch_shift=pitch_shift,
+                formant_shift=formant_shift,
+                preserve_quality=True
+            )
+            
+            if result['success']:
+                self.logger.info(f"Voice change task #{task.id} completed successfully")
+                self.logger.info(f"Output file: {output_path}")
+                
+                # Update task with result info
+                result_info = {
+                    'output_file': str(output_path),
+                    'conversion_type': conversion_type,
+                    'pitch_shift': result.get('pitch_shift'),
+                    'formant_shift': result.get('formant_shift'),
+                    'duration': result.get('duration')
+                }
+                
+                self.db.mark_task_completed(task.id)
+                # Видалити з retry tracking після успіху
+                self.task_retries.pop(task.id, None)
+                
+                # Optionally cleanup original file
+                if self.auto_cleanup:
+                    self.logger.info(f"Note: Original file kept for voice change tasks: {input_path}")
+                
+                return True
+            else:
+                error_msg = "Voice change processing failed"
+                self.logger.error(f"Task #{task.id} failed: {error_msg}")
+                
+                # Check if we should retry
+                current_retries = self.task_retries.get(task.id, 0)
+                if current_retries < self.max_retries:
+                    self.task_retries[task.id] = current_retries + 1
+                    self.db.update_task_status(task.id, 0)  # Reset to pending
+                    self.logger.info(f"Task #{task.id} will be retried (attempt {self.task_retries[task.id]}/{self.max_retries})")
+                    self.stats['retried'] += 1
+                else:
+                    self.db.mark_task_failed(task.id, error_msg)
+                    self.task_retries.pop(task.id, None)
+                
+                return False
+                
+        except Exception as e:
+            error_msg = f"Voice change error: {str(e)}"
+            self.logger.error(error_msg)
+            
+            # Check if we should retry
+            current_retries = self.task_retries.get(task.id, 0)
+            if current_retries < self.max_retries:
+                self.task_retries[task.id] = current_retries + 1
+                self.db.update_task_status(task.id, 0)  # Reset to pending
+                self.logger.info(f"Task #{task.id} will be retried (attempt {self.task_retries[task.id]}/{self.max_retries})")
+                self.stats['retried'] += 1
+            else:
+                self.db.mark_task_failed(task.id, error_msg)
                 self.task_retries.pop(task.id, None)
             
             return False

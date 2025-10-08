@@ -50,6 +50,40 @@ python3 run_task_manager.py stats
 📖 **Документація**: [Task Management Guide](docs/guides/TASK_MANAGEMENT.md)  
 ⚡ **Quick Start**: [Task Quick Start](docs/guides/TASK_QUICK_START.md)
 
+## 🎙️ Voice Changer (NEW!)
+
+**Механізм зміни голосу у відео та аудіо файлах**
+
+- 🎯 **Повна зміна голосу** - Чоловічий ↔ Жіночий, Дорослий → Дитячий
+- 🎬 **Відео та аудіо** - Підтримка MP4, AVI, MOV, WAV, MP3 та інших
+- 🔊 **Висока якість** - Використання Praat для професійної обробки
+- 📦 **Пакетна обробка** - Обробка множини файлів одночасно
+- ⚙️ **Гнучкі налаштування** - Власні параметри pitch і formant
+- 🔌 **Інтеграція** - Працює standalone або через task system
+
+### Quick Start
+
+```bash
+# Конвертувати чоловічий голос на жіночий
+python3 run_voice_changer.py input.mp4 output.mp4 --type male_to_female
+
+# Пакетна обробка
+python3 run_voice_changer.py --batch videos/ output/ --type female_to_male
+
+# Список пресетів
+python3 run_voice_changer.py --list-presets
+```
+
+### Доступні пресети
+- `male_to_female` - Чоловічий → Жіночий
+- `female_to_male` - Жіночий → Чоловічий
+- `male_to_child` - Чоловічий → Дитячий
+- `female_to_child` - Жіночий → Дитячий
+
+📖 **Документація**: [Voice Changer Guide](docs/VOICE_CHANGER.md)  
+🧪 **Тестування**: `python3 tests/test_voice_changer.py`  
+💡 **Приклади**: `python3 examples/voice_changer_example.py`
+
 ## Features
 
 - **Multi-Platform Support**: Post to Instagram Reels, TikTok, and YouTube Shorts
@@ -75,12 +109,24 @@ python3 run_task_manager.py stats
    pip install -r requirements.txt
    ```
 
-3. **Setup configuration**:
+3. **Install FFmpeg** (required for Voice Changer):
+   ```bash
+   # macOS
+   brew install ffmpeg
+   
+   # Ubuntu/Debian
+   sudo apt-get install ffmpeg
+   
+   # Windows
+   # Download from https://ffmpeg.org/download.html
+   ```
+
+4. **Setup configuration**:
    ```bash
    python main.py setup
    ```
 
-4. **Configure your accounts**:
+5. **Configure your accounts**:
    - Copy `config.env.example` to `.env` and fill in your API credentials
    - Edit `config.yaml` to configure your accounts and posting schedule
 
