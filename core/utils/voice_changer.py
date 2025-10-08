@@ -163,7 +163,9 @@ class VoiceChanger:
         try:
             # Use Silero for Russian (if specified)
             if method == 'silero':
-                return self._process_with_silero(input_file, output_file, voice_model or 'kseniya')
+                # Allow disabling prosody for faster processing
+                preserve_prosody = preserve_quality  # Use quality flag for prosody
+                return self._process_with_silero(input_file, output_file, voice_model or 'kseniya', preserve_prosody)
             
             if is_video:
                 result = self._process_video(
@@ -460,16 +462,18 @@ class VoiceChanger:
         self,
         input_file: str,
         output_file: str,
-        voice: str
+        voice: str,
+        preserve_prosody: bool = False
     ) -> Dict[str, any]:
         """Process with Silero TTS (for Russian)"""
-        logger.info(f"Processing with Silero TTS (Russian)")
+        logger.info(f"Processing with Silero TTS (Russian), preserve_prosody={preserve_prosody}")
         
         result = self.silero_changer.convert_voice(
             input_file,
             output_file,
             target_voice=voice,
-            sample_rate=48000
+            sample_rate=48000,
+            preserve_prosody=preserve_prosody
         )
         
         return result

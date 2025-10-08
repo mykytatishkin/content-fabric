@@ -25,6 +25,9 @@ try:
 except ImportError:
     whisper = None
 
+# Accent marking removed due to heavy dependencies
+Accent = None
+
 from core.utils.logger import get_logger
 from core.utils.prosody_transfer import ProsodyTransfer
 
@@ -64,9 +67,17 @@ class SileroVoiceChanger:
         self.whisper_model = None
         self.prosody_transfer = ProsodyTransfer()
         
+        # Initialize Russian stress marker
+        if Accent:
+            self.accent_model = Accent()
+            logger.info("Russian stress marker initialized")
+        else:
+            self.accent_model = None
+            logger.warning("russtress not available - accents will not be marked")
+        
         logger.info(f"Silero Voice Changer initialized on {self.device}")
     
-    def load_models(self, whisper_size: str = 'base'):
+    def load_models(self, whisper_size: str = 'medium'):
         """
         Load Silero TTS and Whisper models
         
@@ -159,9 +170,12 @@ class SileroVoiceChanger:
                 original_audio, original_sr, word_timestamps
             )
         
-        # Step 3: Synthesize with Silero
+        # Step 3: Synthesize with Silero (with pauses from segments)
         logger.info(f"Step 3: Synthesizing with Silero voice '{target_voice}'...")
-        audio_synthesized = self._synthesize(transcript, target_voice, sample_rate)
+        audio_synthesized = self._synthesize(
+            transcript, target_voice, sample_rate, 
+            segments=result.get('segments', [])
+        )
         
         # Step 4: Apply prosody transfer
         if preserve_prosody and source_prosody:
@@ -198,13 +212,32 @@ class SileroVoiceChanger:
                 audio_file,
                 language='ru',
                 fp16=False if self.device == 'cpu' else True,
-                word_timestamps=True  # Get word-level timestamps
+                word_timestamps=True,  # Get word-level timestamps
+                task='transcribe',
+                verbose=False,
+                # Better settings for quality
+                temperature=0.0,  # More deterministic
+                compression_ratio_threshold=2.4,
+                logprob_threshold=-1.0,
+                no_speech_threshold=0.6,
+                condition_on_previous_text=True  # Better context
             )
             
             transcript = result['text'].strip()
-            logger.info(f"Transcription completed: {len(transcript)} characters")
             
-            return result
+            # Post-process transcript for better quality
+            transcript = self._improve_transcript(transcript)
+            
+            # Add stress marks for better Russian pronunciation
+            if self.accent_model:
+                logger.info("Adding stress marks to Russian text...")
+                transcript = self._add_stress_marks(transcript)
+            
+            logger.info(f"Transcription completed: {len(transcript)} characters")
+            logger.info(f"Segments: {len(result.get('segments', []))}")
+            
+            return {**result, 'text': transcript}
+            
             
         except Exception as e:
             logger.error(f"Transcription failed: {str(e)}")
@@ -223,42 +256,107 @@ class SileroVoiceChanger:
         self,
         text: str,
         voice: str,
-        sample_rate: int
+        sample_rate: int,
+        segments: List[Dict] = None
     ) -> np.ndarray:
-        """Synthesize speech with Silero"""
+        """Synthesize speech with Silero, preserving pauses from segments"""
         
         try:
-            # Split long text into very small chunks (Silero has strict limits)
-            chunks = self._split_text(text, max_length=100)
+            # If we have segments with timestamps, use them for natural pauses
+            if segments and len(segments) > 0:
+                return self._synthesize_with_timing(text, voice, sample_rate, segments)
             
-            audio_chunks = []
-            
-            for i, chunk in enumerate(chunks):
-                logger.info(f"Synthesizing chunk {i+1}/{len(chunks)}...")
-                
-                audio_chunk = self.silero_model.apply_tts(
-                    text=chunk,
-                    speaker=voice,
-                    sample_rate=sample_rate
-                )
-                
-                # Convert to numpy
-                if isinstance(audio_chunk, torch.Tensor):
-                    audio_chunk = audio_chunk.cpu().numpy()
-                
-                audio_chunks.append(audio_chunk)
-            
-            # Concatenate all chunks
-            if len(audio_chunks) > 1:
-                audio_full = np.concatenate(audio_chunks)
-            else:
-                audio_full = audio_chunks[0]
-            
-            return audio_full
+            # Fallback: split by sentences and add pauses
+            return self._synthesize_simple(text, voice, sample_rate)
             
         except Exception as e:
             logger.error(f"Synthesis failed: {str(e)}")
             raise
+    
+    def _synthesize_with_timing(
+        self,
+        text: str,
+        voice: str,
+        sample_rate: int,
+        segments: List[Dict]
+    ) -> np.ndarray:
+        """Synthesize with timing from Whisper segments"""
+        
+        audio_parts = []
+        prev_end = 0
+        
+        for i, segment in enumerate(segments):
+            seg_text = segment.get('text', '').strip()
+            if not seg_text:
+                continue
+            
+            start = segment.get('start', prev_end)
+            
+            # Add pause from previous segment
+            pause_duration = start - prev_end
+            if pause_duration > 0.1:  # Add pause if > 100ms
+                silence = np.zeros(int(pause_duration * sample_rate))
+                audio_parts.append(silence)
+                logger.info(f"Added pause: {pause_duration:.2f}s")
+            
+            # Synthesize segment text
+            logger.info(f"Segment {i+1}/{len(segments)}: {seg_text[:50]}...")
+            
+            audio_seg = self.silero_model.apply_tts(
+                text=seg_text,
+                speaker=voice,
+                sample_rate=sample_rate
+            )
+            
+            if isinstance(audio_seg, torch.Tensor):
+                audio_seg = audio_seg.cpu().numpy()
+            
+            audio_parts.append(audio_seg)
+            prev_end = segment.get('end', start + len(audio_seg) / sample_rate)
+        
+        # Concatenate all parts
+        audio_full = np.concatenate(audio_parts) if len(audio_parts) > 1 else audio_parts[0]
+        
+        logger.info(f"Synthesized with {len(segments)} segments and pauses")
+        return audio_full
+    
+    def _synthesize_simple(
+        self,
+        text: str,
+        voice: str,
+        sample_rate: int
+    ) -> np.ndarray:
+        """Simple synthesis without timing"""
+        
+        # Split long text into very small chunks (Silero has strict limits)
+        chunks = self._split_text(text, max_length=100)
+        
+        audio_chunks = []
+        
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Synthesizing chunk {i+1}/{len(chunks)}...")
+            
+            audio_chunk = self.silero_model.apply_tts(
+                text=chunk,
+                speaker=voice,
+                sample_rate=sample_rate
+            )
+            
+            # Convert to numpy
+            if isinstance(audio_chunk, torch.Tensor):
+                audio_chunk = audio_chunk.cpu().numpy()
+            
+            audio_chunks.append(audio_chunk)
+            
+            # Add small pause between chunks
+            if i < len(chunks) - 1:
+                pause = np.zeros(int(0.2 * sample_rate))  # 200ms pause
+                audio_chunks.append(pause)
+        
+        # Concatenate all chunks
+        audio_full = np.concatenate(audio_chunks) if len(audio_chunks) > 1 else audio_chunks[0]
+        
+        return audio_full
     
     def _split_text(self, text: str, max_length: int = 200) -> List[str]:
         """Split text into small chunks for synthesis (Silero has limits)"""
@@ -302,6 +400,60 @@ class SileroVoiceChanger:
         logger.info(f"Split text into {len(chunks)} chunks (max {max_length} chars each)")
         
         return chunks if chunks else [text[:max_length]]
+    
+    def _improve_transcript(self, text: str) -> str:
+        """
+        Improve transcript quality
+        - Fix common errors
+        - Add proper punctuation spacing
+        - Normalize text
+        """
+        # Strip extra whitespace
+        text = ' '.join(text.split())
+        
+        # Fix punctuation spacing
+        text = text.replace(' .', '.')
+        text = text.replace(' ,', ',')
+        text = text.replace(' !', '!')
+        text = text.replace(' ?', '?')
+        
+        # Ensure space after punctuation
+        for punct in ['.', ',', '!', '?']:
+            text = text.replace(punct, punct + ' ')
+        
+        # Remove double spaces
+        text = ' '.join(text.split())
+        
+        # Capitalize sentences
+        sentences = text.split('. ')
+        sentences = [s.capitalize() for s in sentences]
+        text = '. '.join(sentences)
+        
+        return text.strip()
+    
+    def _add_stress_marks(self, text: str) -> str:
+        """
+        Add stress marks to Russian text for better pronunciation
+        
+        Uses russtress to automatically mark stressed syllables
+        Example: "замок" → "за́мок" or "замо́к"
+        """
+        if not self.accent_model:
+            return text
+        
+        try:
+            # Process text with stress marks
+            text_with_stress = self.accent_model.put_stress(text, stress_symbol='+')
+            
+            logger.info("Stress marks added to text")
+            logger.debug(f"Original: {text[:100]}")
+            logger.debug(f"With stress: {text_with_stress[:100]}")
+            
+            return text_with_stress
+            
+        except Exception as e:
+            logger.warning(f"Failed to add stress marks: {str(e)}")
+            return text
     
     def get_available_voices(self) -> dict:
         """Get available Silero voices"""
