@@ -292,11 +292,20 @@ def print_results(result: dict, is_batch: bool):
         print(f"✅ Voice Conversion Complete!")
         print(f"{'='*60}")
         print(f"Output file: {result['output_file']}")
-        print(f"Type:        {result['type']}")
+        
+        # Handle different result formats
+        if 'type' in result:
+            print(f"Type:        {result['type']}")
+        if 'method' in result:
+            print(f"Method:      {result['method']}")
+        if 'voice' in result:
+            print(f"Voice:       {result['voice']}")
         if 'duration' in result:
             print(f"Duration:    {result['duration']:.2f}s")
-        print(f"Pitch shift: {result['pitch_shift']} semitones")
-        print(f"Formant:     {result['formant_shift']}x")
+        if 'pitch_shift' in result:
+            print(f"Pitch shift: {result['pitch_shift']} semitones")
+        if 'formant_shift' in result:
+            print(f"Formant:     {result['formant_shift']}x")
     
     print(f"{'='*60}\n")
 
