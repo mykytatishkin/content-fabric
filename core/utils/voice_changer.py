@@ -45,6 +45,8 @@ except ImportError:
     raise ImportError("moviepy is required. Install with: pip install moviepy")
 
 from core.utils.logger import get_logger
+from core.utils.rvc_model_manager import RVCModelManager
+from core.utils.rvc_inference import RVCInference
 
 logger = get_logger(__name__)
 
@@ -105,6 +107,10 @@ class VoiceChanger:
         else:
             self.device = device
         
+        # Initialize RVC components
+        self.model_manager = RVCModelManager()
+        self.rvc_inference = RVCInference(self.model_manager, self.device)
+        
         logger.info(f"RVC Voice Changer initialized")
         logger.info(f"Device: {self.device}")
         logger.info(f"Temp dir: {self.temp_dir}")
@@ -116,7 +122,8 @@ class VoiceChanger:
         conversion_type: str = 'male_to_female',
         pitch_shift: Optional[int] = None,
         formant_shift: Optional[float] = None,
-        preserve_quality: bool = True
+        preserve_quality: bool = True,
+        voice_model: Optional[str] = None
     ) -> Dict[str, any]:
         """
         Process audio or video file with AI voice conversion
@@ -128,8 +135,9 @@ class VoiceChanger:
             pitch_shift: Custom pitch shift in semitones
             formant_shift: Custom formant shift multiplier
             preserve_quality: Preserve maximum quality
+            voice_model: Specific RVC voice model to use (e.g., 'female_voice_1')
             
-        Returns:
+        Returns:vyt
             Processing results
         """
         logger.info(f"Starting RVC voice conversion: {input_file} -> {output_file}")
@@ -150,11 +158,11 @@ class VoiceChanger:
         try:
             if is_video:
                 result = self._process_video(
-                    input_file, output_file, pitch_shift, formant_shift, preserve_quality
+                    input_file, output_file, pitch_shift, formant_shift, preserve_quality, voice_model
                 )
             else:
                 result = self._process_audio(
-                    input_file, output_file, pitch_shift, formant_shift, preserve_quality
+                    input_file, output_file, pitch_shift, formant_shift, preserve_quality, voice_model
                 )
             
             logger.info(f"RVC voice conversion completed: {output_file}")
@@ -170,7 +178,8 @@ class VoiceChanger:
         output_file: str,
         pitch_shift: int,
         formant_shift: float,
-        preserve_quality: bool
+        preserve_quality: bool,
+        voice_model: Optional[str] = None
     ) -> Dict[str, any]:
         """Process video file"""
         logger.info("Processing video file...")
@@ -194,7 +203,8 @@ class VoiceChanger:
                 temp_audio_original,
                 temp_audio_converted,
                 pitch_shift,
-                formant_shift
+                formant_shift,
+                voice_model
             )
             
             # Merge back
@@ -242,7 +252,8 @@ class VoiceChanger:
         output_file: str,
         pitch_shift: int,
         formant_shift: float,
-        preserve_quality: bool
+        preserve_quality: bool,
+        voice_model: Optional[str] = None
     ) -> Dict[str, any]:
         """Process audio file"""
         logger.info("Processing audio file...")
@@ -251,7 +262,8 @@ class VoiceChanger:
             input_file,
             output_file,
             pitch_shift,
-            formant_shift
+            formant_shift,
+            voice_model
         )
         
         return {
@@ -269,17 +281,18 @@ class VoiceChanger:
         input_file: str,
         output_file: str,
         pitch_shift: int,
-        formant_shift: float
+        formant_shift: float,
+        voice_model: Optional[str] = None
     ) -> float:
         """
-        Convert voice using RVC-inspired method with WORLD vocoder
+        Convert voice using RVC with voice models
         
-        This is a simplified RVC implementation that uses:
-        - WORLD vocoder for high-quality pitch/formant manipulation
-        - Spectral envelope modification for timbre change
-        - Phase vocoder for time-stretching
+        Uses:
+        - RVC inference engine with voice models
+        - WORLD vocoder for feature extraction
+        - Model-based voice characteristics
         """
-        logger.info(f"RVC conversion: pitch={pitch_shift}, formant={formant_shift}")
+        logger.info(f"RVC conversion: pitch={pitch_shift}, formant={formant_shift}, model={voice_model}")
         
         # Load audio
         audio, sr = librosa.load(input_file, sr=None, mono=True)
@@ -287,6 +300,16 @@ class VoiceChanger:
         duration = len(audio) / sr
         
         logger.info(f"Loaded audio: {duration:.2f}s, {sr}Hz")
+        
+        # Use RVC model if specified
+        if voice_model:
+            logger.info(f"Using RVC model: {voice_model}")
+            audio_converted, sr = self.rvc_inference.convert_voice(
+                audio, sr, voice_model, f0_method='harvest', pitch_shift=pitch_shift
+            )
+            sf.write(output_file, audio_converted, sr)
+            logger.info(f"RVC model conversion completed: {output_file}")
+            return duration
         
         # Extract F0 (pitch), spectral envelope, and aperiodicity using WORLD
         logger.info("Extracting features with WORLD vocoder...")
