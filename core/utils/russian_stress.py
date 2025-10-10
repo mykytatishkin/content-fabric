@@ -20,13 +20,33 @@ except ImportError:
     RUSSTRESS_AVAILABLE = False
 
 try:
-    # Альтернатива: russian-accentuate
+    # Альтернатива: russian-accentuate (более точная)
     import russian_accentuate
     RUSSIAN_ACCENTUATE_AVAILABLE = True
 except ImportError:
     RUSSIAN_ACCENTUATE_AVAILABLE = False
 
+try:
+    # RUSpellPy - словарь с ударениями
+    import pymorphy3
+    PYMORPHY_AVAILABLE = True
+except ImportError:
+    PYMORPHY_AVAILABLE = False
+
 from core.utils.logger import get_logger
+
+# Импортируем расширенный словарь
+try:
+    from core.utils.stress_dictionaries import (
+        EXTENDED_STRESS_DICT,
+        WORD_FORMS,
+        get_stress_position
+    )
+    EXTENDED_DICT_AVAILABLE = True
+except ImportError:
+    EXTENDED_DICT_AVAILABLE = False
+    EXTENDED_STRESS_DICT = {}
+    WORD_FORMS = {}
 
 logger = get_logger(__name__)
 
@@ -121,7 +141,15 @@ class RussianStressMarker:
             logger.warning("  Install with: pip install russtress")
             logger.warning("  Will use fallback dictionary-based approach")
         
+        # Добавляем слова из расширенного словаря
+        if EXTENDED_DICT_AVAILABLE:
+            for word, position in EXTENDED_STRESS_DICT.items():
+                if word not in self.COMMON_WORDS_STRESS:
+                    self.COMMON_WORDS_STRESS[word] = [(position, f"{word}")]
+            logger.info(f"✓ Loaded {len(EXTENDED_STRESS_DICT)} words from extended dictionary")
+        
         logger.info(f"Russian Stress Marker initialized (symbol: {stress_symbol}, use_yo: {use_yo})")
+        logger.info(f"Total dictionary size: {len(self.COMMON_WORDS_STRESS)} words")
     
     def add_stress(self, text: str, handle_homographs: bool = True) -> str:
         """
