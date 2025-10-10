@@ -227,7 +227,8 @@ class TaskWorker:
             
             if result.success:
                 self.logger.info(f"Task #{task.id} completed successfully. Video ID: {result.post_id}")
-                self.db.mark_task_completed(task.id)
+                # Mark task as completed and save upload_id
+                self.db.mark_task_completed(task.id, upload_id=result.post_id)
                 # Видалити з retry tracking після успіху
                 self.task_retries.pop(task.id, None)
                 
