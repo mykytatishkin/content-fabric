@@ -35,6 +35,7 @@
 
 - **[docs/guides/YOUTUBE_SETUP.md](docs/guides/YOUTUBE_SETUP.md)** - Настройка YouTube
 - **[docs/YOUTUBE_DATABASE_GUIDE.md](docs/YOUTUBE_DATABASE_GUIDE.md)** - База данных каналов
+- **[docs/guides/AUTO_LIKE_COMMENT.md](docs/guides/AUTO_LIKE_COMMENT.md)** - Автоматичний лайк та коментар після завантаження
 
 ---
 
