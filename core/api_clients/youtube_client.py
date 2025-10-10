@@ -325,13 +325,12 @@ class YouTubeClient(BaseAPIClient):
         """Handle resumable upload for large video files."""
         try:
             response = None
-            error = None
             retry = 0
             max_retries = 3
             
             while response is None:
                 try:
-                    status, response = insert_request.next_chunk()
+                    _, response = insert_request.next_chunk()
                     if response is not None:
                         if 'id' in response:
                             return response
@@ -356,6 +355,86 @@ class YouTubeClient(BaseAPIClient):
         import re
         hashtags = re.findall(r'#\w+', text)
         return [tag[1:] for tag in hashtags]  # Remove # symbol
+    
+    def like_video(self, video_id: str, account_info: Dict[str, Any]) -> bool:
+        """
+        Like a video on YouTube.
+        
+        Args:
+            video_id: YouTube video ID
+            account_info: Account information with access token
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Create YouTube service with account-specific token
+            youtube_service = self._create_service_with_token(account_info)
+            if not youtube_service:
+                self.logger.error("Failed to create YouTube service for liking video")
+                return False
+            
+            # Insert a 'like' rating for the video
+            youtube_service.videos().rate(
+                id=video_id,
+                rating='like'
+            ).execute()
+            
+            self.logger.info(f"Successfully liked video: {video_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to like video {video_id}: {str(e)}")
+            return False
+    
+    def post_comment(self, video_id: str, comment_text: str, account_info: Dict[str, Any]) -> bool:
+        """
+        Post a comment on a YouTube video.
+        
+        Args:
+            video_id: YouTube video ID
+            comment_text: Text of the comment to post
+            account_info: Account information with access token
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not comment_text or not comment_text.strip():
+                self.logger.warning("Comment text is empty, skipping comment posting")
+                return False
+            
+            # Create YouTube service with account-specific token
+            youtube_service = self._create_service_with_token(account_info)
+            if not youtube_service:
+                self.logger.error("Failed to create YouTube service for posting comment")
+                return False
+            
+            # Prepare comment body
+            comment_body = {
+                'snippet': {
+                    'videoId': video_id,
+                    'topLevelComment': {
+                        'snippet': {
+                            'textOriginal': comment_text
+                        }
+                    }
+                }
+            }
+            
+            # Insert comment
+            response = youtube_service.commentThreads().insert(
+                part='snippet',
+                body=comment_body
+            ).execute()
+            
+            comment_id = response.get('id', 'Unknown')
+            self.logger.info(f"Successfully posted comment on video {video_id}: Comment ID {comment_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to post comment on video {video_id}: {str(e)}")
+            return False
     
     def test_connection(self) -> bool:
         """Test YouTube API connection."""
