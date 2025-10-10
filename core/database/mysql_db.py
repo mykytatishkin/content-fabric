@@ -46,6 +46,7 @@ class Task:
     post_comment: Optional[str] = None
     add_info: Optional[Dict[str, Any]] = None
     date_done: Optional[datetime] = None
+    upload_id: Optional[str] = None  # Video ID from platform after upload
     error_message: Optional[str] = None
     retry_count: int = 0
 
@@ -383,7 +384,7 @@ class YouTubeMySQLDatabase:
         query = """
             SELECT id, account_id, media_type, status, date_add, att_file_path,
                    cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done
+                   date_post, date_done, upload_id
             FROM tasks WHERE id = %s
         """
         results = self._execute_query(query, (task_id,), fetch=True)
@@ -398,7 +399,7 @@ class YouTubeMySQLDatabase:
         query = """
             SELECT id, account_id, media_type, status, date_add, att_file_path,
                    cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done
+                   date_post, date_done, upload_id
             FROM tasks 
             WHERE status = 0 AND date_post <= NOW()
             ORDER BY date_post ASC
@@ -416,7 +417,7 @@ class YouTubeMySQLDatabase:
         query = """
             SELECT id, account_id, media_type, status, date_add, att_file_path,
                    cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done
+                   date_post, date_done, upload_id
             FROM tasks WHERE 1=1
         """
         params = []
@@ -460,14 +461,39 @@ class YouTubeMySQLDatabase:
         """Mark task as processing."""
         return self.update_task_status(task_id, 3)
     
-    def mark_task_completed(self, task_id: int) -> bool:
-        """Mark task as completed."""
-        return self.update_task_status(task_id, 1)
+    def mark_task_completed(self, task_id: int, upload_id: Optional[str] = None) -> bool:
+        """Mark task as completed and optionally save upload_id."""
+        try:
+            date_done = datetime.now()
+            query = """
+                UPDATE tasks 
+                SET status = %s, date_done = %s, upload_id = %s
+                WHERE id = %s
+            """
+            self._execute_query(query, (1, date_done, upload_id, task_id))
+            return True
+        except Error as e:
+            print(f"❌ Error marking task completed: {e}")
+            return False
     
     def mark_task_failed(self, task_id: int, error_message: str = None) -> bool:
         """Mark task as failed."""
         # error_message тільки для логування, не зберігаємо в БД
         return self.update_task_status(task_id, 2)
+    
+    def update_task_upload_id(self, task_id: int, upload_id: str) -> bool:
+        """Update task with upload_id after successful upload."""
+        try:
+            query = """
+                UPDATE tasks 
+                SET upload_id = %s
+                WHERE id = %s
+            """
+            self._execute_query(query, (upload_id, task_id))
+            return True
+        except Error as e:
+            print(f"❌ Error updating task upload_id: {e}")
+            return False
     
     def increment_task_retry(self, task_id: int) -> bool:
         """Increment task retry count (in memory only, not in DB)."""
@@ -507,6 +533,7 @@ class YouTubeMySQLDatabase:
             add_info=add_info,
             date_post=row[12],
             date_done=row[13],
+            upload_id=row[14] if len(row) > 14 else None,
             error_message=None,  # Не зберігаємо в БД
             retry_count=0  # Не зберігаємо в БД
         )
