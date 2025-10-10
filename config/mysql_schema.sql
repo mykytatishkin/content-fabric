@@ -56,13 +56,15 @@ CREATE TABLE IF NOT EXISTS tasks (
     add_info JSON COMMENT 'Additional information in JSON format',
     date_post DATETIME NOT NULL COMMENT 'Scheduled posting time',
     date_done DATETIME COMMENT 'Actual execution time',
+    upload_id VARCHAR(255) COMMENT 'Video ID from platform after upload',
     
     FOREIGN KEY (account_id) REFERENCES youtube_channels(id) ON DELETE CASCADE,
     INDEX idx_account_id (account_id),
     INDEX idx_media_type (media_type),
     INDEX idx_status (status),
     INDEX idx_date_post (date_post),
-    INDEX idx_status_date_post (status, date_post)
+    INDEX idx_status_date_post (status, date_post),
+    INDEX idx_upload_id (upload_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create indexes for better performance
