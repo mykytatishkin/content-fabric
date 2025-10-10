@@ -232,9 +232,23 @@ class TaskWorker:
                 # Видалити з retry tracking після успіху
                 self.task_retries.pop(task.id, None)
                 
+                # Like the video after successful upload
+                if result.post_id:
+                    self.logger.info(f"Liking video {result.post_id}...")
+                    like_success = self._like_video(result.post_id, account_info)
+                    if like_success:
+                        self.logger.info(f"✓ Successfully liked video {result.post_id}")
+                    else:
+                        self.logger.warning(f"⚠ Failed to like video {result.post_id}")
+                
                 # Post comment if specified
                 if task.post_comment and result.post_id:
-                    self._post_comment(result.post_id, task.post_comment, account_info)
+                    self.logger.info(f"Posting comment on video {result.post_id}...")
+                    comment_success = self._post_comment(result.post_id, task.post_comment, account_info)
+                    if comment_success:
+                        self.logger.info(f"✓ Successfully posted comment on video {result.post_id}")
+                    else:
+                        self.logger.warning(f"⚠ Failed to post comment on video {result.post_id}")
                 
                 # Видалити файли після успішної публікації (якщо увімкнено)
                 if self.auto_cleanup:
@@ -383,15 +397,54 @@ class TaskWorker:
             
             return False
     
-    def _post_comment(self, video_id: str, comment_text: str, account_info: Dict[str, Any]):
-        """Post a comment on the uploaded video."""
+    def _like_video(self, video_id: str, account_info: Dict[str, Any]) -> bool:
+        """
+        Like the uploaded video.
+        
+        Args:
+            video_id: YouTube video ID
+            account_info: Account information
+            
+        Returns:
+            True if successful, False otherwise
+        """
         try:
-            # This would require YouTube API comment posting
-            # For now, just log it
-            self.logger.info(f"Would post comment on video {video_id}: {comment_text}")
-            # TODO: Implement actual comment posting via YouTube API
+            if not self.youtube_client:
+                self.logger.warning("YouTube client not initialized, cannot like video")
+                return False
+            
+            return self.youtube_client.like_video(video_id, account_info)
+            
         except Exception as e:
-            self.logger.error(f"Failed to post comment: {str(e)}")
+            self.logger.error(f"Failed to like video {video_id}: {str(e)}")
+            return False
+    
+    def _post_comment(self, video_id: str, comment_text: str, account_info: Dict[str, Any]) -> bool:
+        """
+        Post a comment on the uploaded video.
+        
+        Args:
+            video_id: YouTube video ID
+            comment_text: Text of the comment
+            account_info: Account information
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self.youtube_client:
+                self.logger.warning("YouTube client not initialized, cannot post comment")
+                return False
+            
+            if not comment_text or not comment_text.strip():
+                self.logger.info("No comment text provided, skipping comment posting")
+                return False
+            
+            return self.youtube_client.post_comment(video_id, comment_text, account_info)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to post comment on video {video_id}: {str(e)}")
+            return False
     
     def _cleanup_files(self, task: Task):
         """Delete video and cover files after successful upload."""
