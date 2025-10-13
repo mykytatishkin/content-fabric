@@ -79,12 +79,13 @@ class SileroVoiceChanger:
         
         logger.info(f"Silero Voice Changer initialized on {self.device}")
     
-    def load_models(self, whisper_size: str = 'medium'):
+    def load_models(self, whisper_size: str = 'small'):
         """
         Load Silero TTS and Whisper models
         
         Args:
             whisper_size: Whisper model size (tiny, base, small, medium, large)
+            Default: small (3x faster than medium, good quality)
         """
         if self.silero_model is None:
             logger.info("Loading Silero TTS model...")
