@@ -21,7 +21,8 @@ class YouTubeClient(BaseAPIClient):
     # YouTube API scopes
     SCOPES = [
         'https://www.googleapis.com/auth/youtube.upload',
-        'https://www.googleapis.com/auth/youtube'
+        'https://www.googleapis.com/auth/youtube',
+        'https://www.googleapis.com/auth/youtube.force-ssl'  # Required for comments
     ]
     
     def __init__(self, client_id: str, client_secret: str, credentials_file: str = None):
