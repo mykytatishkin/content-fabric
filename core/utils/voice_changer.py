@@ -49,6 +49,8 @@ from core.utils.rvc_model_manager import RVCModelManager
 from core.utils.rvc_inference import RVCInference
 from core.utils.sovits_converter import SoVITSConverter
 from core.utils.silero_voice_changer import SileroVoiceChanger
+from core.utils.parallel_voice_processor import ParallelVoiceProcessor
+from core.utils.audio_background_mixer import AudioBackgroundMixer
 
 logger = get_logger(__name__)
 
@@ -92,13 +94,23 @@ class VoiceChanger:
         }
     }
     
-    def __init__(self, temp_dir: Optional[str] = None, device: Optional[str] = None):
+    def __init__(
+        self, 
+        temp_dir: Optional[str] = None, 
+        device: Optional[str] = None,
+        enable_parallel: bool = True,
+        chunk_duration_minutes: int = 5,
+        max_workers: Optional[int] = None
+    ):
         """
         Initialize RVC Voice Changer
         
         Args:
             temp_dir: Directory for temporary files
             device: Device for processing ('cpu', 'cuda', or None for auto)
+            enable_parallel: Enable parallel processing for faster conversion
+            chunk_duration_minutes: Duration of each chunk in minutes (for parallel processing)
+            max_workers: Maximum number of parallel workers
         """
         self.temp_dir = temp_dir or tempfile.gettempdir()
         Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
@@ -115,7 +127,22 @@ class VoiceChanger:
         self.sovits_converter = SoVITSConverter(self.device)
         self.silero_changer = SileroVoiceChanger(self.device)
         
-        logger.info(f"Voice Changer initialized with RVC + So-VITS-SVC + Silero")
+        # Initialize parallel processor
+        self.enable_parallel = enable_parallel
+        if enable_parallel:
+            self.parallel_processor = ParallelVoiceProcessor(
+                chunk_duration_minutes=chunk_duration_minutes,
+                max_workers=max_workers,
+                temp_dir=os.path.join(self.temp_dir, 'parallel')
+            )
+            logger.info(f"Parallel processing enabled: {chunk_duration_minutes}min chunks, {max_workers or 'auto'} workers")
+        else:
+            self.parallel_processor = None
+        
+        # Initialize background mixer
+        self.background_mixer = AudioBackgroundMixer()
+        
+        logger.info("Voice Changer initialized with RVC + So-VITS-SVC + Silero")
         logger.info(f"Device: {self.device}")
         logger.info(f"Temp dir: {self.temp_dir}")
     
@@ -128,7 +155,11 @@ class VoiceChanger:
         formant_shift: Optional[float] = None,
         preserve_quality: bool = True,
         voice_model: Optional[str] = None,
-        method: str = 'sovits'
+        method: str = 'sovits',
+        preserve_background: bool = False,
+        use_parallel: bool = None,
+        vocals_gain: float = 0.0,
+        background_gain: float = -3.0
     ) -> Dict[str, any]:
         """
         Process audio or video file with AI voice conversion
@@ -141,8 +172,13 @@ class VoiceChanger:
             formant_shift: Custom formant shift multiplier
             preserve_quality: Preserve maximum quality
             voice_model: Specific RVC voice model to use (e.g., 'female_voice_1')
+            method: Conversion method ('sovits', 'silero', 'rvc')
+            preserve_background: If True, separate and preserve background music
+            use_parallel: If True, use parallel processing (default: auto based on duration)
+            vocals_gain: Volume adjustment for vocals in dB (default: 0.0)
+            background_gain: Volume adjustment for background in dB (default: -3.0)
             
-        Returns:vyt
+        Returns:
             Processing results
         """
         logger.info(f"Starting RVC voice conversion: {input_file} -> {output_file}")
@@ -165,7 +201,27 @@ class VoiceChanger:
             if method == 'silero':
                 # Allow disabling prosody for faster processing
                 preserve_prosody = preserve_quality  # Use quality flag for prosody
-                return self._process_with_silero(input_file, output_file, voice_model or 'kseniya', preserve_prosody)
+                
+                # Check if we should preserve background
+                if preserve_background:
+                    return self._process_with_background_preservation(
+                        input_file, 
+                        output_file, 
+                        voice_model or 'kseniya',
+                        method='silero',
+                        preserve_prosody=preserve_prosody,
+                        use_parallel=use_parallel,
+                        vocals_gain=vocals_gain,
+                        background_gain=background_gain
+                    )
+                else:
+                    return self._process_with_silero(
+                        input_file, 
+                        output_file, 
+                        voice_model or 'kseniya', 
+                        preserve_prosody,
+                        use_parallel=use_parallel
+                    )
             
             if is_video:
                 result = self._process_video(
@@ -463,10 +519,30 @@ class VoiceChanger:
         input_file: str,
         output_file: str,
         voice: str,
-        preserve_prosody: bool = False
+        preserve_prosody: bool = False,
+        use_parallel: bool = None
     ) -> Dict[str, any]:
         """Process with Silero TTS (for Russian)"""
         logger.info(f"Processing with Silero TTS (Russian), preserve_prosody={preserve_prosody}")
+        
+        # Determine if we should use parallel processing
+        if use_parallel is None:
+            use_parallel = self.enable_parallel
+        
+        # Check audio duration to decide if parallel processing is worth it
+        if use_parallel and self.parallel_processor:
+            try:
+                # Use librosa to get duration (works with any format)
+                duration_seconds = librosa.get_duration(path=input_file)
+                
+                # Only use parallel if duration > 3 minutes
+                if duration_seconds > 180:
+                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel multiprocessing")
+                    return self._process_with_silero_parallel(input_file, output_file, voice, preserve_prosody)
+                else:
+                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using sequential processing")
+            except Exception as e:
+                logger.warning(f"Could not determine duration: {e}, defaulting to parallel")
         
         result = self.silero_changer.convert_voice(
             input_file,
@@ -478,6 +554,169 @@ class VoiceChanger:
         
         return result
     
+    def _process_with_silero_parallel(
+        self,
+        input_file: str,
+        output_file: str,
+        voice: str,
+        preserve_prosody: bool = False
+    ) -> Dict[str, any]:
+        """Process with Silero TTS using parallel chunks with multiprocessing"""
+        logger.info("=" * 70)
+        logger.info("PARALLEL SILERO PROCESSING (MULTIPROCESSING)")
+        logger.info("=" * 70)
+        
+        # Prepare processor parameters for multiprocessing
+        processor_params = {
+            'voice': voice,
+            'sample_rate': 48000,
+            'preserve_prosody': preserve_prosody,
+            'device': self.device
+        }
+        
+        # Use parallel processor with true multiprocessing
+        result_file = self.parallel_processor.process_with_background(
+            input_file=input_file,
+            output_file=output_file,
+            voice_processor_func=None,  # Use multiprocessing mode
+            background_separator_func=None,
+            vocals_gain=0.0,
+            background_gain=-3.0,
+            processor_params=processor_params,
+            use_processes=True  # TRUE PARALLELISM!
+        )
+        
+        logger.info("=" * 70)
+        logger.info("PARALLEL SILERO PROCESSING COMPLETE (MULTIPROCESSING)")
+        logger.info("=" * 70)
+        
+        return {
+            'success': True,
+            'output_file': result_file,
+            'voice': voice,
+            'method': 'Silero TTS (Parallel Multiprocessing)'
+        }
+    
+    def _process_with_background_preservation(
+        self,
+        input_file: str,
+        output_file: str,
+        voice: str,
+        method: str = 'silero',
+        preserve_prosody: bool = False,
+        use_parallel: bool = None,
+        vocals_gain: float = 0.0,
+        background_gain: float = -3.0
+    ) -> Dict[str, any]:
+        """
+        Process with background music preservation
+        
+        Pipeline:
+        1. Separate vocals from background
+        2. Split vocals into chunks (if parallel enabled)
+        3. Process chunks in parallel
+        4. Reassemble chunks
+        5. Mix with original background
+        """
+        logger.info("=" * 70)
+        logger.info("VOICE PROCESSING WITH BACKGROUND PRESERVATION")
+        logger.info("=" * 70)
+        
+        # Determine if we should use parallel processing
+        if use_parallel is None:
+            use_parallel = self.enable_parallel
+        
+        # Prepare processor parameters for multiprocessing
+        processor_params = {
+            'voice': voice,
+            'sample_rate': 48000,
+            'preserve_prosody': preserve_prosody,
+            'device': self.device
+        }
+        
+        # Create background separator function
+        def separate_background(audio_file: str, temp_dir: str) -> Tuple[str, str]:
+            """Separate vocals from background"""
+            return self.background_mixer.separate_vocals(audio_file, temp_dir)
+        
+        # Use parallel processor if enabled
+        if use_parallel and self.parallel_processor:
+            # Check duration
+            try:
+                # Use librosa to get duration (works with any format)
+                duration_seconds = librosa.get_duration(path=input_file)
+                
+                if duration_seconds > 180:  # > 3 minutes
+                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel multiprocessing with background")
+                    
+                    result_file = self.parallel_processor.process_with_background(
+                        input_file=input_file,
+                        output_file=output_file,
+                        voice_processor_func=None,  # Use multiprocessing
+                        background_separator_func=separate_background,
+                        vocals_gain=vocals_gain,
+                        background_gain=background_gain,
+                        processor_params=processor_params,
+                        use_processes=True  # TRUE PARALLELISM!
+                    )
+                    
+                    logger.info("=" * 70)
+                    logger.info("✅ BACKGROUND PRESERVATION COMPLETE (PARALLEL MULTIPROCESSING)")
+                    logger.info("=" * 70)
+                    
+                    return {
+                        'success': True,
+                        'output_file': result_file,
+                        'voice': voice,
+                        'method': f'{method.capitalize()} (Parallel Multiprocessing + Background Preservation)'
+                    }
+            except Exception as e:
+                logger.warning(f"Could not determine duration: {e}, using sequential processing")
+        
+        # Sequential processing with background preservation
+        logger.info("Using sequential processing with background preservation...")
+        
+        temp_dir = os.path.join(self.temp_dir, 'background_preservation')
+        Path(temp_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Step 1: Separate vocals
+        logger.info("Step 1: Separating vocals from background...")
+        vocals_file, background_file = separate_background(input_file, temp_dir)
+        
+        # Step 2: Process vocals
+        logger.info("Step 2: Processing vocals...")
+        processed_vocals = os.path.join(temp_dir, 'processed_vocals.wav')
+        
+        # Use silero directly for sequential mode
+        self.silero_changer.convert_voice(
+            vocals_file,
+            processed_vocals,
+            target_voice=voice,
+            sample_rate=48000,
+            preserve_prosody=preserve_prosody
+        )
+        
+        # Step 3: Mix with background
+        logger.info("Step 3: Mixing with original background...")
+        self.background_mixer.mix_audio(
+            processed_vocals,
+            background_file,
+            output_file,
+            vocals_gain=vocals_gain,
+            background_gain=background_gain
+        )
+        
+        logger.info("=" * 70)
+        logger.info("✅ BACKGROUND PRESERVATION COMPLETE (SEQUENTIAL)")
+        logger.info("=" * 70)
+        
+        return {
+            'success': True,
+            'output_file': output_file,
+            'voice': voice,
+            'method': f'{method.capitalize()} (Sequential + Background Preservation)'
+        }
+    
     def get_available_presets(self) -> Dict[str, Dict]:
         """Get available RVC voice conversion presets"""
         return self.VOICE_PRESETS.copy()
@@ -485,6 +724,11 @@ class VoiceChanger:
     def get_silero_voices(self) -> Dict[str, Dict]:
         """Get available Silero Russian voices"""
         return self.silero_changer.get_available_voices()
+    
+    def cleanup(self):
+        """Clean up temporary files"""
+        if self.parallel_processor:
+            self.parallel_processor.cleanup()
 
 
 # Convenience function

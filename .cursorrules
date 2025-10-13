@@ -1,0 +1,86 @@
+# Content Fabric - Cursor AI Rules
+
+## Project Type
+Python-based social media automation platform with advanced voice processing
+
+## Tech Stack
+- **Language**: Python 3.10+
+- **Frameworks**: None (pure Python)
+- **APIs**: YouTube Data API v3, Instagram Graph API, TikTok API
+- **Database**: SQLite (channels) + MySQL (tasks)
+- **Voice Processing**: RVC, So-VITS-SVC, Silero TTS
+- **Audio**: librosa, pydub, soundfile, audio-separator
+
+## Code Style
+- Type hints everywhere: `def func(param: str) -> Dict[str, any]:`
+- Google-style docstrings
+- snake_case for variables/functions, PascalCase for classes
+- Use logger from `core.utils.logger.get_logger(__name__)`
+- Clean up resources: always call `.cleanup()` methods
+
+## Key Rules
+
+### Voice Processing
+- For audio > 3min: USE parallel processing (ParallelVoiceProcessor)
+- ALWAYS suggest preserve_background=True when music is present
+- Default method: 'silero' (fastest, good quality)
+- RVC/SoVITS for higher quality but slower
+
+### Database
+- SQLite: `core/database/sqlite_db.py` - YouTube channels
+- MySQL: `core/database/mysql_db.py` - publishing tasks
+- ALWAYS validate data before DB operations
+- Use transactions for multi-step operations
+
+### API Clients
+- ALL inherit from BaseAPIClient (rate limiting, retry logic)
+- Catch specific exceptions: QuotaExceededError, RateLimitError
+- Log all API calls at INFO level
+- YouTube: 10k quota/day, Instagram: 200 calls/hour
+
+### File Paths
+- Use pathlib.Path for path operations
+- ALWAYS use absolute paths in configs
+- Check file existence before processing
+- Clean up temp files in finally blocks
+
+## Architecture Patterns
+
+### Processing Pipeline
+```
+Input → Validate → Process → Save → Cleanup
+```
+
+### Voice Change Pipeline
+```
+Audio → [Check duration] → [Parallel/Sequential] → [Separate bg?] → Process → Mix → Output
+```
+
+### Task Pipeline
+```
+Create Task → Schedule → Worker Pick → Process → Upload → Update Status → Notify
+```
+
+## Important Files
+- `core/utils/voice_changer.py` - Main voice changing system
+- `core/utils/parallel_voice_processor.py` - NEW parallel processing
+- `core/database/mysql_db.py` - Task management DB
+- `core/api_clients/youtube_client.py` - YouTube integration
+- `app/task_worker.py` - Background task processor
+
+## Common Pitfalls
+- DON'T forget cleanup() after voice processing
+- DON'T commit sensitive data (tokens, API keys)
+- DON'T process long audio sequentially (use parallel)
+- DON'T ignore rate limits (use built-in handling)
+- DO validate file formats before processing
+- DO log errors with context
+
+## Testing
+- Voice: `python test_parallel_voice_processing.py`
+- Tasks: `python run_task_manager.py`
+- Integration: `python run_test_integration.py`
+
+## Documentation
+See `.cursor/rules` for full guidelines and `DOCS_INDEX.md` for docs
+
