@@ -11,6 +11,8 @@ from typing import Optional, List, Dict, Callable, Tuple
 import numpy as np
 from pydub import AudioSegment
 import logging
+import multiprocessing as mp
+from functools import partial
 
 try:
     import librosa
@@ -21,6 +23,48 @@ except ImportError:
 from core.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _process_chunk_worker(chunk_info: Dict, processor_params: Dict, output_dir: str) -> Dict:
+    """
+    Worker function for multiprocessing
+    
+    This runs in a separate process, so it needs to re-initialize models
+    """
+    chunk_idx = chunk_info['index']
+    input_path = chunk_info['path']
+    output_path = os.path.join(output_dir, f'processed_chunk_{chunk_idx:04d}.wav')
+    
+    try:
+        # Import here to avoid pickling issues
+        from core.utils.silero_voice_changer import SileroVoiceChanger
+        
+        # Initialize voice changer in this process
+        voice_changer = SileroVoiceChanger(device=processor_params.get('device', 'cpu'))
+        
+        # Process
+        result = voice_changer.convert_voice(
+            input_path,
+            output_path,
+            target_voice=processor_params.get('voice', 'kseniya'),
+            sample_rate=processor_params.get('sample_rate', 48000),
+            preserve_prosody=processor_params.get('preserve_prosody', False)
+        )
+        
+        return {
+            **chunk_info,
+            'processed_path': output_path,
+            'status': 'success',
+            'result': result
+        }
+        
+    except Exception as e:
+        return {
+            **chunk_info,
+            'processed_path': None,
+            'status': 'failed',
+            'error': str(e)
+        }
 
 
 class ParallelVoiceProcessor:
@@ -143,16 +187,20 @@ class ParallelVoiceProcessor:
     def process_chunks_parallel(
         self,
         chunks: List[Dict[str, any]],
-        processor_func: Callable[[str, str], Dict],
-        output_dir: Optional[str] = None
+        processor_func: Callable[[str, str], Dict] = None,
+        output_dir: Optional[str] = None,
+        processor_params: Optional[Dict] = None,
+        use_processes: bool = True
     ) -> List[Dict[str, any]]:
         """
-        Process chunks in parallel using multiple threads
+        Process chunks in parallel using multiple processes (or threads)
         
         Args:
             chunks: List of chunk info dictionaries
-            processor_func: Function to process each chunk (input_path, output_path) -> result_dict
+            processor_func: Function to process each chunk (input_path, output_path) -> result_dict (legacy)
             output_dir: Directory to save processed chunks
+            processor_params: Parameters for the processor (voice, sample_rate, etc.)
+            use_processes: Use ProcessPoolExecutor (True) or ThreadPoolExecutor (False)
             
         Returns:
             List of processed chunk info dictionaries
@@ -162,55 +210,90 @@ class ParallelVoiceProcessor:
         
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
-        logger.info(f"Processing {len(chunks)} chunks in parallel with {self.max_workers} workers...")
+        if processor_params is None:
+            processor_params = {}
+        
+        executor_type = "processes" if use_processes else "threads"
+        logger.info(f"Processing {len(chunks)} chunks in parallel with {self.max_workers} {executor_type}...")
         
         processed_chunks = []
         
-        def process_chunk(chunk_info: Dict) -> Dict:
-            """Process single chunk"""
-            chunk_idx = chunk_info['index']
-            input_path = chunk_info['path']
-            output_path = os.path.join(output_dir, f'processed_chunk_{chunk_idx:04d}.wav')
-            
-            logger.info(f"  [Worker] Processing chunk {chunk_idx}...")
-            
-            try:
-                # Call the processor function
-                result = processor_func(input_path, output_path)
+        # For backward compatibility with processor_func
+        if processor_func is not None and not use_processes:
+            def process_chunk(chunk_info: Dict) -> Dict:
+                """Process single chunk (legacy thread mode)"""
+                chunk_idx = chunk_info['index']
+                input_path = chunk_info['path']
+                output_path = os.path.join(output_dir, f'processed_chunk_{chunk_idx:04d}.wav')
                 
-                # Update chunk info
-                processed_info = {
-                    **chunk_info,
-                    'processed_path': output_path,
-                    'status': 'success',
-                    'result': result
-                }
+                logger.info(f"  [Worker] Processing chunk {chunk_idx}...")
                 
-                logger.info(f"  [Worker] Chunk {chunk_idx} completed ✅")
-                
-                return processed_info
-                
-            except Exception as e:
-                logger.error(f"  [Worker] Chunk {chunk_idx} failed: {str(e)}")
-                
-                return {
-                    **chunk_info,
-                    'processed_path': None,
-                    'status': 'failed',
-                    'error': str(e)
-                }
-        
-        # Process chunks in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(process_chunk, chunk) for chunk in chunks]
-            
-            # Wait for all to complete
-            for future in concurrent.futures.as_completed(futures):
                 try:
-                    processed_chunk = future.result()
-                    processed_chunks.append(processed_chunk)
+                    # Call the processor function
+                    result = processor_func(input_path, output_path)
+                    
+                    # Update chunk info
+                    processed_info = {
+                        **chunk_info,
+                        'processed_path': output_path,
+                        'status': 'success',
+                        'result': result
+                    }
+                    
+                    logger.info(f"  [Worker] Chunk {chunk_idx} completed ✅")
+                    
+                    return processed_info
+                    
                 except Exception as e:
-                    logger.error(f"  Worker error: {str(e)}")
+                    logger.error(f"  [Worker] Chunk {chunk_idx} failed: {str(e)}")
+                    
+                    return {
+                        **chunk_info,
+                        'processed_path': None,
+                        'status': 'failed',
+                        'error': str(e)
+                    }
+            
+            # Use ThreadPoolExecutor for legacy mode
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = [executor.submit(process_chunk, chunk) for chunk in chunks]
+                
+                # Wait for all to complete
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        processed_chunk = future.result()
+                        processed_chunks.append(processed_chunk)
+                    except Exception as e:
+                        logger.error(f"  Worker error: {str(e)}")
+        else:
+            # Use ProcessPoolExecutor for true parallelism
+            # Create partial function with fixed parameters
+            worker_func = partial(_process_chunk_worker, processor_params=processor_params, output_dir=output_dir)
+            
+            # Set start method for multiprocessing (important for macOS/Windows)
+            ctx = mp.get_context('spawn')
+            
+            with concurrent.futures.ProcessPoolExecutor(
+                max_workers=self.max_workers,
+                mp_context=ctx
+            ) as executor:
+                # Submit all chunks
+                futures = {executor.submit(worker_func, chunk): chunk for chunk in chunks}
+                
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        processed_chunk = future.result()
+                        processed_chunks.append(processed_chunk)
+                        
+                        if processed_chunk['status'] == 'success':
+                            logger.info(f"  [Process] Chunk {processed_chunk['index']} completed ✅")
+                        else:
+                            logger.error(f"  [Process] Chunk {processed_chunk['index']} failed")
+                            
+                    except Exception as e:
+                        chunk = futures[future]
+                        logger.error(f"  [Process] Chunk {chunk['index']} error: {str(e)}")
         
         # Sort by index to maintain order
         processed_chunks.sort(key=lambda x: x['index'])
@@ -284,10 +367,12 @@ class ParallelVoiceProcessor:
         self,
         input_file: str,
         output_file: str,
-        voice_processor_func: Callable[[str, str], Dict],
+        voice_processor_func: Callable[[str, str], Dict] = None,
         background_separator_func: Optional[Callable] = None,
         vocals_gain: float = 0.0,
-        background_gain: float = -3.0
+        background_gain: float = -3.0,
+        processor_params: Optional[Dict] = None,
+        use_processes: bool = True
     ) -> str:
         """
         Complete parallel processing pipeline with background preservation
@@ -340,8 +425,10 @@ class ParallelVoiceProcessor:
         logger.info("Step 3: Processing chunks in parallel...")
         processed_chunks = self.process_chunks_parallel(
             chunks,
-            voice_processor_func,
-            os.path.join(self.temp_dir, 'processed_vocal_chunks')
+            processor_func=voice_processor_func if not use_processes else None,
+            output_dir=os.path.join(self.temp_dir, 'processed_vocal_chunks'),
+            processor_params=processor_params,
+            use_processes=use_processes
         )
         
         # Step 4: Reassemble chunks

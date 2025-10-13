@@ -122,6 +122,14 @@ def main():
         help='Качество обработки (по умолчанию: normal)'
     )
     
+    # Device
+    parser.add_argument(
+        '--device',
+        choices=['cpu', 'cuda', 'auto'],
+        default='auto',
+        help='Устройство для обработки: cpu, cuda, auto (по умолчанию: auto)'
+    )
+    
     # Тихий режим
     parser.add_argument(
         '--quiet', '-q',
@@ -178,10 +186,14 @@ def main():
             else:
                 print(f"   Параллельная обработка: Выкл")
         
+        # Определить device
+        device = None if args.device == 'auto' else args.device
+        
         changer = VoiceChanger(
             enable_parallel=enable_parallel,
             chunk_duration_minutes=args.chunks,
-            max_workers=args.workers
+            max_workers=args.workers,
+            device=device
         )
         
         # Обработка
