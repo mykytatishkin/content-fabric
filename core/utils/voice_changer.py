@@ -532,20 +532,17 @@ class VoiceChanger:
         # Check audio duration to decide if parallel processing is worth it
         if use_parallel and self.parallel_processor:
             try:
-                import wave
-                with wave.open(input_file, 'rb') as wav:
-                    frames = wav.getnframes()
-                    rate = wav.getframerate()
-                    duration_seconds = frames / float(rate)
+                # Use librosa to get duration (works with any format)
+                duration_seconds = librosa.get_duration(path=input_file)
                 
                 # Only use parallel if duration > 3 minutes
                 if duration_seconds > 180:
-                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel processing")
+                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel multiprocessing")
                     return self._process_with_silero_parallel(input_file, output_file, voice, preserve_prosody)
                 else:
                     logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using sequential processing")
             except Exception as e:
-                logger.warning(f"Could not determine duration: {e}")
+                logger.warning(f"Could not determine duration: {e}, defaulting to parallel")
         
         result = self.silero_changer.convert_voice(
             input_file,
@@ -646,14 +643,11 @@ class VoiceChanger:
         if use_parallel and self.parallel_processor:
             # Check duration
             try:
-                import wave
-                with wave.open(input_file, 'rb') as wav:
-                    frames = wav.getnframes()
-                    rate = wav.getframerate()
-                    duration_seconds = frames / float(rate)
+                # Use librosa to get duration (works with any format)
+                duration_seconds = librosa.get_duration(path=input_file)
                 
                 if duration_seconds > 180:  # > 3 minutes
-                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel multiprocessing")
+                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel multiprocessing with background")
                     
                     result_file = self.parallel_processor.process_with_background(
                         input_file=input_file,
