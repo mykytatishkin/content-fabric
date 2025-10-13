@@ -5,9 +5,11 @@
 ### Основные гайды:
 - **[VOICE_CHANGER.md](VOICE_CHANGER.md)** - Полное руководство по Voice Changer
 - **[BACKGROUND_PRESERVATION_GUIDE.md](BACKGROUND_PRESERVATION_GUIDE.md)** - Сохранение фона/музыки
+- **[docs/guides/RUSSIAN_STRESS_GUIDE.md](docs/guides/RUSSIAN_STRESS_GUIDE.md)** - 🎯 Правильное ударение (NEW!)
 
 ### Примеры:
 - `examples/voice_changer_example.py` - Примеры использования
+- `examples/russian_stress_example.py` - 🎯 Примеры работы с ударениями
 
 ---
 

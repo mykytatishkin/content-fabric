@@ -25,11 +25,9 @@ try:
 except ImportError:
     whisper = None
 
-# Accent marking removed due to heavy dependencies
-Accent = None
-
 from core.utils.logger import get_logger
 from core.utils.prosody_transfer import ProsodyTransfer
+from core.utils.russian_stress import RussianStressMarker
 
 logger = get_logger(__name__)
 
@@ -67,13 +65,17 @@ class SileroVoiceChanger:
         self.whisper_model = None
         self.prosody_transfer = ProsodyTransfer()
         
-        # Initialize Russian stress marker
-        if Accent:
-            self.accent_model = Accent()
-            logger.info("Russian stress marker initialized")
-        else:
-            self.accent_model = None
-            logger.warning("russtress not available - accents will not be marked")
+        # Initialize Russian stress marker for proper pronunciation
+        try:
+            self.stress_marker = RussianStressMarker(
+                stress_symbol='plus',  # Silero TTS understands + for stress
+                use_yo=True  # Replace е with ё in stressed positions
+            )
+            logger.info("✓ Russian stress marker initialized for normative pronunciation")
+        except Exception as e:
+            self.stress_marker = None
+            logger.warning(f"⚠ Failed to initialize stress marker: {e}")
+            logger.warning("  Text will be synthesized without stress marks")
         
         logger.info(f"Silero Voice Changer initialized on {self.device}")
     
@@ -228,10 +230,11 @@ class SileroVoiceChanger:
             # Post-process transcript for better quality
             transcript = self._improve_transcript(transcript)
             
-            # Add stress marks for better Russian pronunciation
-            if self.accent_model:
-                logger.info("Adding stress marks to Russian text...")
+            # Add normative stress marks for better Russian pronunciation
+            if self.stress_marker:
+                logger.info("🎯 Adding normative (орфоэпическое) stress marks to Russian text...")
                 transcript = self._add_stress_marks(transcript)
+                logger.info("✓ Stress marks added for natural pronunciation")
             
             logger.info(f"Transcription completed: {len(transcript)} characters")
             logger.info(f"Segments: {len(result.get('segments', []))}")
@@ -433,26 +436,41 @@ class SileroVoiceChanger:
     
     def _add_stress_marks(self, text: str) -> str:
         """
-        Add stress marks to Russian text for better pronunciation
+        Add normative (орфоэпическое) stress marks to Russian text for proper pronunciation
         
-        Uses russtress to automatically mark stressed syllables
-        Example: "замок" → "за́мок" or "замо́к"
+        Uses RussianStressMarker to automatically mark stressed syllables
+        This helps Silero TTS to:
+        - Pronounce words correctly with proper stress
+        - Distinguish homographs (омографы): за́мок vs замо́к, му́ка vs мука́
+        - Create natural intonation and rhythm
+        
+        Example: "замок" → "за+мок" or "замо+к"
+                 "вода" → "вода+" (с правильным ударением)
         """
-        if not self.accent_model:
+        if not self.stress_marker:
+            logger.warning("Stress marker not available, skipping stress marks")
             return text
         
         try:
-            # Process text with stress marks
-            text_with_stress = self.accent_model.put_stress(text, stress_symbol='+')
+            # Add normative stress marks
+            text_with_stress = self.stress_marker.add_stress(
+                text, 
+                handle_homographs=True  # Обрабатывать омографы
+            )
             
-            logger.info("Stress marks added to text")
-            logger.debug(f"Original: {text[:100]}")
-            logger.debug(f"With stress: {text_with_stress[:100]}")
+            # Log sample for debugging
+            if len(text) > 100:
+                logger.debug(f"Original (sample): {text[:100]}...")
+                logger.debug(f"With stress (sample): {text_with_stress[:100]}...")
+            else:
+                logger.debug(f"Original: {text}")
+                logger.debug(f"With stress: {text_with_stress}")
             
             return text_with_stress
             
         except Exception as e:
-            logger.warning(f"Failed to add stress marks: {str(e)}")
+            logger.error(f"❌ Failed to add stress marks: {str(e)}")
+            logger.warning("Falling back to text without stress marks")
             return text
     
     def get_available_voices(self) -> dict:

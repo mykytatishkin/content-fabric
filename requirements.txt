@@ -41,7 +41,8 @@ omegaconf>=2.3.0
 openai-whisper>=20231117
 tiktoken>=0.5.0
 
-# Russian accent/stress marking (manual, no heavy dependencies)
+# Russian accent/stress marking for proper pronunciation
+russtress>=0.1.0
 
 # Audio separation (voice/background separation)
 audio-separator>=0.17.0
