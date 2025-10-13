@@ -157,7 +157,9 @@ class VoiceChanger:
         voice_model: Optional[str] = None,
         method: str = 'sovits',
         preserve_background: bool = False,
-        use_parallel: bool = None
+        use_parallel: bool = None,
+        vocals_gain: float = 0.0,
+        background_gain: float = -3.0
     ) -> Dict[str, any]:
         """
         Process audio or video file with AI voice conversion
@@ -173,6 +175,8 @@ class VoiceChanger:
             method: Conversion method ('sovits', 'silero', 'rvc')
             preserve_background: If True, separate and preserve background music
             use_parallel: If True, use parallel processing (default: auto based on duration)
+            vocals_gain: Volume adjustment for vocals in dB (default: 0.0)
+            background_gain: Volume adjustment for background in dB (default: -3.0)
             
         Returns:
             Processing results
@@ -206,7 +210,9 @@ class VoiceChanger:
                         voice_model or 'kseniya',
                         method='silero',
                         preserve_prosody=preserve_prosody,
-                        use_parallel=use_parallel
+                        use_parallel=use_parallel,
+                        vocals_gain=vocals_gain,
+                        background_gain=background_gain
                     )
                 else:
                     return self._process_with_silero(
@@ -558,41 +564,40 @@ class VoiceChanger:
         voice: str,
         preserve_prosody: bool = False
     ) -> Dict[str, any]:
-        """Process with Silero TTS using parallel chunks"""
+        """Process with Silero TTS using parallel chunks with multiprocessing"""
         logger.info("=" * 70)
-        logger.info("PARALLEL SILERO PROCESSING")
+        logger.info("PARALLEL SILERO PROCESSING (MULTIPROCESSING)")
         logger.info("=" * 70)
         
-        # Create processor function for each chunk
-        def process_chunk(chunk_input: str, chunk_output: str) -> Dict:
-            """Process single chunk with Silero"""
-            return self.silero_changer.convert_voice(
-                chunk_input,
-                chunk_output,
-                target_voice=voice,
-                sample_rate=48000,
-                preserve_prosody=preserve_prosody
-            )
+        # Prepare processor parameters for multiprocessing
+        processor_params = {
+            'voice': voice,
+            'sample_rate': 48000,
+            'preserve_prosody': preserve_prosody,
+            'device': self.device
+        }
         
-        # Use parallel processor
+        # Use parallel processor with true multiprocessing
         result_file = self.parallel_processor.process_with_background(
             input_file=input_file,
             output_file=output_file,
-            voice_processor_func=process_chunk,
-            background_separator_func=None,  # No background separation for now
+            voice_processor_func=None,  # Use multiprocessing mode
+            background_separator_func=None,
             vocals_gain=0.0,
-            background_gain=-3.0
+            background_gain=-3.0,
+            processor_params=processor_params,
+            use_processes=True  # TRUE PARALLELISM!
         )
         
         logger.info("=" * 70)
-        logger.info("PARALLEL SILERO PROCESSING COMPLETE")
+        logger.info("PARALLEL SILERO PROCESSING COMPLETE (MULTIPROCESSING)")
         logger.info("=" * 70)
         
         return {
             'success': True,
             'output_file': result_file,
             'voice': voice,
-            'method': 'Silero TTS (Parallel)'
+            'method': 'Silero TTS (Parallel Multiprocessing)'
         }
     
     def _process_with_background_preservation(
@@ -624,20 +629,13 @@ class VoiceChanger:
         if use_parallel is None:
             use_parallel = self.enable_parallel
         
-        # Create processor function for vocals
-        def process_vocals(vocals_input: str, vocals_output: str) -> Dict:
-            """Process vocals with selected method"""
-            if method == 'silero':
-                return self.silero_changer.convert_voice(
-                    vocals_input,
-                    vocals_output,
-                    target_voice=voice,
-                    sample_rate=48000,
-                    preserve_prosody=preserve_prosody
-                )
-            else:
-                # Add support for other methods here
-                raise ValueError(f"Method {method} not supported with background preservation")
+        # Prepare processor parameters for multiprocessing
+        processor_params = {
+            'voice': voice,
+            'sample_rate': 48000,
+            'preserve_prosody': preserve_prosody,
+            'device': self.device
+        }
         
         # Create background separator function
         def separate_background(audio_file: str, temp_dir: str) -> Tuple[str, str]:
@@ -655,26 +653,28 @@ class VoiceChanger:
                     duration_seconds = frames / float(rate)
                 
                 if duration_seconds > 180:  # > 3 minutes
-                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel processing")
+                    logger.info(f"Audio duration: {duration_seconds/60:.1f} minutes - using parallel multiprocessing")
                     
                     result_file = self.parallel_processor.process_with_background(
                         input_file=input_file,
                         output_file=output_file,
-                        voice_processor_func=process_vocals,
+                        voice_processor_func=None,  # Use multiprocessing
                         background_separator_func=separate_background,
                         vocals_gain=vocals_gain,
-                        background_gain=background_gain
+                        background_gain=background_gain,
+                        processor_params=processor_params,
+                        use_processes=True  # TRUE PARALLELISM!
                     )
                     
                     logger.info("=" * 70)
-                    logger.info("✅ BACKGROUND PRESERVATION COMPLETE (PARALLEL)")
+                    logger.info("✅ BACKGROUND PRESERVATION COMPLETE (PARALLEL MULTIPROCESSING)")
                     logger.info("=" * 70)
                     
                     return {
                         'success': True,
                         'output_file': result_file,
                         'voice': voice,
-                        'method': f'{method.capitalize()} (Parallel + Background Preservation)'
+                        'method': f'{method.capitalize()} (Parallel Multiprocessing + Background Preservation)'
                     }
             except Exception as e:
                 logger.warning(f"Could not determine duration: {e}, using sequential processing")
@@ -692,7 +692,15 @@ class VoiceChanger:
         # Step 2: Process vocals
         logger.info("Step 2: Processing vocals...")
         processed_vocals = os.path.join(temp_dir, 'processed_vocals.wav')
-        process_vocals(vocals_file, processed_vocals)
+        
+        # Use silero directly for sequential mode
+        self.silero_changer.convert_voice(
+            vocals_file,
+            processed_vocals,
+            target_voice=voice,
+            sample_rate=48000,
+            preserve_prosody=preserve_prosody
+        )
         
         # Step 3: Mix with background
         logger.info("Step 3: Mixing with original background...")
