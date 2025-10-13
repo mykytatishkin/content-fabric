@@ -1,0 +1,166 @@
+# Cursor Ignore File
+# Files and directories to exclude from Cursor indexing
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Data directories (large files)
+data/content/videos/**
+data/content/audio/**
+data/content/processed/**
+data/content/thumbnails/**
+data/databases/backups/**
+
+# Logs
+*.log
+logs/
+data/logs/**
+
+# Database files (binary)
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Git
+.git/
+.gitignore
+
+# Media files (binary, large)
+*.mp4
+*.avi
+*.mov
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.aac
+*.ogg
+*.wma
+*.webm
+*.mkv
+
+# Model files (large binary)
+*.pth
+*.pt
+*.onnx
+*.pkl
+*.h5
+*.pb
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Compiled files
+*.o
+*.a
+*.lib
+*.dll
+*.dylib
+*.exe
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Node modules (if any)
+node_modules/
+
+# Docker volumes
+docker/volumes/**
+
+# Test output
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Documentation builds
+docs/_build/
+site/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables (sensitive)
+.env
+.env.local
+.env.*.local
+*.key
+
+# Tokens and credentials (sensitive)
+tokens.json
+credentials.json
+data/tokens/**
+*.pem
+*.cert
+
+# Large test files
+test_data/
+**/test_videos/
+**/test_audio/
+
+# Audio separation models (downloaded, large)
+models/
+weights/
+checkpoints/
+pretrained/
+
+# FFmpeg temp files
+ffmpeg_*.log
+
