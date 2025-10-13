@@ -1,0 +1,563 @@
+# Content Fabric - AI Assistant Rules
+
+## 📋 Project Overview
+
+Content Fabric - это мультифункциональная система для автоматической публикации контента в социальных сетях с расширенными возможностями обработки аудио и видео.
+
+### Основные возможности:
+- 🎬 Автоматическая публикация в Instagram Reels, TikTok, YouTube Shorts
+- 🎙️ Продвинутая система изменения голоса (Voice Changer)
+- 📋 Task Management System на базе MySQL
+- 👥 Управление множеством аккаунтов
+- ⏰ Система планирования публикаций
+- 🔄 Параллельная обработка аудио для ускорения
+
+## 🏗️ Архитектура проекта
+
+### 1. Структура директорий
+
+```
+content-fabric/
+├── app/                    # Основное приложение
+│   ├── main.py            # Главный входной модуль
+│   ├── auto_poster.py     # Координатор автопостинга
+│   ├── scheduler.py       # Планировщик задач
+│   └── task_worker.py     # Воркер для обработки задач из БД
+│
+├── core/                  # Ядро системы
+│   ├── api_clients/       # API клиенты для платформ
+│   │   ├── base_client.py        # Базовый класс с rate limiting
+│   │   ├── youtube_client.py     # YouTube Data API v3
+│   │   ├── instagram_client.py   # Instagram Graph API
+│   │   ├── tiktok_client.py      # TikTok API
+│   │   └── youtube_db_client.py  # YouTube с интеграцией БД
+│   │
+│   ├── auth/              # Система аутентификации
+│   │   ├── oauth_manager.py      # OAuth 2.0 flow
+│   │   └── token_manager.py      # Управление токенами
+│   │
+│   ├── database/          # Слой базы данных
+│   │   ├── sqlite_db.py          # SQLite для каналов
+│   │   ├── mysql_db.py           # MySQL для задач
+│   │   └── migrations/           # Миграции БД
+│   │
+│   └── utils/             # Утилиты
+│       ├── voice_changer.py              # ГЛАВНЫЙ: Voice Changer система
+│       ├── parallel_voice_processor.py   # НОВОЕ: Параллельная обработка
+│       ├── audio_background_mixer.py     # Сохранение фоновой музыки
+│       ├── silero_voice_changer.py       # Silero TTS
+│       ├── rvc_inference.py              # RVC Voice Conversion
+│       ├── sovits_converter.py           # So-VITS-SVC
+│       ├── russian_stress.py             # Правильное ударение
+│       ├── content_processor.py          # Обработка видео/аудио
+│       ├── logger.py                     # Логирование
+│       └── notifications.py              # Telegram/Email уведомления
+│
+├── scripts/               # CLI скрипты
+│   ├── task_manager.py           # Управление задачами
+│   ├── youtube_manager.py        # Управление YouTube
+│   ├── account_manager.py        # Управление аккаунтами
+│   └── setup_database.py         # Настройка БД
+│
+├── config/                # Конфигурация
+│   ├── config.yaml               # Основная конфигурация
+│   ├── mysql_config.yaml         # MySQL настройки
+│   └── mysql_schema.sql          # SQL схема
+│
+├── data/                  # Данные и контент
+│   ├── content/                  # Медиа файлы
+│   ├── databases/                # Локальные БД
+│   ├── logs/                     # Логи
+│   └── tokens/                   # Токены (legacy)
+│
+└── docs/                  # Документация
+    ├── guides/                   # Руководства пользователя
+    ├── parallel/                 # Документация параллельной обработки
+    └── technical/                # Техническая документация
+```
+
+### 2. Ключевые компоненты
+
+#### Voice Changer System 🎙️
+**Файл**: `core/utils/voice_changer.py`
+
+Мультимодальная система изменения голоса:
+- **Методы**: RVC, So-VITS-SVC, Silero TTS
+- **Пресеты**: male_to_female, female_to_male, child_voice, и др.
+- **Параллельная обработка**: ускорение в 2-4 раза для длинных файлов
+- **Сохранение фона**: автоматическое разделение вокал/музыка
+
+```python
+class VoiceChanger:
+    def __init__(
+        self,
+        enable_parallel: bool = True,      # Параллельная обработка
+        chunk_duration_minutes: int = 5,   # Размер чанков
+        max_workers: Optional[int] = None  # Количество потоков
+    )
+    
+    def process_file(
+        self,
+        input_file: str,
+        output_file: str,
+        method: str = 'silero',           # silero/rvc/sovits
+        voice_model: str = 'kseniya',     # Модель голоса
+        preserve_background: bool = False, # Сохранить фон
+        use_parallel: bool = None         # Авто/принудительно
+    )
+```
+
+#### Parallel Voice Processor 🚀
+**Файл**: `core/utils/parallel_voice_processor.py`
+
+Новая система параллельной обработки:
+- Разделение аудио на чанки (5 минут по умолчанию)
+- Многопоточная обработка фрагментов
+- Автоматическая сборка с crossfade
+- Поддержка сохранения фоновой музыки
+
+```python
+class ParallelVoiceProcessor:
+    def split_audio(input_file) -> List[chunks]
+    def process_chunks_parallel(chunks, processor_func)
+    def reassemble_chunks(processed_chunks) -> audio
+    def process_with_background(input_file, processor_func)
+```
+
+#### Task Management System 📋
+**Файл**: `core/database/mysql_db.py`
+
+MySQL-based система управления задачами:
+- Хранение задач публикации в БД
+- Планирование по расписанию
+- Автоматические повторы при ошибках
+- CLI для управления
+
+```python
+class Task:
+    id: int
+    account_name: str
+    video_path: str
+    title: str
+    description: str
+    keywords: str
+    scheduled_time: datetime
+    status: str  # pending/processing/completed/failed
+```
+
+#### API Clients 🌐
+**Базовый класс**: `core/api_clients/base_client.py`
+
+Все клиенты наследуются от `BaseAPIClient`:
+- Rate limiting
+- Retry logic с exponential backoff
+- Централизованное логирование
+- Обработка ошибок
+
+**Платформы**:
+- `youtube_client.py` - YouTube Data API v3
+- `instagram_client.py` - Instagram Graph API
+- `tiktok_client.py` - TikTok Content Posting API
+
+## 🎯 Правила разработки
+
+### 1. Код
+
+#### Python Style
+- Используй **type hints** везде
+- Docstrings в формате Google Style
+- Логирование через `core.utils.logger.get_logger(__name__)`
+- Обработка ошибок: try/except с конкретными исключениями
+
+```python
+from typing import Optional, Dict, List
+from core.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+def process_video(
+    input_file: str,
+    output_file: str,
+    quality: str = 'high'
+) -> Dict[str, any]:
+    """
+    Process video with specified quality.
+    
+    Args:
+        input_file: Path to input video
+        output_file: Path to output video
+        quality: Quality preset ('high', 'medium', 'low')
+        
+    Returns:
+        Dict with processing results
+        
+    Raises:
+        ValueError: If quality preset is invalid
+        FileNotFoundError: If input file doesn't exist
+    """
+    try:
+        logger.info(f"Processing video: {input_file}")
+        # ...
+        return {"success": True, "file": output_file}
+    except Exception as e:
+        logger.error(f"Failed to process: {e}")
+        raise
+```
+
+#### Структура классов
+- Один класс на файл (если класс большой)
+- Приватные методы начинаются с `_`
+- Используй `@property` для геттеров
+- Cleanup методы для освобождения ресурсов
+
+### 2. Voice Changer
+
+#### При работе с голосом:
+1. **ВСЕГДА** используй параллельную обработку для файлов > 3 минут
+2. **ВСЕГДА** предлагай сохранение фона при наличии музыки
+3. **ОБЯЗАТЕЛЬНО** cleanup после обработки
+4. Используй авто-режим (`use_parallel=None`) для оптимального выбора
+
+#### Примеры использования:
+```python
+# Базовое использование
+changer = VoiceChanger()
+result = changer.process_file(
+    'input.mp3', 'output.mp3',
+    method='silero',
+    voice_model='kseniya'
+)
+changer.cleanup()
+
+# С фоновой музыкой
+result = changer.process_file(
+    'input.mp3', 'output.mp3',
+    method='silero',
+    preserve_background=True,
+    vocals_gain=2.0,
+    background_gain=-3.0
+)
+
+# Кастомная параллельная обработка
+changer = VoiceChanger(
+    enable_parallel=True,
+    chunk_duration_minutes=3,
+    max_workers=8
+)
+```
+
+### 3. Task Management
+
+#### При создании задач:
+1. Валидация всех полей перед сохранением
+2. Проверка существования видео файла
+3. Проверка наличия аккаунта в БД
+4. Scheduled time в будущем
+
+```python
+from core.database.mysql_db import YouTubeMySQLDatabase
+
+db = YouTubeMySQLDatabase()
+task_id = db.create_task(
+    account_name='Channel Name',
+    video_path='/path/to/video.mp4',
+    title='Video Title',
+    description='Description',
+    keywords='tag1,tag2,tag3',
+    scheduled_time=datetime(2025, 1, 1, 18, 0, 0)
+)
+```
+
+### 4. База данных
+
+#### SQLite vs MySQL:
+- **SQLite** (`sqlite_db.py`): Каналы YouTube, legacy токены
+- **MySQL** (`mysql_db.py`): Задачи публикации, новая система
+
+#### Миграции:
+- Создавай миграции в `core/database/migrations/`
+- Именование: `{verb}_{what}_migration.py`
+- Проверяй наличие таблиц перед изменениями
+
+### 5. API Clients
+
+#### Rate Limiting:
+- **Instagram**: ~200 calls/hour
+- **TikTok**: varies by endpoint
+- **YouTube**: 10,000 quota units/day
+
+#### Обработка ошибок:
+```python
+from core.api_clients.youtube_client import YouTubeClient
+
+client = YouTubeClient(channel_name='MyChannel')
+try:
+    result = client.upload_video(
+        video_path='video.mp4',
+        title='Title',
+        description='Description'
+    )
+except QuotaExceededError:
+    logger.error("YouTube quota exceeded")
+    # Schedule for later
+except RateLimitError as e:
+    logger.warning(f"Rate limited, retry after {e.retry_after}s")
+    # Wait and retry
+```
+
+### 6. Конфигурация
+
+#### Приоритет настроек:
+1. Environment variables (`.env`)
+2. `config/config.yaml`
+3. `config/mysql_config.yaml` (для БД)
+4. Default values в коде
+
+#### Загрузка конфига:
+```python
+from core.utils.config_loader import load_config, get_platform_config
+
+config = load_config()
+youtube_config = get_platform_config('youtube')
+```
+
+### 7. Логирование
+
+#### Уровни:
+- `DEBUG`: Детальная отладочная информация
+- `INFO`: Основные события (начало/конец операций)
+- `WARNING`: Предупреждения (не критичные)
+- `ERROR`: Ошибки (требуют внимания)
+- `CRITICAL`: Критические ошибки (крах системы)
+
+#### Использование:
+```python
+logger.debug(f"Processing chunk {i}/{total}")
+logger.info(f"Video uploaded successfully: {video_id}")
+logger.warning(f"Low quota remaining: {quota}")
+logger.error(f"Failed to upload: {error}")
+logger.critical(f"Database connection lost!")
+```
+
+## 🔄 Рабочие процессы (Workflows)
+
+### 1. Voice Changing Pipeline
+
+```
+Input Audio/Video
+    ↓
+[Check duration]
+    ↓
+< 3min? → Sequential processing
+> 3min? → Parallel processing
+    ↓
+[Has background music?]
+    ↓
+Yes → Separate vocals/instrumental
+    ↓
+[Process voice]
+    ↓
+[Reassemble chunks] (if parallel)
+    ↓
+[Mix with background] (if separated)
+    ↓
+Output Audio/Video
+```
+
+### 2. Task Publishing Pipeline
+
+```
+Task created in MySQL
+    ↓
+Task Worker checks schedule
+    ↓
+Time matches? → Process task
+    ↓
+Load video & metadata
+    ↓
+Get channel tokens
+    ↓
+Upload to platform
+    ↓
+Update task status
+    ↓
+Send notification
+    ↓
+[Optional] Auto-comment & like
+```
+
+### 3. OAuth Flow
+
+```
+User requests auth
+    ↓
+Generate auth URL
+    ↓
+User authorizes in browser
+    ↓
+Callback with code
+    ↓
+Exchange for tokens
+    ↓
+Store in database
+    ↓
+Auto-refresh before expiry
+```
+
+## 📝 Соглашения
+
+### Именование
+
+#### Файлы:
+- Python: `snake_case.py`
+- Config: `lowercase.yaml`
+- Docs: `UPPERCASE.md`
+
+#### Переменные/Функции:
+- Variables: `snake_case`
+- Functions: `snake_case`
+- Classes: `PascalCase`
+- Constants: `UPPER_SNAKE_CASE`
+
+#### База данных:
+- Tables: `snake_case` (plural)
+- Columns: `snake_case`
+- Индексы: `idx_{table}_{column}`
+
+### Документация
+
+#### Для новых фич:
+1. Добавь docstring в код
+2. Создай/обнови руководство в `docs/guides/`
+3. Добавь пример использования в `examples/`
+4. Обнови `README.md` если это major feature
+
+#### Для изменений:
+1. Обнови соответствующую документацию
+2. Добавь запись в CHANGELOG (если есть)
+3. Обнови комментарии в коде
+
+### Git
+
+#### Commit messages:
+```
+feat: Add parallel voice processing
+fix: Fix token refresh race condition
+docs: Update voice changer guide
+refactor: Restructure API clients
+perf: Optimize video processing pipeline
+test: Add tests for parallel processor
+```
+
+#### Branches:
+- `main` - production
+- `develop` - development
+- `feature/*` - новые фичи
+- `fix/*` - багфиксы
+- `docs/*` - документация
+
+## 🚨 Важные замечания
+
+### Security
+- **НИКОГДА** не коммить токены, API keys, credentials
+- Используй `.env` для sensitive данных
+- Храни токены в БД с encryption (TODO)
+- Регулярно rotate токены
+
+### Performance
+- Voice changing: используй параллельную обработку
+- API calls: batch где возможно
+- Database: используй индексы
+- File I/O: cleanup временные файлы
+
+### Error Handling
+- Логируй ВСЕ ошибки
+- Не глотай exceptions молча
+- Предоставляй fallback где возможно
+- Уведомляй пользователя о критических ошибках
+
+### Testing
+- Тестируй на реальных файлах
+- Проверяй edge cases (пустые файлы, корректные форматы)
+- Профилируй производительность
+- Проверяй memory leaks при долгой работе
+
+## 🎓 Ключевые концепции
+
+### 1. Параллельная обработка
+- Разделение на независимые части
+- Обработка в ThreadPool
+- Сборка с crossfade
+- Автоматический выбор режима по длительности
+
+### 2. Сохранение фона
+- Разделение вокал/инструменталы (audio-separator)
+- Обработка только вокала
+- Смешивание с оригинальным фоном
+- Настройка уровней громкости
+
+### 3. OAuth & Token Management
+- Authorization code flow
+- Automatic token refresh
+- Multi-account support
+- Database storage
+
+### 4. Task Scheduling
+- Cron-like scheduling
+- Database-driven tasks
+- Automatic retry logic
+- Status tracking
+
+## 📚 Полезные ресурсы
+
+### Документация проекта:
+- **Voice Changer**: `docs/VOICE_CHANGER.md`
+- **Parallel Processing**: `docs/parallel/PARALLEL_VOICE_PROCESSING.md`
+- **Task Management**: `docs/guides/TASK_MANAGEMENT.md`
+- **YouTube Setup**: `docs/guides/YOUTUBE_SETUP.md`
+- **Russian Stress**: `docs/guides/RUSSIAN_STRESS_GUIDE.md`
+
+### Индекс документации:
+См. `DOCS_INDEX.md` для полного списка
+
+### Примеры:
+- `examples/voice_changer_example.py`
+- `examples/russian_stress_example.py`
+- `test_parallel_voice_processing.py`
+
+## ⚡ Быстрые команды
+
+```bash
+# Voice Changer
+python3 run_voice_changer.py input.mp4 output.mp4 --type male_to_female
+python3 run_parallel_voice.py  # Детальный параллельный тест
+
+# Task Management
+python3 run_task_manager.py create --account "Channel" --video video.mp4
+python3 run_task_manager.py list
+python3 run_task_worker.py  # Запуск воркера
+
+# YouTube Management
+python3 run_youtube_manager.py list
+python3 run_youtube_manager.py upload
+
+# Database
+python3 run_setup_database.py
+python3 run_migration_upload_id.py
+```
+
+## 🎯 При получении задачи
+
+1. **Пойми контекст**: Какая часть системы затронута?
+2. **Проверь документацию**: Есть ли руководство?
+3. **Следуй паттернам**: Посмотри на похожий код
+4. **Логируй все**: Используй правильные уровни
+5. **Тестируй**: Проверь на реальных данных
+6. **Документируй**: Обнови docs если нужно
+
+---
+
+**Версия**: 1.0  
+**Последнее обновление**: 2025-10-13  
+**Статус**: Active
+

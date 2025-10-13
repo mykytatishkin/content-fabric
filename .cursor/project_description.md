@@ -20,6 +20,10 @@
 - **Обработка ошибок**: Автоматические повторы и обработка лимитов API
 - **Логирование**: Подробное логирование всех операций
 - **Конфигурация**: Гибкая система настроек через YAML и переменные окружения
+- **🆕 Параллельная обработка**: ThreadPoolExecutor для ускорения voice processing
+- **🆕 Audio ML**: Silero TTS, RVC, SoVITS, Whisper для транскрибации
+- **🆕 Vocal Separation**: MDX-Net модели для разделения вокал/инструменталы
+- **🆕 Task Queue**: MySQL-based persistent task queue с retry logic
 
 ## Архитектура проекта
 
@@ -27,39 +31,79 @@
 
 ```
 content-fabric/
-├── .cursor/                          # Документация и правила работы
+├── .cursor/                          # Документация и правила работы для AI
+│   ├── INDEX.md                      # 🆕 Навигация по документации
+│   ├── README.md                     # 🆕 Описание .cursor директории
+│   ├── rules                         # 🆕 Основные правила для AI
+│   ├── context.md                    # 🆕 Контекст проекта
+│   ├── architecture.md               # 🆕 Детальная архитектура
+│   ├── quick-reference.md            # 🆕 Быстрый справочник
 │   ├── project_description.md        # Описание проекта
-│   ├── architecture.md               # Архитектура системы
-│   └── work_rules.md                 # Правила работы с проектом
-├── src/                              # Основной код приложения
-│   ├── __init__.py
-│   ├── auto_poster.py                # Главный координатор системы
-│   ├── logger.py                     # Система логирования
-│   ├── content_processor.py          # Обработка контента (отключен)
+│   └── work_rules.md                 # Правила работы
+│
+├── app/                              # 🆕 Основное приложение
+│   ├── main.py                       # Главный входной модуль
+│   ├── auto_poster.py                # Координатор автопостинга
 │   ├── scheduler.py                  # Планировщик публикаций
-│   ├── notifications.py              # Система уведомлений
-│   ├── token_manager.py              # Управление токенами
-│   ├── oauth_manager.py              # OAuth авторизация
-│   ├── config_loader.py              # Загрузка конфигурации
-│   └── api_clients/                  # API клиенты для платформ
-│       ├── __init__.py
-│       ├── base_client.py            # Базовый API клиент
-│       ├── instagram_client.py       # Instagram API
-│       ├── tiktok_client.py          # TikTok API
-│       └── youtube_client.py         # YouTube API
-├── content/                          # Контент для публикации
-│   ├── videos/                       # Исходные видео
-│   ├── descriptions/                 # Описания постов
-│   ├── thumbnails/                   # Миниатюры
-│   └── processed/                    # Обработанные файлы
-├── logs/                             # Логи системы
+│   └── task_worker.py                # 🆕 Background worker для задач
+│
+├── core/                             # 🆕 Ядро системы
+│   ├── api_clients/                  # API клиенты для платформ
+│   │   ├── base_client.py            # Базовый класс
+│   │   ├── youtube_client.py         # YouTube Data API v3
+│   │   ├── youtube_db_client.py      # 🆕 YouTube с DB интеграцией
+│   │   ├── instagram_client.py       # Instagram Graph API
+│   │   └── tiktok_client.py          # TikTok API
+│   ├── auth/                         # 🆕 Система аутентификации
+│   │   ├── oauth_manager.py          # OAuth 2.0 flow
+│   │   └── token_manager.py          # Управление токенами
+│   ├── database/                     # 🆕 Слой базы данных
+│   │   ├── sqlite_db.py              # SQLite для каналов
+│   │   ├── mysql_db.py               # 🆕 MySQL для задач
+│   │   └── migrations/               # 🆕 Миграции БД
+│   └── utils/                        # Утилиты
+│       ├── voice_changer.py          # 🆕 ГЛАВНЫЙ: Voice Changer
+│       ├── parallel_voice_processor.py # 🆕 Параллельная обработка
+│       ├── audio_background_mixer.py  # 🆕 Сохранение фона
+│       ├── silero_voice_changer.py   # 🆕 Silero TTS
+│       ├── rvc_inference.py          # 🆕 RVC Voice Conversion
+│       ├── sovits_converter.py       # 🆕 SoVITS
+│       ├── russian_stress.py         # 🆕 Правильное ударение
+│       ├── content_processor.py      # Обработка видео/аудио
+│       ├── logger.py                 # Логирование
+│       └── notifications.py          # Уведомления
+│
+├── scripts/                          # 🆕 CLI скрипты
+│   ├── task_manager.py               # 🆕 Управление задачами
+│   ├── youtube_manager.py            # 🆕 Управление YouTube
+│   ├── account_manager.py            # Управление аккаунтами
+│   └── setup_database.py             # 🆕 Настройка БД
+│
+├── config/                           # Конфигурация
+│   ├── config.yaml                   # Основная конфигурация
+│   ├── mysql_config.yaml             # 🆕 MySQL настройки
+│   ├── mysql_schema.sql              # 🆕 SQL схема
+│   └── env_template.txt              # Шаблон переменных
+│
+├── data/                             # Данные и контент
+│   ├── content/                      # Медиа файлы
+│   ├── databases/                    # Локальные БД
+│   ├── logs/                         # Логи
+│   └── tokens/                       # Токены (legacy)
+│
 ├── docs/                             # Документация
-├── config.yaml                       # Основная конфигурация
-├── env_template.txt                  # Шаблон переменных окружения
-├── main.py                           # CLI интерфейс
-├── account_manager.py                # Управление аккаунтами
-├── secure_setup.py                   # Безопасная настройка
-├── test_setup.py                     # Тестирование настройки
+│   ├── guides/                       # 🆕 Пользовательские руководства
+│   ├── parallel/                     # 🆕 Документация параллельной обработки
+│   ├── setup/                        # 🆕 Настройка системы
+│   └── technical/                    # 🆕 Техническая документация
+│
+├── run_*.py                          # 🆕 Скрипты запуска
+│   ├── run_voice_changer.py          # Voice changer CLI
+│   ├── run_parallel_voice.py         # Parallel processing test
+│   ├── run_task_manager.py           # Task management CLI
+│   ├── run_task_worker.py            # Start task worker
+│   └── run_youtube_manager.py        # YouTube management CLI
+│
 └── requirements.txt                  # Зависимости Python
 ```
 
@@ -114,6 +158,42 @@ content-fabric/
   - Валидация настроек
   - Безопасная обработка секретов
 
+#### 8. **VoiceChanger** (`core/utils/voice_changer.py`) 🆕
+- **Роль**: Система изменения голоса в аудио/видео
+- **Функции**:
+  - Множественные методы: Silero (TTS), RVC (voice conversion), SoVITS
+  - Пресеты: male_to_female, female_to_male, child_voice, elderly, robot
+  - Параллельная обработка для ускорения (2-4x)
+  - Сохранение фоновой музыки
+  - Правильное ударение для русского языка
+
+#### 9. **ParallelVoiceProcessor** (`core/utils/parallel_voice_processor.py`) 🆕
+- **Роль**: Ускорение обработки голоса через параллелизм
+- **Функции**:
+  - Разделение аудио на чанки (5 минут по умолчанию)
+  - Многопоточная обработка (ThreadPoolExecutor)
+  - Автоматическая сборка с crossfade
+  - Поддержка сохранения фоновой музыки
+
+#### 10. **AudioBackgroundMixer** (`core/utils/audio_background_mixer.py`) 🆕
+- **Роль**: Разделение и смешивание аудио
+- **Функции**:
+  - Разделение вокал/инструменталы (MDX-Net)
+  - Обработка только вокала
+  - Смешивание с оригинальным фоном
+  - Настройка уровней громкости
+
+#### 11. **Task Management System** (MySQL-based) 🆕
+- **YouTubeMySQLDatabase** (`core/database/mysql_db.py`):
+  - Хранение задач публикации
+  - Планирование по расписанию
+  - Отслеживание статусов
+  - Upload history tracking
+- **TaskWorker** (`app/task_worker.py`):
+  - Background daemon обработки задач
+  - Автоматические повторы при ошибках
+  - Интеграция с API клиентами
+
 ### 🔄 Поток данных
 
 1. **Инициализация**:
@@ -150,41 +230,78 @@ content-fabric/
 - **Статистика**: Отслеживание успешных/неудачных публикаций
 - **Уведомления**: Мгновенные уведомления о результатах
 
-## Текущее состояние
+## Текущее состояние (Updated: 2025-10-13)
 
 ### ✅ Реализовано
 - Базовая архитектура системы
-- API клиенты для всех платформ
-- Система управления токенами
+- API клиенты для всех платформ (YouTube, Instagram, TikTok)
+- Система управления токенами (SQLite + MySQL)
 - OAuth авторизация
 - Планировщик публикаций
 - CLI интерфейс
-- Система уведомлений
+- Система уведомлений (Telegram, Email)
 - Управление множественными аккаунтами
+- **🆕 Task Management System** (MySQL-based scheduling)
+- **🆕 Voice Changer System** (RVC + Silero + SoVITS)
+- **🆕 Parallel Voice Processing** (2-4x speedup)
+- **🆕 Background Music Preservation** (vocal/instrumental separation)
+- **🆕 Russian Stress Marking** (proper pronunciation)
+- **🆕 Upload ID Tracking** (complete upload history)
+
+### 🚀 Последние обновления (Oct 2024)
+- **Parallel Voice Processing**: Разделение аудио на чанки, многопоточная обработка
+- **Voice Changer**: 3 метода (Silero/RVC/SoVITS), 5+ пресетов
+- **Task Worker**: Background daemon для обработки задач из MySQL
+- **Audio Separation**: Автоматическое разделение вокал/музыка
 
 ### 🚧 В разработке/отключено
 - Обработка контента (ContentProcessor отключен для упрощения)
 - Некоторые платформы отключены в конфигурации для тестирования
+- Instagram/TikTok интеграция (в процессе обновления)
 
 ### 📋 Планы развития
-- Расширение поддержки платформ
-- Улучшение обработки контента
-- Веб-интерфейс для управления
-- Аналитика и отчеты
-- Интеграция с дополнительными сервисами
+- Веб-интерфейс для управления задачами
+- Расширенная аналитика и отчеты
+- Дополнительные модели голоса (RVC)
+- Batch processing UI
+- REST API для интеграций
 
 ## Технологический стек
 
-- **Python 3.8+**: Основной язык программирования
+### Core Technologies
+- **Python 3.10+**: Основной язык программирования
 - **Requests**: HTTP клиент для API вызовов
 - **PyYAML**: Обработка конфигурационных файлов
 - **Schedule**: Планировщик задач
-- **MoviePy**: Обработка видео (отключено)
+- **MoviePy**: Обработка видео
 - **Pillow**: Обработка изображений
-- **Google API Client**: YouTube API
-- **Facebook SDK**: Instagram API
-- **python-telegram-bot**: Telegram уведомления
 - **python-dotenv**: Управление переменными окружения
 - **Rich**: Красивый вывод в консоль
 - **Pydantic**: Валидация данных
+
+### API Integrations
+- **Google API Client**: YouTube Data API v3
+- **Facebook SDK**: Instagram Graph API
+- **python-telegram-bot**: Telegram уведомления
+
+### Database & Storage
+- **SQLite**: Локальное хранение каналов
+- **MySQL**: Task management и upload tracking
+- **mysql-connector-python**: MySQL драйвер
+
+### Voice Processing (NEW) 🆕
+- **PyTorch**: Neural network framework
+- **TorchAudio**: Audio processing
+- **Silero**: Russian TTS models
+- **Whisper**: Speech-to-text transcription
+- **RVC (Retrieval-based Voice Conversion)**: High-quality voice conversion
+- **SoVITS**: Voice conversion models
+- **librosa**: Audio analysis and processing
+- **soundfile**: Audio I/O
+- **pydub**: Audio manipulation
+- **audio-separator**: Vocal/instrumental separation (MDX-Net)
+- **praat-parselmouth**: Advanced audio processing
+- **faiss-cpu**: Similarity search for RVC
+- **pyworld**: Pitch extraction
+- **russtress**: Russian stress marking
 
