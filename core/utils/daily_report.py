@@ -257,14 +257,13 @@ class DailyReportManager:
         # Add account reports
         for account in platform_report.accounts:
             # Format: (#5 @audiokniga-one - (0) 5/5)
-            # Task IDs for reference (first task ID from the list)
-            first_task_id = account.task_ids[0] if account.task_ids else 0
+            # Use account_id from youtube_channels table
             
             # Format channel link based on platform
             channel_link = self._format_channel_link(account.channel_id, platform_report.platform)
             
-            # Build account line
-            line = f"#{first_task_id} {channel_link} - "
+            # Build account line with channel ID from database
+            line = f"#{account.account_id} {channel_link} - "
             line += f"({account.error_count}) "
             line += f"{account.success_count}/{account.total_scheduled}\n"
             
