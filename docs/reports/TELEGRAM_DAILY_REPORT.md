@@ -124,6 +124,59 @@ notifications:
 - Окреме повідомлення для кожної платформи (YouTube, Instagram, VK)
 - Всі аккаунти однієї платформи в одному повідомленні
 
+## 📡 Автоматична розсилка (Broadcast)
+
+**Хто натиснув /start - той отримує звіти!**
+
+### Як працює:
+1. **Користувач натискає /start** у Telegram боті → автоматично додається
+2. **Щодня о 12:00 (Київ)** → всі отримують звіт за вчора
+3. **Автосинхронізація** → нові користувачі додаються перед кожною розсилкою
+
+### Швидке налаштування:
+```bash
+# 1. Натисніть /start у боті (отримаєте токен з TELEGRAM_BOT_TOKEN)
+
+# 2. Перевірте підписників
+python3 manage_subscribers.py list
+
+# 3. Тестова розсилка всім
+python3 manage_subscribers.py test
+
+# 4. Запуск автоматичного scheduler (12:00 щодня за Києвом)
+python3 scripts/daily_report_scheduler.py
+```
+
+### Управління підписниками:
+```bash
+# Показати всіх
+python3 manage_subscribers.py list
+
+# Синхронізувати нових (хто натиснув /start)
+python3 manage_subscribers.py sync
+
+# Тестове повідомлення
+python3 manage_subscribers.py test
+```
+
+### Автозапуск (Production):
+
+**Cron (найпростіше):**
+```bash
+crontab -e
+# Додати:
+TZ=Europe/Kiev
+0 12 * * * cd /path/to/content-fabric && python3 run_daily_report.py
+```
+
+**Python Scheduler (рекомендовано):**
+```bash
+# Запустити у фоні
+nohup python3 scripts/daily_report_scheduler.py > /tmp/scheduler.log 2>&1 &
+```
+
+📖 **Детальна інструкція:** [BROADCAST_SETUP.md](BROADCAST_SETUP.md)
+
 ## 🧪 Тестування
 
 ### Автоматичні тести
