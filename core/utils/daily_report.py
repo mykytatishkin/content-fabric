@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from core.database.mysql_db import YouTubeMySQLDatabase, Task
 from core.utils.notifications import NotificationManager
+from core.utils.telegram_broadcast import TelegramBroadcast
 from core.utils.logger import get_logger
 
 
@@ -52,16 +53,20 @@ class DailyReportManager:
     """Manages daily Telegram reports for tasks."""
     
     def __init__(self, db: Optional[YouTubeMySQLDatabase] = None, 
-                 notification_manager: Optional[NotificationManager] = None):
+                 notification_manager: Optional[NotificationManager] = None,
+                 use_broadcast: bool = True):
         """
         Initialize Daily Report Manager.
         
         Args:
             db: MySQL database instance
             notification_manager: Notification manager for Telegram
+            use_broadcast: If True, use broadcast to all subscribers. If False, use single chat_id
         """
         self.db = db or YouTubeMySQLDatabase()
         self.notifier = notification_manager or NotificationManager(config_path="config/config.yaml")
+        self.broadcaster = TelegramBroadcast() if use_broadcast else None
+        self.use_broadcast = use_broadcast
         self.logger = get_logger("daily_report")
     
     def generate_and_send_daily_report(self, date: Optional[datetime] = None) -> bool:
@@ -88,6 +93,12 @@ class DailyReportManager:
             
             # Group tasks by platform
             platform_reports = self._group_tasks_by_platform(tasks)
+            
+            # Автоматично синхронізувати нових користувачів перед розсилкою
+            if self.use_broadcast and self.broadcaster:
+                new_users = self.broadcaster.process_start_commands()
+                if new_users > 0:
+                    self.logger.info(f"Auto-added {new_users} new users before broadcast")
             
             # Send separate report for each platform
             for platform_name, platform_report in platform_reports.items():
@@ -324,7 +335,7 @@ class DailyReportManager:
     
     def _send_telegram_message(self, message: str) -> bool:
         """
-        Send message via Telegram.
+        Send message via Telegram (broadcast or single user).
         
         Args:
             message: Message to send
@@ -333,8 +344,17 @@ class DailyReportManager:
             True if sent successfully, False otherwise
         """
         try:
-            self.notifier._send_telegram_message(message)
-            return True
+            if self.use_broadcast and self.broadcaster:
+                # Розсилка всім підписникам
+                result = self.broadcaster.broadcast_message(message)
+                success = result['success'] > 0
+                if success:
+                    self.logger.info(f"Broadcast sent to {result['success']}/{result['total']} subscribers")
+                return success
+            else:
+                # Відправка одному користувачу (старий метод)
+                self.notifier._send_telegram_message(message)
+                return True
         except Exception as e:
             self.logger.error(f"Error sending Telegram message: {str(e)}")
             return False
