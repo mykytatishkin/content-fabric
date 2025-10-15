@@ -146,7 +146,7 @@ class TelegramBroadcast:
             return []
     
     def process_start_commands(self):
-        """Process /start commands and automatically add users to subscribers."""
+        """Process all interactions and automatically add users to subscribers."""
         updates = self.get_updates()
         new_subscribers = 0
         
@@ -156,16 +156,16 @@ class TelegramBroadcast:
                 chat_id = message['chat']['id']
                 text = message.get('text', '')
                 
-                # Автоматично додаємо всіх хто написав /start
-                if text.startswith('/start'):
-                    if self.add_subscriber(chat_id):
-                        new_subscribers += 1
-                        # Відправити привітання
-                        welcome_msg = "✅ Привіт! Тепер ви автоматично отримуватимете щоденні звіти о 12:00.\n\nНічого більше робити не потрібно!"
-                        self._send_message(chat_id, welcome_msg)
+                # Автоматично додаємо ВСІХ хто взаємодіяв з ботом
+                # Не тільки /start, але будь-яке повідомлення
+                if self.add_subscriber(chat_id):
+                    new_subscribers += 1
+                    # Відправити привітання тільки для нових користувачів
+                    welcome_msg = "✅ Привіт! Ви автоматично отримуватимете щоденні звіти о 12:00.\n\nНічого більше робити не потрібно!"
+                    self._send_message(chat_id, welcome_msg)
         
         if new_subscribers > 0:
-            self.logger.info(f"Auto-added {new_subscribers} new users from /start")
+            self.logger.info(f"Auto-added {new_subscribers} new users from interactions")
         
         return new_subscribers
     
