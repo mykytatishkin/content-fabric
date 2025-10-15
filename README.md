@@ -50,6 +50,50 @@ python3 run_task_manager.py stats
 📖 **Документація**: [Task Management Guide](docs/guides/TASK_MANAGEMENT.md)  
 ⚡ **Quick Start**: [Task Quick Start](docs/guides/TASK_QUICK_START.md)
 
+## 📊 Daily Telegram Reports (NEW!)
+
+**Автоматичні щоденні звіти про виконання завдань через Telegram**
+
+- 📱 **Telegram Integration** - Оповіщення через Telegram Bot
+- ⏰ **Daily Schedule** - Автоматичні звіти о 12:00 щодня
+- 📊 **Platform Grouping** - Окремі повідомлення для YouTube, Instagram, VK
+- 🔗 **Clickable Links** - Посилання на канали в звітах
+- 📈 **Statistics** - Success rate, помилки, виконання
+- 🎯 **Account Details** - Детальна інформація по кожному аккаунту
+
+### Приклад звіту:
+
+```
+📊 **Daily Report - YOUTUBE**
+📅 Date: 2024-01-15
+━━━━━━━━━━━━━━━━━━━━
+
+#5 @audiokniga-one - (0) 5/5
+#12 @another-channel - (1) 4/5
+
+━━━━━━━━━━━━━━━━━━━━
+**Summary:**
+✅ Completed: 9/10
+❌ Failed: 1
+📈 Success Rate: 90.0%
+```
+
+### Quick Start
+
+```bash
+# Тестовий звіт
+python3 run_daily_report.py test
+
+# Автоматичний планувальник (12:00 щодня)
+python3 scripts/daily_report_scheduler.py
+
+# Cron Job
+0 12 * * * cd /path/to/content-fabric && python3 run_daily_report.py
+```
+
+📖 **Документація**: [Daily Report Guide](docs/reports/COMPLETE_GUIDE.md)  
+🚀 **Quick Start**: [TELEGRAM_DAILY_REPORT.md](TELEGRAM_DAILY_REPORT.md)
+
 ## 🎙️ Voice Changer (NEW!)
 
 **Механізм зміни голосу у відео та аудіо файлах**
