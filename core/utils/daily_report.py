@@ -269,6 +269,14 @@ class DailyReportManager:
             
             message += line
         
+        # Add inactive channels section
+        inactive_channels = self._get_inactive_channels(platform_report.platform, date)
+        if inactive_channels:
+            message += "\n🔕 **Inactive Channels (No tasks yesterday):**\n"
+            for channel in inactive_channels:
+                channel_link = self._format_channel_link(channel['channel_id'], platform_report.platform)
+                message += f"#{channel['id']} {channel_link} - {channel['name']}\n"
+        
         # Add summary
         total_scheduled = sum(acc.total_scheduled for acc in platform_report.accounts)
         total_completed = sum(acc.total_completed for acc in platform_report.accounts)
@@ -283,6 +291,59 @@ class DailyReportManager:
         message += f"📈 Success Rate: {success_rate:.1f}%\n"
         
         return message
+    
+    def _get_inactive_channels(self, platform: str, date: datetime) -> List[Dict[str, Any]]:
+        """
+        Get channels that had no tasks on the specified date.
+        
+        Args:
+            platform: Platform name (youtube, instagram, tiktok)
+            date: Date to check for inactivity
+            
+        Returns:
+            List of inactive channel info
+        """
+        try:
+            # Get start and end of the day
+            start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_day = date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            
+            # Get all channels for this platform
+            if platform.lower() == 'youtube':
+                query = """
+                    SELECT c.id, c.name, c.channel_id
+                    FROM youtube_channels c
+                    WHERE c.enabled = TRUE
+                    AND c.id NOT IN (
+                        SELECT DISTINCT t.account_id
+                        FROM tasks t
+                        WHERE t.media_type = %s
+                        AND t.date_post >= %s AND t.date_post <= %s
+                    )
+                    ORDER BY c.id
+                """
+                results = self.db._execute_query(query, (platform, start_of_day, end_of_day), fetch=True)
+            else:
+                # For other platforms, return empty for now
+                # TODO: Add support for Instagram, TikTok channels
+                return []
+            
+            if not results:
+                return []
+            
+            inactive_channels = []
+            for row in results:
+                inactive_channels.append({
+                    'id': row[0],
+                    'name': row[1],
+                    'channel_id': row[2]
+                })
+            
+            return inactive_channels
+            
+        except Exception as e:
+            self.logger.error(f"Error getting inactive channels for {platform}: {str(e)}")
+            return []
     
     def _format_channel_link(self, channel_id: str, platform: str) -> str:
         """
