@@ -39,9 +39,9 @@ class NotificationManager:
     def __init__(self, config_path: str = "config.yaml"):
         # Load environment variables from .env file
         load_dotenv()
+        self.logger = get_logger("notifications")
         self.config = self._load_config(config_path)
         self.notification_config = self._parse_notification_config()
-        self.logger = get_logger("notifications")
     
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file."""
@@ -268,7 +268,7 @@ The post failed to upload to {platform.title()}. Please check the logs for more 
         # Test Email
         if self.notification_config.email_enabled:
             try:
-                self._send_email_message(test_message, test_subject)
+                self._send_email_message(test_message, test_subject) 
                 results['email'] = True
                 self.logger.info("Email notification test successful")
             except Exception as e:
