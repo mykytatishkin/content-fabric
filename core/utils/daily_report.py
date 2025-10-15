@@ -344,6 +344,20 @@ class DailyReportManager:
         """
         try:
             if self.use_broadcast and self.broadcaster:
+                # Перевірити чи є підписники
+                subscribers = self.broadcaster.get_subscribers()
+                
+                if not subscribers:
+                    # Якщо немає підписників - додати TELEGRAM_CHAT_ID як підписника
+                    telegram_chat_id = self.notifier.notification_config.telegram_chat_id
+                    if telegram_chat_id:
+                        try:
+                            chat_id_int = int(telegram_chat_id)
+                            self.broadcaster.add_subscriber(chat_id_int)
+                            self.logger.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber")
+                        except (ValueError, TypeError):
+                            self.logger.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
+                
                 # Розсилка всім підписникам
                 result = self.broadcaster.broadcast_message(message)
                 success = result['success'] > 0
