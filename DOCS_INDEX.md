@@ -33,6 +33,16 @@
 
 ---
 
+## 📊 Уведомления и отчеты
+
+- **[TELEGRAM_DAILY_REPORT.md](TELEGRAM_DAILY_REPORT.md)** - 📊 Главная страница ежедневных отчетов
+- **[docs/reports/QUICK_START.md](docs/reports/QUICK_START.md)** - Быстрый старт
+- **[docs/reports/COMPLETE_GUIDE.md](docs/reports/COMPLETE_GUIDE.md)** - Полное руководство
+- **[docs/reports/TECHNICAL_SUMMARY.md](docs/reports/TECHNICAL_SUMMARY.md)** - Техническая документация
+- Автоматические отчеты в Telegram о выполнении задач (12:00 ежедневно)
+
+---
+
 ## 🎬 YouTube
 
 - **[docs/guides/YOUTUBE_SETUP.md](docs/guides/YOUTUBE_SETUP.md)** - Настройка YouTube
@@ -75,6 +85,11 @@ python3 run_youtube_manager.py
 
 # Database Setup
 python3 run_setup_database.py
+
+# Daily Reports (NEW!)
+python3 run_daily_report.py              # Send yesterday's report
+python3 run_daily_report.py test         # Test report
+python3 scripts/daily_report_scheduler.py # Auto-scheduler (12:00 daily)
 ```
 
 ---
