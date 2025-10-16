@@ -351,7 +351,7 @@ def handle_token_info(auto_poster: SocialMediaAutoPoster, args):
 
 def handle_add_channel(auto_poster: SocialMediaAutoPoster, args):
     """Обработать команду add-channel."""
-    from src.database_config_loader import DatabaseConfigLoader
+    from core.utils.database_config_loader import DatabaseConfigLoader
     
     print(f"➕ Добавление нового YouTube канала: {args.name}")
     
@@ -380,7 +380,7 @@ def handle_add_channel(auto_poster: SocialMediaAutoPoster, args):
 
 def handle_migrate(auto_poster: SocialMediaAutoPoster, args):
     """Обработать команду migrate."""
-    from src.database_config_loader import DatabaseConfigLoader
+    from core.utils.database_config_loader import DatabaseConfigLoader
     
     print("🔄 Миграция каналов из YAML в базу данных...")
     
@@ -412,7 +412,7 @@ def handle_migrate(auto_poster: SocialMediaAutoPoster, args):
 
 def handle_db_command(auto_poster: SocialMediaAutoPoster, args):
     """Обработать команды работы с базой данных."""
-    from src.database_config_loader import DatabaseConfigLoader
+    from core.utils.database_config_loader import DatabaseConfigLoader
     
     db_loader = DatabaseConfigLoader()
     

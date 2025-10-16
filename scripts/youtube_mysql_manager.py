@@ -14,8 +14,8 @@ from datetime import datetime
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from src.database import get_database_by_type
-from src.mysql_database import YouTubeMySQLDatabase
+from core.database import get_database_by_type
+from core.database.mysql_db import YouTubeMySQLDatabase
 
 
 def load_config(config_file: str = None) -> dict:
