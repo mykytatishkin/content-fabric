@@ -105,8 +105,6 @@ class YouTubeClient(BaseAPIClient):
             # This ensures we have the freshest token and catches revoked tokens early
             if creds.refresh_token:
                 try:
-                    from datetime import datetime, timedelta
-                    
                     # Check if token needs refresh (expired or about to expire in 5 minutes)
                     needs_refresh = False
                     if creds.expired:
@@ -172,7 +170,6 @@ class YouTubeClient(BaseAPIClient):
                 expires_at = creds.expiry
                 if not expires_at and creds.token:
                     # Default to 1 hour from now if no expiry provided
-                    from datetime import datetime, timedelta
                     expires_at = datetime.now() + timedelta(hours=1)
                 
                 db.update_channel_tokens(
@@ -276,7 +273,7 @@ class YouTubeClient(BaseAPIClient):
             video_metadata = {
                 'snippet': {
                     'title': caption[:100],  # YouTube title limit
-                    'description': caption,
+                    'description': self._sanitize_description(caption),  # YouTube description limit
                     'tags': self._extract_hashtags(caption),
                     'categoryId': '22'  # People & Blogs category
                 },
@@ -291,7 +288,7 @@ class YouTubeClient(BaseAPIClient):
                 if 'title' in metadata:
                     video_metadata['snippet']['title'] = metadata['title'][:100]
                 if 'description' in metadata:
-                    video_metadata['snippet']['description'] = metadata['description']
+                    video_metadata['snippet']['description'] = self._sanitize_description(metadata['description'])
                 if 'tags' in metadata:
                     video_metadata['snippet']['tags'] = metadata['tags']
                 if 'privacy_status' in metadata:
@@ -389,6 +386,47 @@ class YouTubeClient(BaseAPIClient):
         import re
         hashtags = re.findall(r'#\w+', text)
         return [tag[1:] for tag in hashtags]  # Remove # symbol
+    
+    def _sanitize_description(self, description: str) -> str:
+        """
+        Sanitize and validate video description for YouTube API.
+        
+        YouTube limits:
+        - Max 5000 characters
+        - Must not contain certain control characters
+        
+        Args:
+            description: Raw description text
+            
+        Returns:
+            Sanitized description that meets YouTube requirements
+        """
+        if not description:
+            return ""
+        
+        # Convert to string if not already
+        description = str(description)
+        
+        # Remove null bytes and other problematic characters
+        description = description.replace('\x00', '')
+        
+        # Remove other control characters except newlines and tabs
+        import re
+        description = re.sub(r'[\x01-\x08\x0b-\x0c\x0e-\x1f\x7f]', '', description)
+        
+        # Limit to 5000 characters (YouTube's limit)
+        if len(description) > 5000:
+            self.logger.warning(f"Description truncated from {len(description)} to 5000 characters")
+            description = description[:5000]
+            # Try to cut at last newline or space to avoid cutting words
+            last_newline = description.rfind('\n')
+            last_space = description.rfind(' ')
+            if last_newline > 4900:
+                description = description[:last_newline]
+            elif last_space > 4900:
+                description = description[:last_space]
+        
+        return description.strip()
     
     def like_video(self, video_id: str, account_info: Dict[str, Any]) -> bool:
         """
