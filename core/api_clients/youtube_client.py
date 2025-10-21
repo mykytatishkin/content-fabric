@@ -105,13 +105,14 @@ class YouTubeClient(BaseAPIClient):
             # This ensures we have the freshest token and catches revoked tokens early
             if creds.refresh_token:
                 try:
+                    from datetime import datetime, timedelta
+                    
                     # Check if token needs refresh (expired or about to expire in 5 minutes)
                     needs_refresh = False
                     if creds.expired:
                         needs_refresh = True
                         self.logger.info(f"Token is expired for account {account_info.get('name', 'Unknown')}, refreshing...")
                     elif creds.expiry:
-                        from datetime import datetime, timedelta
                         time_until_expiry = creds.expiry - datetime.utcnow()
                         if time_until_expiry < timedelta(minutes=5):
                             needs_refresh = True
