@@ -45,9 +45,15 @@
 
 ## 🎬 YouTube
 
+### Настройка и управление:
 - **[docs/guides/YOUTUBE_SETUP.md](docs/guides/YOUTUBE_SETUP.md)** - Настройка YouTube
 - **[docs/YOUTUBE_DATABASE_GUIDE.md](docs/YOUTUBE_DATABASE_GUIDE.md)** - База данных каналов
 - **[docs/guides/AUTO_LIKE_COMMENT.md](docs/guides/AUTO_LIKE_COMMENT.md)** - Автоматичний лайк та коментар після завантаження
+
+### OAuth и токены:
+- **[REAUTH_README.md](REAUTH_README.md)** - 🔐 Быстрое решение проблем с токенами (NEW!)
+- **[docs/youtube/05-TOKEN-REAUTH-GUIDE.md](docs/youtube/05-TOKEN-REAUTH-GUIDE.md)** - 🔐 Полное руководство по переавторизации (NEW!)
+- **[docs/youtube/04-TROUBLESHOOTING.md](docs/youtube/04-TROUBLESHOOTING.md)** - Устранение неполадок
 
 ---
 
@@ -82,11 +88,17 @@ python3 run_task_manager.py
 
 # YouTube Manager
 python3 run_youtube_manager.py
+python3 run_youtube_manager.py check-tokens  # Проверка токенов
 
 # Database Setup
 python3 run_setup_database.py
 
-# Daily Reports (NEW!)
+# OAuth Token Re-authentication (NEW!)
+python3 reauth_multiple_channels.py audiokniga-one    # Один канал
+python3 reauth_multiple_channels.py --expired         # Все истекшие
+python3 check_token_limit.py                          # Диагностика лимитов
+
+# Daily Reports
 python3 run_daily_report.py              # Send yesterday's report
 python3 run_daily_report.py test         # Test report
 python3 scripts/daily_report_scheduler.py # Auto-scheduler (12:00 daily)

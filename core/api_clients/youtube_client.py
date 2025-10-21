@@ -101,11 +101,27 @@ class YouTubeClient(BaseAPIClient):
                 expiry=expiry
             )
             
-            # Check if token is expired and refresh if needed
-            if not creds.valid:
-                if creds.expired and creds.refresh_token:
-                    try:
-                        self.logger.info(f"Refreshing expired token for account {account_info.get('name', 'Unknown')}")
+            # Always try to refresh token if refresh_token is available
+            # This ensures we have the freshest token and catches revoked tokens early
+            if creds.refresh_token:
+                try:
+                    # Check if token needs refresh (expired or about to expire in 5 minutes)
+                    needs_refresh = False
+                    if creds.expired:
+                        needs_refresh = True
+                        self.logger.info(f"Token is expired for account {account_info.get('name', 'Unknown')}, refreshing...")
+                    elif creds.expiry:
+                        from datetime import datetime, timedelta
+                        time_until_expiry = creds.expiry - datetime.utcnow()
+                        if time_until_expiry < timedelta(minutes=5):
+                            needs_refresh = True
+                            self.logger.info(f"Token expires soon for account {account_info.get('name', 'Unknown')}, refreshing...")
+                    else:
+                        # No expiry info, refresh to be safe
+                        needs_refresh = True
+                        self.logger.info(f"No expiry info for account {account_info.get('name', 'Unknown')}, refreshing token...")
+                    
+                    if needs_refresh:
                         creds.refresh(Request())
                         
                         # Update the account_info with new token
@@ -117,16 +133,21 @@ class YouTubeClient(BaseAPIClient):
                         self._update_database_token(account_info, creds)
                         
                         self.logger.info(f"Token refreshed successfully for account {account_info.get('name', 'Unknown')}")
-                    except Exception as e:
-                        self.logger.error(f"Failed to refresh token for account {account_info.get('name', 'Unknown')}: {str(e)}")
-                        return None
-                else:
-                    self.logger.error(f"No valid credentials for account {account_info.get('name', 'Unknown')}")
+                    else:
+                        self.logger.info(f"Token is valid for account {account_info.get('name', 'Unknown')}")
+                        # Update database with current token info
+                        self._update_database_token(account_info, creds)
+                        
+                except Exception as e:
+                    self.logger.error(f"Failed to refresh token for account {account_info.get('name', 'Unknown')}: {str(e)}")
+                    # If refresh fails, token might be revoked - user needs to re-authenticate
+                    self.logger.error("Token may be revoked. Please re-authenticate this account.")
                     return None
+            elif not creds.valid:
+                self.logger.error(f"No valid credentials and no refresh token for account {account_info.get('name', 'Unknown')}")
+                return None
             else:
                 self.logger.info(f"Token is valid for account {account_info.get('name', 'Unknown')}")
-                # Even if token is valid, update database with current token info
-                # This ensures database stays in sync with actual token state
                 self._update_database_token(account_info, creds)
             
             # Build YouTube service with account credentials
@@ -338,9 +359,20 @@ class YouTubeClient(BaseAPIClient):
                         else:
                             raise Exception(f"Upload failed with response: {response}")
                 except Exception as e:
+                    error_str = str(e)
+                    
+                    # Check if it's an auth error
+                    if 'invalid_grant' in error_str or 'Token has been expired or revoked' in error_str:
+                        self.logger.error(f"Authentication error: {error_str}")
+                        self.logger.error("The refresh token is invalid or revoked. Please re-authenticate the account:")
+                        self.logger.error("1. Run: python scripts/account_manager.py")
+                        self.logger.error("2. Remove the existing account")
+                        self.logger.error("3. Add the account again with fresh OAuth credentials")
+                        raise e  # Don't retry auth errors
+                    
                     if retry < max_retries:
                         retry += 1
-                        self.logger.warning(f"Upload retry {retry}/{max_retries}: {str(e)}")
+                        self.logger.warning(f"Upload retry {retry}/{max_retries}: {error_str}")
                         time.sleep(2 ** retry)  # Exponential backoff
                     else:
                         raise e
