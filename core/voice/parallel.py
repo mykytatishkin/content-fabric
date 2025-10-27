@@ -37,7 +37,7 @@ def _process_chunk_worker(chunk_info: Dict, processor_params: Dict, output_dir: 
     
     try:
         # Import here to avoid pickling issues
-        from core.utils.silero_voice_changer import SileroVoiceChanger
+        from core.voice.silero import SileroVoiceChanger
         
         # Initialize voice changer in this process
         voice_changer = SileroVoiceChanger(device=processor_params.get('device', 'cpu'))

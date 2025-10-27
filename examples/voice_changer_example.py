@@ -10,7 +10,7 @@ import os
 # Add project root to path (go up one level from examples/ to project root)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.utils.voice_changer import VoiceChanger, change_voice
+from core.voice import VoiceChanger, change_voice
 from core.utils.logger import get_logger
 
 logger = get_logger(__name__)

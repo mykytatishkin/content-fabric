@@ -45,12 +45,12 @@ except ImportError:
     raise ImportError("moviepy is required. Install with: pip install moviepy")
 
 from core.utils.logger import get_logger
-from core.utils.rvc_model_manager import RVCModelManager
-from core.utils.rvc_inference import RVCInference
-from core.utils.sovits_converter import SoVITSConverter
-from core.utils.silero_voice_changer import SileroVoiceChanger
-from core.utils.parallel_voice_processor import ParallelVoiceProcessor
-from core.utils.audio_background_mixer import AudioBackgroundMixer
+from core.voice.rvc.model_manager import RVCModelManager
+from core.voice.rvc.inference import RVCInference
+from core.voice.rvc.sovits import SoVITSConverter
+from core.voice.silero import SileroVoiceChanger
+from core.voice.parallel import ParallelVoiceProcessor
+from core.voice.mixer import AudioBackgroundMixer
 
 logger = get_logger(__name__)
 
@@ -238,6 +238,58 @@ class VoiceChanger:
         except Exception as e:
             logger.error(f"Error during RVC conversion: {str(e)}")
             raise
+    
+    def process_text(
+        self,
+        text: str,
+        output_file: str,
+        voice: str = 'kseniya',
+        sample_rate: int = 48000,
+        add_stress: bool = False,  # Default False - Silero TTS handles Russian pronunciation well
+        speaking_rate: float = 1.0
+    ) -> Dict[str, any]:
+        """
+        Process text directly to audio using Silero TTS
+        
+        This method synthesizes text into speech without requiring source audio.
+        Useful for creating voiceovers, narrations, or converting text to voice.
+        
+        Args:
+            text: Input text to synthesize
+            output_file: Path to output audio file
+            voice: Target Silero voice (aidar, baya, kseniya, eugene, etc.)
+            sample_rate: Output sample rate (default: 48000)
+            add_stress: Add Russian stress marks (default: False - Silero handles Russian well)
+            speaking_rate: Speech rate (1.0 = normal, 0.9 = 10% slower, 1.1 = 10% faster)
+            
+        Returns:
+            Processing results with text, voice, and output file
+        
+        Example:
+            >>> changer = VoiceChanger()
+            >>> result = changer.process_text(
+            ...     text="Привет, это тест синтеза голоса",
+            ...     output_file="output.wav",
+            ...     voice="kseniya"
+            ... )
+        """
+        logger.info(f"Processing text to audio:")
+        logger.info(f"  Text length: {len(text)} characters")
+        logger.info(f"  Output: {output_file}")
+        logger.info(f"  Voice: {voice}")
+        
+        # Use SileroVoiceChanger for text-to-speech
+        result = self.silero_changer.synthesize_text_to_audio(
+            text=text,
+            output_file=output_file,
+            target_voice=voice,
+            sample_rate=sample_rate,
+            add_stress=add_stress,
+            speaking_rate=speaking_rate
+        )
+        
+        logger.info(f"Text-to-speech processing completed: {output_file}")
+        return result
     
     def _process_video(
         self,

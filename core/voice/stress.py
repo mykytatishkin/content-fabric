@@ -37,7 +37,7 @@ from core.utils.logger import get_logger
 
 # Импортируем расширенный словарь
 try:
-    from core.utils.stress_dictionaries import (
+    from core.voice.stress_dictionaries import (
         EXTENDED_STRESS_DICT,
         WORD_FORMS,
         get_stress_position
@@ -136,6 +136,16 @@ class RussianStressMarker:
             except Exception as e:
                 logger.warning(f"Failed to load russian_accentuate: {e}")
         
+        # Initialize pymorphy3 if available
+        self.pymorphy = None
+        if PYMORPHY_AVAILABLE:
+            try:
+                import pymorphy3
+                self.pymorphy = pymorphy3.MorphAnalyzer()
+                logger.info("✓ pymorphy3 initialized for stress detection")
+            except Exception as e:
+                logger.warning(f"Failed to initialize pymorphy3: {e}")
+        
         if not self.accent_engine:
             logger.warning("⚠ No automatic stress detection library available")
             logger.warning("  Install with: pip install russtress")
@@ -196,11 +206,53 @@ class RussianStressMarker:
             except Exception as e:
                 logger.warning(f"Russian_accentuate failed: {e}, using fallback")
         
+        # Try pymorphy3 if available
+        if self.pymorphy:
+            try:
+                text_with_stress = self._add_stress_pymorphy(text)
+                logger.info("✓ Stress marks added using pymorphy3")
+                return text_with_stress
+            except Exception as e:
+                logger.warning(f"pymorphy3 failed: {e}, using fallback")
+        
         # Fallback: словарный подход
         text_with_stress = self._add_stress_dictionary(text, handle_homographs)
         logger.info("✓ Stress marks added using dictionary")
         
         return text_with_stress
+    
+    def _add_stress_pymorphy(self, text: str) -> str:
+        """
+        Add stress marks using pymorphy3 morphological analyzer
+        
+        pymorphy3 has a large Russian dictionary with stress information
+        """
+        import re
+        
+        words = re.findall(r'\b\w+\b', text)
+        result = text
+        
+        for word in words:
+            if not re.match(r'^[а-яёА-ЯЁ]+$', word):  # Only Russian words
+                continue
+            
+            try:
+                parsed = self.pymorphy.parse(word.lower())[0]
+                stressed_word = parsed.text  # pymorphy returns stressed form
+                
+                if '+' in stressed_word:
+                    # Replace in text keeping original case
+                    if word.isupper():
+                        result = result.replace(word, stressed_word.upper().replace('+', self.stress_symbol))
+                    elif word[0].isupper():
+                        result = result.replace(word, stressed_word.capitalize().replace('+', self.stress_symbol))
+                    else:
+                        result = result.replace(word, stressed_word.replace('+', self.stress_symbol))
+            except Exception as e:
+                logger.debug(f"Could not stress word '{word}': {e}")
+                continue
+        
+        return result
     
     def _add_stress_dictionary(self, text: str, handle_homographs: bool) -> str:
         """
