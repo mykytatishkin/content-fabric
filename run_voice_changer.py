@@ -12,7 +12,7 @@ from pathlib import Path
 # Add project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.utils.voice_changer import VoiceChanger
+from core.voice import VoiceChanger
 from core.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -40,11 +40,18 @@ Examples:
   # Batch process multiple files
   python run_voice_changer.py --batch input_dir/ output_dir/ --type male_to_female
   
+  # Text-to-speech: synthesize text to audio
+  python run_voice_changer.py --text "Привет, это тест" output.wav --voice-model kseniya
+  
+  # Text-to-speech without stress marks
+  python run_voice_changer.py --text "Длинный текст..." output.wav --voice-model eugene --no-stress
+  
   # List available presets
   python run_voice_changer.py --list-presets
   
 Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
       Higher values = more dramatic changes. Recommended: pitch 6-10, formant 1.4-1.6
+      Text-to-speech mode uses Silero TTS for Russian language synthesis.
         """
     )
     
@@ -127,6 +134,18 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         help='Disable quality preservation (faster but lower quality)'
     )
     
+    # Text-to-speech mode
+    parser.add_argument(
+        '--text',
+        type=str,
+        help='Text to synthesize (enters text-to-speech mode, requires --voice-model)'
+    )
+    parser.add_argument(
+        '--no-stress',
+        action='store_true',
+        help='Disable Russian stress marks in text-to-speech mode'
+    )
+    
     # Batch processing
     parser.add_argument(
         '-b', '--batch',
@@ -177,23 +196,40 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         print_silero_voices()
         return 0
     
-    # Validate required arguments
-    if not args.input or not args.output:
-        parser.error("Input and output files/directories are required")
-        return 1
+    # Handle text-to-speech mode: output can be first positional arg
+    if args.text:
+        # In text mode, 'input' arg is actually the output file
+        if args.input and not args.output:
+            args.output = args.input
+            args.input = None
+        if not args.output:
+            parser.error("Output file is required when using --text")
+            return 1
+        if not args.voice_model:
+            parser.error("--voice-model is required when using --text")
+            return 1
+    else:
+        # For normal mode, both input and output are required
+        if not args.input or not args.output:
+            parser.error("Input and output files/directories are required")
+            return 1
     
     try:
         # Initialize voice changer
         changer = VoiceChanger(temp_dir=args.temp_dir)
         
-        if args.batch:
+        if args.text:
+            # Text-to-speech mode
+            result = process_text(changer, args)
+            print_results(result, is_batch=False, is_text_mode=True)
+        elif args.batch:
             # Batch processing mode
             result = process_batch(changer, args)
+            print_results(result, is_batch=True, is_text_mode=False)
         else:
             # Single file processing mode
             result = process_file(changer, args)
-        
-        print_results(result, args.batch)
+            print_results(result, is_batch=False, is_text_mode=False)
         return 0
         
     except Exception as e:
@@ -281,6 +317,39 @@ def process_file(changer: VoiceChanger, args) -> dict:
     return result
 
 
+def process_text(changer: VoiceChanger, args) -> dict:
+    """
+    Process text to audio using Silero TTS
+    
+    Args:
+        changer: VoiceChanger instance
+        args: Command line arguments
+        
+    Returns:
+        Processing results
+    """
+    print(f"\n🎙️  Text-to-Speech Synthesis")
+    print(f"{'='*60}")
+    print(f"Text:     {args.text[:80]}..." if len(args.text) > 80 else f"Text:     {args.text}")
+    print(f"Output:   {args.output}")
+    print(f"Voice:    {args.voice_model}")
+    print(f"Stress:   {'Disabled' if args.no_stress else 'Enabled (normative)'}")
+    print(f"{'='*60}\n")
+    
+    print("⏳ Synthesizing...")
+    
+    # Process text
+    result = changer.process_text(
+        text=args.text,
+        output_file=args.output,
+        voice=args.voice_model,
+        sample_rate=48000,
+        add_stress=not args.no_stress
+    )
+    
+    return result
+
+
 def process_batch(changer: VoiceChanger, args) -> dict:
     """
     Process multiple files in batch
@@ -327,17 +396,32 @@ def process_batch(changer: VoiceChanger, args) -> dict:
     return result
 
 
-def print_results(result: dict, is_batch: bool):
+def print_results(result: dict, is_batch: bool, is_text_mode: bool = False):
     """
     Print processing results
     
     Args:
         result: Processing results dictionary
         is_batch: Whether this was batch processing
+        is_text_mode: Whether this was text-to-speech mode
     """
     print(f"\n{'='*60}")
     
-    if is_batch:
+    if is_text_mode:
+        print(f"✅ Text-to-Speech Synthesis Complete!")
+        print(f"{'='*60}")
+        print(f"Output file: {result['output_file']}")
+        if 'voice' in result:
+            print(f"Voice:       {result['voice']}")
+        if 'method' in result:
+            print(f"Method:      {result['method']}")
+        if 'duration' in result:
+            print(f"Duration:    {result['duration']:.2f}s")
+        if 'sample_rate' in result:
+            print(f"Sample rate: {result['sample_rate']} Hz")
+        if 'text' in result and len(result['text']) <= 100:
+            print(f"Text:        {result['text']}")
+    elif is_batch:
         print(f"✅ Batch Processing Complete!")
         print(f"{'='*60}")
         print(f"Total files:  {result['total']}")

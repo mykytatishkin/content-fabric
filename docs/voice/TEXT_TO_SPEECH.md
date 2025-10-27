@@ -1,0 +1,263 @@
+# 🎤 Text-to-Speech Guide
+
+## Overview
+
+This guide explains how to use the text-to-speech functionality to synthesize text directly into audio using Silero TTS, without requiring source audio files.
+
+## ✨ Features
+
+- **Direct text synthesis** - Convert text to audio without audio input
+- **Multiple Russian voices** - 6 different voices (3 female, 3 male)
+- **Automatic stress marks** - Normative Russian stress placement for natural pronunciation
+- **Long text support** - Automatically splits long texts into chunks
+- **High quality** - 48kHz sample rate output
+
+## 🚀 Quick Start
+
+### Method 1: Using CLI
+
+```bash
+# Basic synthesis
+python run_voice_changer.py --text "Привет, это тест" output.wav --voice-model kseniya
+
+# Without stress marks (faster)
+python run_voice_changer.py --text "Длинный текст..." output.wav --voice-model eugene --no-stress
+```
+
+### Method 2: Using Python API
+
+```python
+from core.utils.voice_changer import VoiceChanger
+
+# Initialize
+changer = VoiceChanger()
+
+# Synthesize text
+result = changer.process_text(
+    text="Привет! Это пример синтеза речи.",
+    output_file="output.wav",
+    voice="kseniya",
+    add_stress=True
+)
+
+print(f"Saved to: {result['output_file']}")
+print(f"Duration: {result['duration']:.2f}s")
+```
+
+### Method 3: Direct Silero API
+
+```python
+from core.utils.silero_voice_changer import SileroVoiceChanger
+
+changer = SileroVoiceChanger()
+
+result = changer.synthesize_text_to_audio(
+    text="Использование прямого API.",
+    output_file="output.wav",
+    target_voice="baya",
+    sample_rate=48000,
+    add_stress=True
+)
+```
+
+## 🎤 Available Voices
+
+```bash
+python run_voice_changer.py --list-silero-voices
+```
+
+| Voice ID | Gender | Description | Best For |
+|----------|--------|-------------|----------|
+| `kseniya` | Female | Ксения - женский голос | ⭐ General purpose |
+| `baya` | Female | Бая - женский голос | Narrations |
+| `aidar` | Male | Айдар - мужской голос | General purpose |
+| `eugene` | Male | Евгений - мужской голос | ⭐ Professional |
+| `xenia` | Female | Ксения (variant) | Alternative |
+
+## 📝 Parameters
+
+### CLI Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--text TEXT` | Text to synthesize | Required |
+| `--voice-model NAME` | Voice to use | Required |
+| `--no-stress` | Disable stress marks | Enabled |
+| `output` | Output file path | Required |
+
+### Python API Parameters
+
+```python
+process_text(
+    text: str,              # Text to synthesize
+    output_file: str,       # Output audio file path
+    voice: str = 'kseniya', # Target voice
+    sample_rate: int = 48000, # Output sample rate
+    add_stress: bool = True  # Add Russian stress marks
+)
+```
+
+## 🎯 Russian Stress Marks
+
+The system automatically adds normative (орфоэпическое) stress marks to Russian text for proper pronunciation:
+
+- **Homographs**: Distinguishes `за́мок` vs `замо́к`
+- **Natural rhythm**: Creates natural intonation
+- **Correct pronunciation**: Words are pronounced correctly
+
+### Example
+
+```python
+# Input text
+text = "вода замок"
+
+# With stress marks (internal)
+processed = "вода+ за+мок"  # Correct stress placement
+
+# Synthesized audio will have proper pronunciation
+```
+
+### Disable Stress Marks
+
+```bash
+# CLI
+python run_voice_changer.py --text "текст" output.wav --voice-model kseniya --no-stress
+
+# Python
+result = changer.process_text(
+    text="текст",
+    output_file="output.wav",
+    voice="kseniya",
+    add_stress=False  # Faster processing
+)
+```
+
+## 📚 Examples
+
+### Example 1: Basic Synthesis
+
+```python
+from core.utils.voice_changer import VoiceChanger
+
+changer = VoiceChanger()
+
+result = changer.process_text(
+    text="Привет! Это пример синтеза речи.",
+    output_file="output.wav",
+    voice="kseniya"
+)
+
+print(f"Saved: {result['output_file']}")
+print(f"Duration: {result['duration']:.2f}s")
+```
+
+### Example 2: Different Voices
+
+```python
+text = "Это один и тот же текст."
+
+for voice in ['kseniya', 'eugene', 'aidar', 'baya']:
+    result = changer.process_text(
+        text=text,
+        output_file=f"output_{voice}.wav",
+        voice=voice
+    )
+    print(f"Created: {result['output_file']}")
+```
+
+### Example 3: Long Text
+
+Long texts are automatically split into chunks:
+
+```python
+long_text = """
+Искусственный интеллект продолжает развиваться.
+Системы синтеза речи становятся все более естественными.
+Этот текст будет автоматически разбит на части для синтеза.
+"""
+
+result = changer.process_text(
+    text=long_text.strip(),
+    output_file="long_output.wav",
+    voice="eugene"
+)
+```
+
+### Example 4: From File
+
+```python
+# Read text from file
+with open("text.txt", "r", encoding="utf-8") as f:
+    text = f.read()
+
+# Synthesize
+result = changer.process_text(
+    text=text,
+    output_file="from_file.wav",
+    voice="kseniya"
+)
+```
+
+## 🆚 Comparison with Audio Input
+
+### Audio Input (Existing Feature)
+
+```
+Audio File → Whisper Transcription → Text → Silero TTS → Audio
+                                ↓
+                        Prosody Transfer
+                        (intonation from original)
+```
+
+**Use when:** You have source audio and want to change voice while preserving prosody
+
+### Text Input (New Feature)
+
+```
+Text → Silero TTS → Audio
+       ↓
+   Stress Marks
+   (normative Russian)
+```
+
+**Use when:** You have text and want to create voiceover/narration
+
+## ⚡ Performance
+
+- **With stress marks**: ~2-3 seconds per 100 characters
+- **Without stress marks**: ~1-2 seconds per 100 characters
+- **Sample rate**: 48kHz (high quality)
+- **Format**: WAV (uncompressed)
+
+## 🔧 Troubleshooting
+
+### Error: "Whisper model not loaded"
+
+This is normal for text-to-speech mode. Whisper is only used for audio transcription.
+
+### Error: "Failed to add stress marks"
+
+The system will fall back to text without stress marks. Audio will still be synthesized.
+
+### Long text takes a long time
+
+This is expected. The system splits long texts automatically and synthesizes each chunk. Consider using `--no-stress` for faster processing.
+
+## 📖 See Also
+
+- [Voice Changer Guide](VOICE_CHANGER.md) - Audio voice conversion
+- [Russian Stress README](../docs/RUSSIAN_STRESS_README.md) - Stress marks explanation
+- [Examples](../examples/text_to_speech_example.py) - Complete examples
+
+## 🎉 Summary
+
+Text-to-speech functionality allows you to:
+
+✅ Synthesize text directly to audio  
+✅ Use multiple Russian voices  
+✅ Add normative stress marks automatically  
+✅ Process long texts automatically  
+✅ Create high-quality voiceovers  
+
+Perfect for creating narrations, voiceovers, or converting text to speech!
+

@@ -10,7 +10,7 @@ from pathlib import Path
 # Add project root to path (go up one level from tests/ to project root)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.utils.voice_changer import VoiceChanger
+from core.voice import VoiceChanger
 from core.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -23,7 +23,7 @@ def test_voice_changer_import():
     print("="*60)
     
     try:
-        from core.utils.voice_changer import VoiceChanger, change_voice
+        from core.voice import VoiceChanger, change_voice
         print("✅ VoiceChanger imported successfully")
         return True
     except Exception as e:
@@ -135,7 +135,7 @@ def test_task_integration():
     
     try:
         from app.task_worker import TaskWorker
-        from core.utils.voice_changer import VoiceChanger
+        from core.voice import VoiceChanger
         
         # Check if TaskWorker has voice_changer attribute
         print("✅ TaskWorker can be imported with VoiceChanger support")
