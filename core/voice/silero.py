@@ -26,8 +26,8 @@ except ImportError:
     whisper = None
 
 from core.utils.logger import get_logger
-from core.utils.prosody_transfer import ProsodyTransfer
-from core.utils.russian_stress import RussianStressMarker
+from core.voice.prosody import ProsodyTransfer
+from core.voice.stress import RussianStressMarker
 
 logger = get_logger(__name__)
 
@@ -473,6 +473,87 @@ class SileroVoiceChanger:
             logger.error(f"❌ Failed to add stress marks: {str(e)}")
             logger.warning("Falling back to text without stress marks")
             return text
+    
+    def synthesize_text_to_audio(
+        self,
+        text: str,
+        output_file: str,
+        target_voice: str = 'kseniya',
+        sample_rate: int = 48000,
+        add_stress: bool = True
+    ) -> dict:
+        """
+        Synthesize text directly to audio using Silero TTS
+        
+        This is for direct text-to-speech conversion without source audio.
+        Unlike convert_voice(), this method doesn't use transcription or prosody transfer.
+        
+        Args:
+            text: Input text to synthesize
+            output_file: Output audio file path
+            target_voice: Target Silero voice (aidar, baya, kseniya, etc.)
+            sample_rate: Output sample rate
+            add_stress: Add Russian stress marks for better pronunciation
+            
+        Returns:
+            Synthesis results with text, voice, and output file
+        
+        Example:
+            >>> changer = SileroVoiceChanger()
+            >>> result = changer.synthesize_text_to_audio(
+            ...     text="Привет, это тест",
+            ...     output_file="output.wav",
+            ...     target_voice="kseniya"
+            ... )
+        """
+        # Load models
+        self.load_models()
+        
+        logger.info(f"Synthesizing text to audio with Silero:")
+        logger.info(f"  Output: {output_file}")
+        logger.info(f"  Target voice: {target_voice}")
+        logger.info(f"  Sample rate: {sample_rate}")
+        logger.info(f"  Add stress: {add_stress}")
+        logger.info(f"  Text length: {len(text)} characters")
+        
+        # Step 1: Add Russian stress marks if needed
+        processed_text = text
+        if add_stress and self.stress_marker:
+            logger.info("Adding normative stress marks to Russian text...")
+            try:
+                processed_text = self.stress_marker.add_stress(
+                    text,
+                    handle_homographs=True
+                )
+                logger.info("✓ Stress marks added for natural pronunciation")
+            except Exception as e:
+                logger.warning(f"Failed to add stress marks: {e}, using original text")
+                processed_text = text
+        
+        # Step 2: Synthesize with Silero
+        logger.info(f"Synthesizing with Silero voice '{target_voice}'...")
+        audio_synthesized = self._synthesize_simple(
+            processed_text,
+            target_voice,
+            sample_rate
+        )
+        
+        # Step 3: Save result
+        logger.info("Saving result...")
+        sf.write(output_file, audio_synthesized, sample_rate)
+        
+        logger.info(f"Text-to-speech synthesis completed: {output_file}")
+        
+        return {
+            'success': True,
+            'output_file': output_file,
+            'text': text,
+            'processed_text': processed_text if add_stress else text,
+            'voice': target_voice,
+            'method': 'Silero TTS (Text-to-Speech)',
+            'sample_rate': sample_rate,
+            'duration': len(audio_synthesized) / sample_rate
+        }
     
     def get_available_voices(self) -> dict:
         """Get available Silero voices"""

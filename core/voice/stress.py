@@ -37,7 +37,7 @@ from core.utils.logger import get_logger
 
 # Импортируем расширенный словарь
 try:
-    from core.utils.stress_dictionaries import (
+    from core.voice.stress_dictionaries import (
         EXTENDED_STRESS_DICT,
         WORD_FORMS,
         get_stress_position

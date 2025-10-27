@@ -17,7 +17,7 @@ except ImportError:
     pw = None
 
 from core.utils.logger import get_logger
-from core.utils.rvc_model_manager import RVCModelManager
+from core.voice.rvc.model_manager import RVCModelManager
 
 logger = get_logger(__name__)
 
