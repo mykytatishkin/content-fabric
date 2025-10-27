@@ -141,6 +141,11 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         help='Text to synthesize (enters text-to-speech mode, requires --voice-model)'
     )
     parser.add_argument(
+        '--text-file',
+        type=str,
+        help='Read text from file (alternative to --text, requires --voice-model)'
+    )
+    parser.add_argument(
         '--no-stress',
         action='store_true',
         help='Disable Russian stress marks in text-to-speech mode'
@@ -203,16 +208,26 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         return 0
     
     # Handle text-to-speech mode: output can be first positional arg
-    if args.text:
+    if args.text or args.text_file:
+        # Read text from file if --text-file is provided
+        if args.text_file:
+            try:
+                with open(args.text_file, 'r', encoding='utf-8') as f:
+                    args.text = f.read()
+                print(f"📖 Read {len(args.text):,} characters from: {args.text_file}")
+            except Exception as e:
+                parser.error(f"Failed to read text file: {e}")
+                return 1
+        
         # In text mode, 'input' arg is actually the output file
         if args.input and not args.output:
             args.output = args.input
             args.input = None
         if not args.output:
-            parser.error("Output file is required when using --text")
+            parser.error("Output file is required when using --text or --text-file")
             return 1
         if not args.voice_model:
-            parser.error("--voice-model is required when using --text")
+            parser.error("--voice-model is required when using --text or --text-file")
             return 1
     else:
         # For normal mode, both input and output are required
