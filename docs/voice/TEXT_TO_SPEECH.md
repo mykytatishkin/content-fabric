@@ -74,6 +74,44 @@ python run_voice_changer.py --list-silero-voices
 | `eugene` | Male | Евгений - мужской голос | ⭐ Professional |
 | `xenia` | Female | Ксения (variant) | Alternative |
 
+## ⭐ Best Practices for Quality
+
+### Recommended: Disable Stress Marks (Default)
+
+**Silero TTS handles Russian pronunciation excellently on its own.**
+
+```bash
+# Best quality - no stress marks (default)
+python run_voice_changer.py output.wav \
+  --text "Ваш текст" \
+  --voice-model kseniya
+
+# Optional: Slower speech for better comprehension
+python run_voice_changer.py output.wav \
+  --text "Ваш текст" \
+  --voice-model kseniya \
+  --speed 0.9  # 10% slower
+```
+
+**Why disable stress marks?**
+- ✅ Silero TTS has excellent built-in Russian pronunciation
+- ✅ No artificial stress marks interfering with natural speech
+- ✅ Better prosody and intonation
+- ✅ Faster processing
+- ✅ More natural sounding output
+
+**Default speech rate:** 1.0 (normal speed)
+- Use `--speed 0.9` for 10% slower (better for audiobooks)
+- Use `--speed 1.1` for 10% faster (news-style delivery)
+
+### Natural Pauses Between Sentences
+
+The system automatically adds pauses:
+- **500ms** after sentences ending with `.`, `!`, `?`
+- **300ms** after commas
+
+This creates natural speech rhythm without manual timing control.
+
 ## 📝 Parameters
 
 ### CLI Parameters
@@ -82,8 +120,10 @@ python run_voice_changer.py --list-silero-voices
 |-----------|-------------|---------|
 | `--text TEXT` | Text to synthesize | Required |
 | `--voice-model NAME` | Voice to use | Required |
-| `--no-stress` | Disable stress marks | Enabled |
+| `--speed RATE` | Speech rate (0.9 = 10% slower) | 1.0 |
 | `output` | Output file path | Required |
+
+**Note:** Stress marks are disabled by default for best quality. Silero TTS handles Russian pronunciation excellently.
 
 ### Python API Parameters
 
@@ -93,43 +133,39 @@ process_text(
     output_file: str,       # Output audio file path
     voice: str = 'kseniya', # Target voice
     sample_rate: int = 48000, # Output sample rate
-    add_stress: bool = True  # Add Russian stress marks
+    add_stress: bool = False, # Disabled by default - Silero handles Russian well
+    speaking_rate: float = 1.0  # Speech rate (0.9 = 10% slower)
 )
 ```
 
-## 🎯 Russian Stress Marks
+## 🎯 Russian Stress Marks (Optional)
 
-The system automatically adds normative (орфоэпическое) stress marks to Russian text for proper pronunciation:
+### ⚠️ NOT Recommended for Best Quality
 
-- **Homographs**: Distinguishes `за́мок` vs `замо́к`
-- **Natural rhythm**: Creates natural intonation
-- **Correct pronunciation**: Words are pronounced correctly
+Stress marks are **disabled by default** because Silero TTS handles Russian pronunciation excellently without them.
 
-### Example
+**Problems with automatic stress marks:**
+- ❌ Small dictionary (only ~145 words covered)
+- ❌ Many words left without correct stress
+- ❌ Can interfere with Silero's natural prosody
+- ❌ Slower processing
 
-```python
-# Input text
-text = "вода замок"
+**Library options attempted:**
+- `russtress` - Requires TensorFlow, version conflicts
+- `pymorphy3` - Installed but doesn't add stress marks
+- `russian-accentuate` - Not available
 
-# With stress marks (internal)
-processed = "вода+ за+мок"  # Correct stress placement
+### When to Enable Stress Marks
 
-# Synthesized audio will have proper pronunciation
-```
-
-### Disable Stress Marks
+Only enable if you have specific words that Silero mispronounces:
 
 ```bash
-# CLI
-python run_voice_changer.py --text "текст" output.wav --voice-model kseniya --no-stress
+# Not recommended (stress marks disabled by default)
+python run_voice_changer.py output.wav \
+  --text "текст" \
+  --voice-model kseniya
 
-# Python
-result = changer.process_text(
-    text="текст",
-    output_file="output.wav",
-    voice="kseniya",
-    add_stress=False  # Faster processing
-)
+# If needed, try with Silero's built-in pronunciation - it's usually correct!
 ```
 
 ## 📚 Examples

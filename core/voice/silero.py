@@ -4,6 +4,7 @@ Natural Russian voice synthesis using Silero TTS
 """
 
 import os
+import re
 import torch
 import tempfile
 from pathlib import Path
@@ -261,17 +262,18 @@ class SileroVoiceChanger:
         text: str,
         voice: str,
         sample_rate: int,
-        segments: List[Dict] = None
+        segments: List[Dict] = None,
+        speaking_rate: float = 1.0
     ) -> np.ndarray:
         """Synthesize speech with Silero, preserving pauses from segments"""
         
         try:
             # If we have segments with timestamps, use them for natural pauses
             if segments and len(segments) > 0:
-                return self._synthesize_with_timing(text, voice, sample_rate, segments)
+                return self._synthesize_with_timing(text, voice, sample_rate, segments, speaking_rate)
             
             # Fallback: split by sentences and add pauses
-            return self._synthesize_simple(text, voice, sample_rate)
+            return self._synthesize_simple(text, voice, sample_rate, speaking_rate)
             
         except Exception as e:
             logger.error(f"Synthesis failed: {str(e)}")
@@ -282,7 +284,8 @@ class SileroVoiceChanger:
         text: str,
         voice: str,
         sample_rate: int,
-        segments: List[Dict]
+        segments: List[Dict],
+        speaking_rate: float = 1.0
     ) -> np.ndarray:
         """Synthesize with timing from Whisper segments"""
         
@@ -315,6 +318,10 @@ class SileroVoiceChanger:
             if isinstance(audio_seg, torch.Tensor):
                 audio_seg = audio_seg.cpu().numpy()
             
+            # Apply speed change if needed
+            if speaking_rate != 1.0:
+                audio_seg = self._change_speech_rate(audio_seg, sample_rate, speaking_rate)
+            
             audio_parts.append(audio_seg)
             prev_end = segment.get('end', start + len(audio_seg) / sample_rate)
         
@@ -328,39 +335,91 @@ class SileroVoiceChanger:
         self,
         text: str,
         voice: str,
-        sample_rate: int
+        sample_rate: int,
+        speaking_rate: float = 1.0
     ) -> np.ndarray:
-        """Simple synthesis without timing"""
+        """Simple synthesis without timing with smart pauses"""
         
-        # Split long text into very small chunks (Silero has strict limits)
-        chunks = self._split_text(text, max_length=100)
+        # Split text into sentences for better pause handling
+        sentences = self._split_into_sentences(text)
         
         audio_chunks = []
         
-        for i, chunk in enumerate(chunks):
-            logger.info(f"Synthesizing chunk {i+1}/{len(chunks)}...")
+        for i, sentence in enumerate(sentences):
+            if not sentence.strip():
+                continue
+                
+            logger.info(f"Synthesizing sentence {i+1}/{len(sentences)}: {sentence[:50]}...")
             
-            audio_chunk = self.silero_model.apply_tts(
-                text=chunk,
-                speaker=voice,
-                sample_rate=sample_rate
-            )
+            # Split sentence if too long (Silero has limits)
+            sub_chunks = self._split_text(sentence, max_length=100)
             
-            # Convert to numpy
-            if isinstance(audio_chunk, torch.Tensor):
-                audio_chunk = audio_chunk.cpu().numpy()
+            for sub_chunk in sub_chunks:
+                audio_chunk = self.silero_model.apply_tts(
+                    text=sub_chunk,
+                    speaker=voice,
+                    sample_rate=sample_rate
+                )
+                
+                # Convert to numpy
+                if isinstance(audio_chunk, torch.Tensor):
+                    audio_chunk = audio_chunk.cpu().numpy()
+                
+                # Apply speed change if needed
+                if speaking_rate != 1.0:
+                    audio_chunk = self._change_speech_rate(audio_chunk, sample_rate, speaking_rate)
+                
+                audio_chunks.append(audio_chunk)
             
-            audio_chunks.append(audio_chunk)
-            
-            # Add small pause between chunks
-            if i < len(chunks) - 1:
-                pause = np.zeros(int(0.2 * sample_rate))  # 200ms pause
+            # Add pause after sentence (except last one)
+            if i < len(sentences) - 1:
+                # Longer pause for end of sentence (period, exclamation, question)
+                if sentence.strip().endswith(('.', '!', '?')):
+                    pause_duration = 0.5  # 500ms for sentence end
+                else:
+                    pause_duration = 0.3  # 300ms for comma/semicolon
+                
+                pause = np.zeros(int(pause_duration * sample_rate))
                 audio_chunks.append(pause)
+                logger.info(f"Added pause: {pause_duration:.2f}s")
         
         # Concatenate all chunks
         audio_full = np.concatenate(audio_chunks) if len(audio_chunks) > 1 else audio_chunks[0]
         
         return audio_full
+    
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """Split text into sentences for better pause handling"""
+        
+        # Split by sentence endings but keep punctuation
+        # Pattern: period, exclamation, or question mark followed by space
+        sentence_endings = re.compile(r'([.!?]+)\s+')
+        
+        # Split text
+        parts = sentence_endings.split(text)
+        
+        sentences = []
+        current_sentence = ""
+        
+        for i, part in enumerate(parts):
+            if re.match(r'^[.!?]+$', part):
+                # This is punctuation
+                current_sentence += part
+                if current_sentence.strip():
+                    sentences.append(current_sentence.strip())
+                    current_sentence = ""
+            else:
+                current_sentence += part
+        
+        # Add remaining text
+        if current_sentence.strip():
+            sentences.append(current_sentence.strip())
+        
+        # If no sentence endings found, return whole text
+        if not sentences:
+            sentences = [text]
+        
+        return sentences
     
     def _split_text(self, text: str, max_length: int = 200) -> List[str]:
         """Split text into small chunks for synthesis (Silero has limits)"""
@@ -480,7 +539,8 @@ class SileroVoiceChanger:
         output_file: str,
         target_voice: str = 'kseniya',
         sample_rate: int = 48000,
-        add_stress: bool = True
+        add_stress: bool = False,  # Default False for TTS - Silero handles Russian well
+        speaking_rate: float = 1.0
     ) -> dict:
         """
         Synthesize text directly to audio using Silero TTS
@@ -494,6 +554,7 @@ class SileroVoiceChanger:
             target_voice: Target Silero voice (aidar, baya, kseniya, etc.)
             sample_rate: Output sample rate
             add_stress: Add Russian stress marks for better pronunciation
+            speaking_rate: Speech rate (1.0 = normal, 0.9 = 10% slower, 1.1 = 10% faster)
             
         Returns:
             Synthesis results with text, voice, and output file
@@ -532,10 +593,12 @@ class SileroVoiceChanger:
         
         # Step 2: Synthesize with Silero
         logger.info(f"Synthesizing with Silero voice '{target_voice}'...")
+        logger.info(f"Speaking rate: {speaking_rate:.2f}x")
         audio_synthesized = self._synthesize_simple(
             processed_text,
             target_voice,
-            sample_rate
+            sample_rate,
+            speaking_rate=speaking_rate
         )
         
         # Step 3: Save result
@@ -554,6 +617,34 @@ class SileroVoiceChanger:
             'sample_rate': sample_rate,
             'duration': len(audio_synthesized) / sample_rate
         }
+    
+    def _change_speech_rate(self, audio: np.ndarray, sr: int, rate: float) -> np.ndarray:
+        """
+        Change speech rate using librosa
+        
+        Args:
+            audio: Audio array
+            sr: Sample rate
+            rate: Speed factor (0.9 = 10% slower, 1.1 = 10% faster)
+            
+        Returns:
+            Modified audio array
+        """
+        if rate == 1.0:
+            return audio
+        
+        # Use librosa's time_stretch (this preserves pitch)
+        # Note: librosa uses stretch_factor where 2.0 = 2x slower
+        # So rate=0.9 means slower, so we need stretch_factor = 1/rate
+        stretch_factor = 1.0 / rate
+        
+        try:
+            audio_stretched = librosa.effects.time_stretch(audio, rate=stretch_factor)
+            logger.info(f"Applied speed change: {rate:.2f}x (stretch_factor={stretch_factor:.2f})")
+            return audio_stretched
+        except Exception as e:
+            logger.warning(f"Failed to change speech rate: {e}, using original audio")
+            return audio
     
     def get_available_voices(self) -> dict:
         """Get available Silero voices"""
