@@ -348,11 +348,21 @@ class SileroVoiceChanger:
         for i, sentence in enumerate(sentences):
             if not sentence.strip():
                 continue
+            
+            # Skip sentences that are only punctuation
+            if not re.search(r'[а-яёА-ЯЁ]', sentence):
+                logger.debug(f"Skipping sentence {i+1}/{len(sentences)} (only punctuation): {sentence[:50]}")
+                continue
                 
             logger.info(f"Synthesizing sentence {i+1}/{len(sentences)}: {sentence[:50]}...")
             
             # Split sentence if too long (Silero has limits)
             sub_chunks = self._split_text(sentence, max_length=100)
+            
+            # Skip if no chunks (shouldn't happen but safety check)
+            if not sub_chunks:
+                logger.warning(f"No chunks for sentence {i+1}: {sentence[:50]}")
+                continue
             
             for sub_chunk in sub_chunks:
                 audio_chunk = self.silero_model.apply_tts(
