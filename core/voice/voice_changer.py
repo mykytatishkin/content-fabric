@@ -245,7 +245,8 @@ class VoiceChanger:
         output_file: str,
         voice: str = 'kseniya',
         sample_rate: int = 48000,
-        add_stress: bool = True
+        add_stress: bool = False,  # Default False - Silero TTS handles Russian pronunciation well
+        speaking_rate: float = 1.0
     ) -> Dict[str, any]:
         """
         Process text directly to audio using Silero TTS
@@ -258,7 +259,8 @@ class VoiceChanger:
             output_file: Path to output audio file
             voice: Target Silero voice (aidar, baya, kseniya, eugene, etc.)
             sample_rate: Output sample rate (default: 48000)
-            add_stress: Add Russian stress marks for better pronunciation
+            add_stress: Add Russian stress marks (default: False - Silero handles Russian well)
+            speaking_rate: Speech rate (1.0 = normal, 0.9 = 10% slower, 1.1 = 10% faster)
             
         Returns:
             Processing results with text, voice, and output file
@@ -282,7 +284,8 @@ class VoiceChanger:
             output_file=output_file,
             target_voice=voice,
             sample_rate=sample_rate,
-            add_stress=add_stress
+            add_stress=add_stress,
+            speaking_rate=speaking_rate
         )
         
         logger.info(f"Text-to-speech processing completed: {output_file}")

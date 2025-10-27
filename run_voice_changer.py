@@ -145,6 +145,12 @@ Note: RVC uses AI-based WORLD vocoder for realistic voice transformation.
         action='store_true',
         help='Disable Russian stress marks in text-to-speech mode'
     )
+    parser.add_argument(
+        '--speed',
+        type=float,
+        default=1.0,
+        help='Speech rate (1.0 = normal, 0.9 = 10%% slower, 1.1 = 10%% faster, default: 1.0)'
+    )
     
     # Batch processing
     parser.add_argument(
@@ -333,7 +339,8 @@ def process_text(changer: VoiceChanger, args) -> dict:
     print(f"Text:     {args.text[:80]}..." if len(args.text) > 80 else f"Text:     {args.text}")
     print(f"Output:   {args.output}")
     print(f"Voice:    {args.voice_model}")
-    print(f"Stress:   {'Disabled' if args.no_stress else 'Enabled (normative)'}")
+    print(f"Speed:    {args.speed:.2f}x ({'+' if args.speed > 1.0 else ''}{int((args.speed - 1.0) * 100)}%)")
+    print(f"Stress:   Disabled (Silero handles Russian well)")
     print(f"{'='*60}\n")
     
     print("⏳ Synthesizing...")
@@ -344,7 +351,8 @@ def process_text(changer: VoiceChanger, args) -> dict:
         output_file=args.output,
         voice=args.voice_model,
         sample_rate=48000,
-        add_stress=not args.no_stress
+        add_stress=False,  # Disabled by default - Silero handles Russian well
+        speaking_rate=args.speed
     )
     
     return result
