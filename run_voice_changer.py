@@ -8,6 +8,10 @@ import argparse
 import sys
 import os
 from pathlib import Path
+import warnings
+
+# Suppress NNPACK warnings (not critical - just means optimized acceleration not available)
+warnings.filterwarnings('ignore', message='.*NNPACK.*')
 
 # Add project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
