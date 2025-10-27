@@ -11,7 +11,7 @@ from pathlib import Path
 from core.database.mysql_db import YouTubeMySQLDatabase, Task
 from core.api_clients.youtube_client import YouTubeClient
 from core.utils.logger import get_logger
-from core.utils.voice_changer import VoiceChanger
+from core.voice import VoiceChanger
 
 
 class TaskWorker:

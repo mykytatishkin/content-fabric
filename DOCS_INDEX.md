@@ -3,12 +3,19 @@
 ## 🎙️ Voice Changer
 
 ### Основные гайды:
-- **[VOICE_CHANGER.md](VOICE_CHANGER.md)** - Полное руководство по Voice Changer
-- **[BACKGROUND_PRESERVATION_GUIDE.md](BACKGROUND_PRESERVATION_GUIDE.md)** - Сохранение фона/музыки
-- **[docs/guides/RUSSIAN_STRESS_GUIDE.md](docs/guides/RUSSIAN_STRESS_GUIDE.md)** - 🎯 Правильное ударение (NEW!)
+- **[docs/voice/VOICE_CHANGER.md](docs/voice/VOICE_CHANGER.md)** - Полное руководство по Voice Changer
+- **[docs/voice/TEXT_TO_SPEECH.md](docs/voice/TEXT_TO_SPEECH.md)** - Text-to-Speech синтез речи
+- **[docs/voice/BACKGROUND_PRESERVATION_GUIDE.md](docs/voice/BACKGROUND_PRESERVATION_GUIDE.md)** - Сохранение фона/музыки
+- **[docs/voice/RUSSIAN_STRESS_GUIDE.md](docs/voice/RUSSIAN_STRESS_GUIDE.md)** - 🎯 Правильное ударение
+- **[docs/voice/VOICE_REFACTORING.md](docs/voice/VOICE_REFACTORING.md)** - История рефакторинга
+
+### Производительность:
+- **[docs/voice/PARALLEL_VOICE_PROCESSING.md](docs/voice/PARALLEL_VOICE_PROCESSING.md)** - Параллельная обработка
+- **[docs/voice/SPEED_OPTIMIZATION.md](docs/voice/SPEED_OPTIMIZATION.md)** - Оптимизация скорости
 
 ### Примеры:
 - `examples/voice_changer_example.py` - Примеры использования
+- `examples/text_to_speech_example.py` - Примеры TTS синтеза
 - `examples/russian_stress_example.py` - 🎯 Примеры работы с ударениями
 
 ---
@@ -106,4 +113,4 @@ python3 scripts/daily_report_scheduler.py # Auto-scheduler (12:00 daily)
 
 ---
 
-**Начните с [VOICE_CHANGER.md](VOICE_CHANGER.md) или [docs/setup/QUICK_START.md](docs/setup/QUICK_START.md)!**
+**Начните с [docs/voice/VOICE_CHANGER.md](docs/voice/VOICE_CHANGER.md) или [docs/setup/QUICK_START.md](docs/setup/QUICK_START.md)!**
