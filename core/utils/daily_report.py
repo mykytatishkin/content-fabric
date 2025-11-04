@@ -7,12 +7,13 @@ Sends daily summary of yesterday's tasks grouped by platform and account.
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.database.mysql_db import YouTubeMySQLDatabase, Task
 from core.utils.notifications import NotificationManager
 from core.utils.telegram_broadcast import TelegramBroadcast
 from core.utils.logger import get_logger
+from core.utils.error_categorizer import ErrorCategorizer
 
 
 @dataclass
@@ -25,6 +26,7 @@ class AccountReport:
     total_scheduled: int
     total_completed: int
     total_failed: int
+    error_types: List[str] = field(default_factory=list)  # List of error types for failed tasks
     
     @property
     def error_count(self) -> int:
@@ -128,16 +130,28 @@ class DailyReportManager:
             end_of_day = date.replace(hour=23, minute=59, second=59, microsecond=999999)
             
             # Query tasks for the date
-            query = """
-                SELECT id, account_id, media_type, status, date_add, att_file_path,
-                       cover, title, description, keywords, post_comment, add_info,
-                       date_post, date_done, upload_id
-                FROM tasks 
-                WHERE date_post >= %s AND date_post <= %s
-                ORDER BY account_id, media_type
-            """
-            
-            results = self.db._execute_query(query, (start_of_day, end_of_day), fetch=True)
+            # Try to include error_message if column exists
+            try:
+                query = """
+                    SELECT id, account_id, media_type, status, date_add, att_file_path,
+                           cover, title, description, keywords, post_comment, add_info,
+                           date_post, date_done, upload_id, error_message
+                    FROM tasks 
+                    WHERE date_post >= %s AND date_post <= %s
+                    ORDER BY account_id, media_type
+                """
+                results = self.db._execute_query(query, (start_of_day, end_of_day), fetch=True)
+            except Exception:
+                # Fallback if error_message column doesn't exist yet
+                query = """
+                    SELECT id, account_id, media_type, status, date_add, att_file_path,
+                           cover, title, description, keywords, post_comment, add_info,
+                           date_post, date_done, upload_id
+                    FROM tasks 
+                    WHERE date_post >= %s AND date_post <= %s
+                    ORDER BY account_id, media_type
+                """
+                results = self.db._execute_query(query, (start_of_day, end_of_day), fetch=True)
             
             if not results:
                 return []
@@ -183,6 +197,13 @@ class DailyReportManager:
                 # Get task IDs
                 task_ids = [t.id for t in account_tasks]
                 
+                # Categorize errors for failed tasks
+                error_types = []
+                for task in account_tasks:
+                    if task.status == 2 and task.error_message:
+                        error_type = ErrorCategorizer.categorize(task.error_message)
+                        error_types.append(error_type)
+                
                 account_report = AccountReport(
                     account_id=account_id,
                     account_name=account_info.get('name', f'Unknown-{account_id}'),
@@ -190,7 +211,8 @@ class DailyReportManager:
                     task_ids=task_ids,
                     total_scheduled=total,
                     total_completed=completed,
-                    total_failed=failed
+                    total_failed=failed,
+                    error_types=error_types
                 )
                 
                 account_reports.append(account_report)
@@ -276,6 +298,28 @@ class DailyReportManager:
             for channel in inactive_channels:
                 channel_link = self._format_channel_link(channel['channel_id'], platform_report.platform)
                 message += f"#{channel['id']} {channel_link} - {channel['name']}\n"
+        
+        # Add errors section with categorized error types
+        accounts_with_errors = [acc for acc in platform_report.accounts if acc.error_types]
+        if accounts_with_errors:
+            message += "\n**Errors:**\n"
+            for account in accounts_with_errors:
+                channel_link = self._format_channel_link(account.channel_id, platform_report.platform)
+                # Format error types: count occurrences and format
+                error_type_counts = {}
+                for error_type in account.error_types:
+                    error_type_counts[error_type] = error_type_counts.get(error_type, 0) + 1
+                
+                # Format: "Auth, No file" or "Auth, No file (2x)" if multiple
+                error_display = []
+                for error_type, count in sorted(error_type_counts.items()):
+                    if count > 1:
+                        error_display.append(f"{error_type} ({count}x)")
+                    else:
+                        error_display.append(error_type)
+                
+                error_str = ", ".join(error_display)
+                message += f"#{account.account_id} {channel_link} - {error_str}\n"
         
         # Add summary
         total_scheduled = sum(acc.total_scheduled for acc in platform_report.accounts)
