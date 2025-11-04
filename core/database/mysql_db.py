@@ -446,12 +446,23 @@ class YouTubeMySQLDatabase:
             if date_done is None and status == 1:  # Completed
                 date_done = datetime.now()
             
-            query = """
-                UPDATE tasks 
-                SET status = %s, date_done = %s
-                WHERE id = %s
-            """
-            self._execute_query(query, (status, date_done, task_id))
+            # Check if error_message column exists
+            try:
+                query = """
+                    UPDATE tasks 
+                    SET status = %s, date_done = %s, error_message = %s
+                    WHERE id = %s
+                """
+                self._execute_query(query, (status, date_done, error_message, task_id))
+            except Error:
+                # Fallback if error_message column doesn't exist yet
+                query = """
+                    UPDATE tasks 
+                    SET status = %s, date_done = %s
+                    WHERE id = %s
+                """
+                self._execute_query(query, (status, date_done, task_id))
+            
             return True
         except Error as e:
             print(f"❌ Error updating task status: {e}")
@@ -477,9 +488,8 @@ class YouTubeMySQLDatabase:
             return False
     
     def mark_task_failed(self, task_id: int, error_message: str = None) -> bool:
-        """Mark task as failed."""
-        # error_message тільки для логування, не зберігаємо в БД
-        return self.update_task_status(task_id, 2)
+        """Mark task as failed and store error message."""
+        return self.update_task_status(task_id, 2, error_message=error_message)
     
     def update_task_upload_id(self, task_id: int, upload_id: str) -> bool:
         """Update task with upload_id after successful upload."""
@@ -518,6 +528,11 @@ class YouTubeMySQLDatabase:
             except (json.JSONDecodeError, TypeError):
                 pass
         
+        # Get error_message if column exists (position 15)
+        error_message = None
+        if len(row) > 15:
+            error_message = row[15]
+        
         return Task(
             id=row[0],
             account_id=row[1],
@@ -534,7 +549,7 @@ class YouTubeMySQLDatabase:
             date_post=row[12],
             date_done=row[13],
             upload_id=row[14] if len(row) > 14 else None,
-            error_message=None,  # Не зберігаємо в БД
+            error_message=error_message,
             retry_count=0  # Не зберігаємо в БД
         )
     
