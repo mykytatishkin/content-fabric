@@ -23,6 +23,26 @@ python3 core/database/migrations/add_upload_id_migration.py
 - Creates index on `upload_id` for better query performance
 - Checks if column already exists (safe to run multiple times)
 
+### 2. Add error_message to tasks table
+**File**: `add_error_message_migration.py`  
+**Purpose**: Adds `error_message` column to store error details when tasks fail
+
+**Run migration:**
+```bash
+python3 run_migration_error_message.py
+```
+
+or directly:
+```bash
+python3 core/database/migrations/add_error_message_migration.py
+```
+
+**What it does:**
+- Adds `error_message TEXT` column to `tasks` table
+- Stores error messages for failed tasks
+- Enables error categorization in daily reports (Auth, No file, etc.)
+- Checks if column already exists (safe to run multiple times)
+
 ## Migration Guidelines
 
 1. All migrations should be idempotent (safe to run multiple times)
