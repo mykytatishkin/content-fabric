@@ -446,27 +446,33 @@ class YouTubeMySQLDatabase:
             if date_done is None and status == 1:  # Completed
                 date_done = datetime.now()
             
-            # Check if error_message column exists
-            try:
-                query = """
-                    UPDATE tasks 
-                    SET status = %s, date_done = %s, error_message = %s
-                    WHERE id = %s
-                """
-                self._execute_query(query, (status, date_done, error_message, task_id))
-            except Error:
-                # Fallback if error_message column doesn't exist yet
-                query = """
-                    UPDATE tasks 
-                    SET status = %s, date_done = %s
-                    WHERE id = %s
-                """
-                self._execute_query(query, (status, date_done, task_id))
+            # Always try to update with error_message (column should exist after migration)
+            query = """
+                UPDATE tasks 
+                SET status = %s, date_done = %s, error_message = %s
+                WHERE id = %s
+            """
+            self._execute_query(query, (status, date_done, error_message, task_id))
             
             return True
         except Error as e:
-            print(f"❌ Error updating task status: {e}")
-            return False
+            # If error_message column doesn't exist, try without it
+            if 'error_message' in str(e).lower():
+                try:
+                    query = """
+                        UPDATE tasks 
+                        SET status = %s, date_done = %s
+                        WHERE id = %s
+                    """
+                    self._execute_query(query, (status, date_done, task_id))
+                    print(f"⚠️  Warning: error_message column not found, update without it")
+                    return True
+                except Error as e2:
+                    print(f"❌ Error updating task status: {e2}")
+                    return False
+            else:
+                print(f"❌ Error updating task status: {e}")
+                return False
     
     def mark_task_processing(self, task_id: int) -> bool:
         """Mark task as processing."""
