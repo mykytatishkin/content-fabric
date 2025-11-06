@@ -200,8 +200,12 @@ class DailyReportManager:
                 # Categorize errors for failed tasks
                 error_types = []
                 for task in account_tasks:
-                    if task.status == 2 and task.error_message:
-                        error_type = ErrorCategorizer.categorize(task.error_message)
+                    if task.status == 2:  # Failed task
+                        if task.error_message:
+                            error_type = ErrorCategorizer.categorize(task.error_message)
+                        else:
+                            # If no error_message (old tasks before migration), show as Unknown
+                            error_type = "Unknown"
                         error_types.append(error_type)
                 
                 account_report = AccountReport(
