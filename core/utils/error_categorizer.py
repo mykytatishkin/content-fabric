@@ -24,7 +24,10 @@ class ErrorCategorizer:
             r'access.*denied',
             r'unauthorized',
             r'401',
-            r'403'
+            r'403',
+            r'failed.*token',
+            r'failed.*create.*service',
+            r'service.*token'
         ],
         'No file': [
             r'file.*not.*found',
