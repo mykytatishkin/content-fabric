@@ -193,7 +193,7 @@ for task in completed_tasks:
 Если у вас уже есть таблица `tasks`, выполните миграцию:
 
 ```bash
-python3 run_migration_upload_id.py
+python3 core/database/migrations/scripts/run_migration_upload_id.py
 ```
 
 Миграция:

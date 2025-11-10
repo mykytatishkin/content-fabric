@@ -40,6 +40,50 @@ CREATE TABLE IF NOT EXISTS youtube_tokens (
     INDEX idx_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Credentials table for automated OAuth re-authentication
+CREATE TABLE IF NOT EXISTS youtube_account_credentials (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    channel_name VARCHAR(255) NOT NULL,
+    login_email VARCHAR(320) NOT NULL,
+    login_password TEXT NOT NULL COMMENT 'Stored in raw form; ensure server access is restricted',
+    totp_secret VARCHAR(64),
+    backup_codes JSON,
+    proxy_host VARCHAR(255),
+    proxy_port INT,
+    proxy_username VARCHAR(255),
+    proxy_password VARCHAR(255),
+    profile_path VARCHAR(500),
+    user_agent VARCHAR(500),
+    last_success_at DATETIME,
+    last_attempt_at DATETIME,
+    last_error TEXT,
+    enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (channel_name) REFERENCES youtube_channels(name) ON DELETE CASCADE,
+    UNIQUE KEY idx_channel_unique (channel_name),
+    INDEX idx_login_email (login_email),
+    INDEX idx_enabled (enabled),
+    INDEX idx_last_success (last_success_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Audit table for tracking automated re-auth attempts
+CREATE TABLE IF NOT EXISTS youtube_reauth_audit (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    channel_name VARCHAR(255) NOT NULL,
+    initiated_at DATETIME NOT NULL,
+    completed_at DATETIME,
+    status VARCHAR(32) NOT NULL,
+    error_message TEXT,
+    metadata JSON,
+
+    FOREIGN KEY (channel_name) REFERENCES youtube_channels(name) ON DELETE CASCADE,
+    INDEX idx_channel_status (channel_name, status),
+    INDEX idx_initiated (initiated_at),
+    INDEX idx_completed (completed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Create tasks table for scheduled posting
 CREATE TABLE IF NOT EXISTS tasks (
     id INT AUTO_INCREMENT PRIMARY KEY,
