@@ -30,12 +30,54 @@ class YouTubeChannel:
 
 
 @dataclass
+class YouTubeAccountCredential:
+    """Credentials required for automated OAuth re-authentication."""
+    id: int
+    channel_name: str
+    login_email: str
+    login_password: str
+    totp_secret: Optional[str] = None
+    backup_codes: Optional[List[str]] = None
+    proxy_host: Optional[str] = None
+    proxy_port: Optional[int] = None
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
+    profile_path: Optional[str] = None
+    user_agent: Optional[str] = None
+    last_success_at: Optional[datetime] = None
+    last_attempt_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    enabled: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class YouTubeReauthAudit:
+    """Audit record for OAuth re-authentication attempts."""
+    id: int
+    channel_name: str
+    initiated_at: datetime
+    completed_at: Optional[datetime]
+    status: str
+    error_message: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
 class Task:
-    """Task data structure for scheduled posting."""
+    """Task data structure for scheduled posting.
+
+    Status codes:
+        0 -> pending
+        1 -> completed
+        2 -> failed
+        3 -> processing
+    """
     id: int
     account_id: int
     media_type: str
-    status: int  # 0=pending, 1=completed, 2=failed, 3=processing
+    status: int
     att_file_path: str
     title: str
     date_post: datetime
@@ -348,6 +390,298 @@ class YouTubeMySQLDatabase:
         except Error as e:
             print(f"❌ Error getting database stats: {e}")
             return {}
+
+    # ==================== Credential Management ====================
+
+    def upsert_account_credentials(
+        self,
+        channel_name: str,
+        login_email: str,
+        login_password: str,
+        totp_secret: Optional[str] = None,
+        backup_codes: Optional[List[str]] = None,
+        proxy_host: Optional[str] = None,
+        proxy_port: Optional[int] = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
+        profile_path: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        enabled: bool = True
+    ) -> bool:
+        """Create or update stored credentials for an automation channel.
+
+        Args:
+            channel_name: Linked YouTube channel name.
+            login_email: Google account email.
+            login_password: Google account password in raw form.
+            totp_secret: Optional TOTP seed for MFA.
+            backup_codes: Optional list of backup codes.
+            proxy_host: Optional proxy hostname.
+            proxy_port: Optional proxy port.
+            proxy_username: Optional proxy username.
+            proxy_password: Optional proxy password.
+            profile_path: Optional Chromium profile path.
+            user_agent: Optional custom user-agent string.
+            enabled: Whether automation should use this credential.
+
+        Returns:
+            True if credentials were inserted or updated.
+        """
+        try:
+            backup_codes_json = json.dumps(backup_codes) if backup_codes else None
+            query = """
+                INSERT INTO youtube_account_credentials (
+                    channel_name,
+                    login_email,
+                    login_password,
+                    totp_secret,
+                    backup_codes,
+                    proxy_host,
+                    proxy_port,
+                    proxy_username,
+                    proxy_password,
+                    profile_path,
+                    user_agent,
+                    enabled
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    login_email = VALUES(login_email),
+                    login_password = VALUES(login_password),
+                    totp_secret = VALUES(totp_secret),
+                    backup_codes = VALUES(backup_codes),
+                    proxy_host = VALUES(proxy_host),
+                    proxy_port = VALUES(proxy_port),
+                    proxy_username = VALUES(proxy_username),
+                    proxy_password = VALUES(proxy_password),
+                    profile_path = VALUES(profile_path),
+                    user_agent = VALUES(user_agent),
+                    enabled = VALUES(enabled),
+                    updated_at = CURRENT_TIMESTAMP
+            """
+            params = (
+                channel_name,
+                login_email,
+                login_password,
+                totp_secret,
+                backup_codes_json,
+                proxy_host,
+                proxy_port,
+                proxy_username,
+                proxy_password,
+                profile_path,
+                user_agent,
+                enabled
+            )
+            self._execute_query(query, params)
+            return True
+        except Error as e:
+            print(f"❌ Error upserting credentials for '{channel_name}': {e}")
+            return False
+
+    def disable_account_credentials(self, channel_name: str) -> bool:
+        """Disable stored credentials for the specified channel."""
+        try:
+            query = """
+                UPDATE youtube_account_credentials
+                SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP
+                WHERE channel_name = %s
+            """
+            self._execute_query(query, (channel_name,))
+            return True
+        except Error as e:
+            print(f"❌ Error disabling credentials for '{channel_name}': {e}")
+            return False
+
+    def get_account_credentials(
+        self,
+        channel_name: str,
+        include_disabled: bool = False
+    ) -> Optional[YouTubeAccountCredential]:
+        """Fetch automation credentials for the channel."""
+        try:
+            query = """
+                SELECT
+                    id,
+                    channel_name,
+                    login_email,
+                    login_password,
+                    totp_secret,
+                    backup_codes,
+                    proxy_host,
+                    proxy_port,
+                    proxy_username,
+                    proxy_password,
+                    profile_path,
+                    user_agent,
+                    last_success_at,
+                    last_attempt_at,
+                    last_error,
+                    enabled,
+                    created_at,
+                    updated_at
+                FROM youtube_account_credentials
+                WHERE channel_name = %s
+            """
+            if not include_disabled:
+                query += " AND enabled = TRUE"
+            results = self._execute_query(query, (channel_name,), fetch=True)
+            if not results:
+                return None
+            return self._row_to_credentials(results[0])
+        except Error as e:
+            print(f"❌ Error fetching credentials for '{channel_name}': {e}")
+            return None
+
+    def list_account_credentials(self, limit: Optional[int] = None) -> List[YouTubeAccountCredential]:
+        """List stored credentials."""
+        try:
+            query = """
+                SELECT
+                    id,
+                    channel_name,
+                    login_email,
+                    login_password,
+                    totp_secret,
+                    backup_codes,
+                    proxy_host,
+                    proxy_port,
+                    proxy_username,
+                    proxy_password,
+                    profile_path,
+                    user_agent,
+                    last_success_at,
+                    last_attempt_at,
+                    last_error,
+                    enabled,
+                    created_at,
+                    updated_at
+                FROM youtube_account_credentials
+                ORDER BY channel_name ASC
+            """
+            if limit:
+                results = self._execute_query(query + " LIMIT %s", (limit,), fetch=True)
+            else:
+                results = self._execute_query(query, fetch=True)
+            return [self._row_to_credentials(row) for row in results]
+        except Error as e:
+            print(f"❌ Error listing credentials: {e}")
+            return []
+
+    def mark_credentials_attempt(
+        self,
+        channel_name: str,
+        success: bool,
+        error_message: Optional[str] = None,
+        attempt_time: Optional[datetime] = None
+    ) -> bool:
+        """Update credential metadata after an automation attempt."""
+        try:
+            attempt_time = attempt_time or datetime.now()
+            query = """
+                UPDATE youtube_account_credentials
+                SET
+                    last_attempt_at = %s,
+                    last_success_at = CASE WHEN %s THEN %s ELSE last_success_at END,
+                    last_error = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE channel_name = %s
+            """
+            params = (
+                attempt_time,
+                success,
+                attempt_time if success else None,
+                None if success else error_message,
+                channel_name
+            )
+            self._execute_query(query, params)
+            return True
+        except Error as e:
+            print(f"❌ Error updating credentials attempt for '{channel_name}': {e}")
+            return False
+
+    # ==================== Re-auth Audit ====================
+
+    def create_reauth_audit(
+        self,
+        channel_name: str,
+        status: str,
+        initiated_at: Optional[datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[int]:
+        """Create an audit record for an automation attempt."""
+        try:
+            initiated_at = initiated_at or datetime.now()
+            metadata_json = json.dumps(metadata) if metadata else None
+            query = """
+                INSERT INTO youtube_reauth_audit (
+                    channel_name,
+                    initiated_at,
+                    status,
+                    metadata
+                )
+                VALUES (%s, %s, %s, %s)
+            """
+            self._execute_query(query, (channel_name, initiated_at, status, metadata_json))
+            result = self._execute_query("SELECT LAST_INSERT_ID()", fetch=True)
+            return result[0][0] if result else None
+        except Error as e:
+            print(f"❌ Error creating reauth audit for '{channel_name}': {e}")
+            return None
+
+    def complete_reauth_audit(
+        self,
+        audit_id: int,
+        status: str,
+        completed_at: Optional[datetime] = None,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Update an audit record with completion status."""
+        try:
+            completed_at = completed_at or datetime.now()
+            metadata_json = json.dumps(metadata) if metadata else None
+            query = """
+                UPDATE youtube_reauth_audit
+                SET
+                    completed_at = %s,
+                    status = %s,
+                    error_message = %s,
+                    metadata = COALESCE(%s, metadata)
+                WHERE id = %s
+            """
+            self._execute_query(query, (completed_at, status, error_message, metadata_json, audit_id))
+            return True
+        except Error as e:
+            print(f"❌ Error completing reauth audit #{audit_id}: {e}")
+            return False
+
+    def get_recent_reauth_audit(
+        self,
+        channel_name: str,
+        limit: int = 10
+    ) -> List[YouTubeReauthAudit]:
+        """Retrieve recent audit entries for a channel."""
+        try:
+            query = """
+                SELECT
+                    id,
+                    channel_name,
+                    initiated_at,
+                    completed_at,
+                    status,
+                    error_message,
+                    metadata
+                FROM youtube_reauth_audit
+                WHERE channel_name = %s
+                ORDER BY initiated_at DESC
+                LIMIT %s
+            """
+            results = self._execute_query(query, (channel_name, limit), fetch=True)
+            return [self._row_to_audit(row) for row in results]
+        except Error as e:
+            print(f"❌ Error fetching reauth audit for '{channel_name}': {e}")
+            return []
     
     # ==================== Task Management Methods ====================
     
@@ -465,7 +799,7 @@ class YouTubeMySQLDatabase:
                         WHERE id = %s
                     """
                     self._execute_query(query, (status, date_done, task_id))
-                    print(f"⚠️  Warning: error_message column not found, update without it")
+                    print("⚠️  Warning: error_message column not found, update without it")
                     return True
                 except Error as e2:
                     print(f"❌ Error updating task status: {e2}")
@@ -511,7 +845,7 @@ class YouTubeMySQLDatabase:
             print(f"❌ Error updating task upload_id: {e}")
             return False
     
-    def increment_task_retry(self, task_id: int) -> bool:
+    def increment_task_retry(self, _task_id: int) -> bool:
         """Increment task retry count (in memory only, not in DB)."""
         # retry_count тільки в пам'яті Task Worker
         return True
@@ -525,6 +859,53 @@ class YouTubeMySQLDatabase:
         except Error:
             return False
     
+    def _row_to_credentials(self, row: tuple) -> YouTubeAccountCredential:
+        """Convert database row to YouTubeAccountCredential."""
+        backup_codes = None
+        if row[5]:
+            try:
+                backup_codes = json.loads(row[5])
+            except (json.JSONDecodeError, TypeError):
+                backup_codes = None
+        return YouTubeAccountCredential(
+            id=row[0],
+            channel_name=row[1],
+            login_email=row[2],
+            login_password=row[3],
+            totp_secret=row[4],
+            backup_codes=backup_codes,
+            proxy_host=row[6],
+            proxy_port=row[7],
+            proxy_username=row[8],
+            proxy_password=row[9],
+            profile_path=row[10],
+            user_agent=row[11],
+            last_success_at=row[12],
+            last_attempt_at=row[13],
+            last_error=row[14],
+            enabled=bool(row[15]),
+            created_at=row[16],
+            updated_at=row[17]
+        )
+
+    def _row_to_audit(self, row: tuple) -> YouTubeReauthAudit:
+        """Convert database row to YouTubeReauthAudit."""
+        metadata = None
+        if row[6]:
+            try:
+                metadata = json.loads(row[6])
+            except (json.JSONDecodeError, TypeError):
+                metadata = None
+        return YouTubeReauthAudit(
+            id=row[0],
+            channel_name=row[1],
+            initiated_at=row[2],
+            completed_at=row[3],
+            status=row[4],
+            error_message=row[5],
+            metadata=metadata
+        )
+
     def _row_to_task(self, row: tuple) -> Task:
         """Convert database row to Task object."""
         add_info = None
