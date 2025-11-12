@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Iterable, List, Optional
 
-from core.auth.reauth.models import AutomationCredential, ReauthResult, ReauthStatus
+from core.auth.reauth.models import AutomationCredential, ProxyConfig, ReauthResult, ReauthStatus
 from core.auth.reauth.oauth_flow import OAuthConfig, OAuthFlow
-from core.auth.reauth.playwright_client import BrowserConfig, perform_login, playwright_context
+from core.auth.reauth.playwright_client import BrowserConfig, playwright_context, prepare_oauth_consent_page
 from core.database.mysql_db import YouTubeMySQLDatabase
 from core.utils.logger import get_logger
 
@@ -18,11 +18,22 @@ LOGGER = get_logger(__name__)
 
 
 @dataclass
+class OAuthSettings:
+    """Shared OAuth settings that are independent of channel credentials."""
+
+    redirect_port: int = 8080
+    scopes: Optional[list[str]] = None
+    prompt: str = "consent"
+    access_type: str = "offline"
+    timeout_seconds: int = 300
+
+
+@dataclass
 class ServiceConfig:
     """High-level configuration for the re-auth service."""
 
     browser: BrowserConfig = field(default_factory=BrowserConfig)
-    oauth: OAuthConfig = field(default_factory=OAuthConfig)
+    oauth_settings: OAuthSettings = field(default_factory=OAuthSettings)
     max_concurrent_sessions: int = 1
 
 
@@ -37,7 +48,6 @@ class YouTubeReauthService:
     ) -> None:
         self.db = db
         self.config = service_config
-        self.oauth_flow = OAuthFlow(service_config.oauth)
         self.open_browser = open_browser or self._default_open_browser
 
     @staticmethod
@@ -51,20 +61,31 @@ class YouTubeReauthService:
             LOGGER.error("No automation credentials configured for %s", channel_name)
             return None
 
+        channel = self.db.get_channel(channel_name)
+        if not channel:
+            LOGGER.error("Channel configuration not found for %s", channel_name)
+            return None
+
+        if not channel.client_id or not channel.client_secret:
+            LOGGER.error("Missing client credentials for %s", channel_name)
+            return None
+
         proxy = None
         if record.proxy_host and record.proxy_port:
-            proxy = {
-                "host": record.proxy_host,
-                "port": record.proxy_port,
-                "username": record.proxy_username,
-                "password": record.proxy_password,
-            }
+            proxy = ProxyConfig(
+                host=record.proxy_host,
+                port=record.proxy_port,
+                username=record.proxy_username,
+                password=record.proxy_password,
+            )
 
         return AutomationCredential(
             channel_name=record.channel_name,
             login_email=record.login_email,
             login_password=record.login_password,
             profile_path=record.profile_path or "",
+            client_id=channel.client_id,
+            client_secret=channel.client_secret,
             totp_secret=record.totp_secret,
             backup_codes=record.backup_codes,
             proxy=proxy,
@@ -80,22 +101,45 @@ class YouTubeReauthService:
         audit_id = self.db.create_reauth_audit(
             credential.channel_name,
             status=ReauthStatus.SKIPPED.value,
-            initiated_at=datetime.utcnow(),
+            initiated_at=datetime.now(timezone.utc),
             metadata={"stage": "initiated"},
         )
 
         state = f"{credential.channel_name}_{secrets.token_urlsafe(8)}"
 
+        oauth_config = OAuthConfig(
+            client_id=credential.client_id,
+            client_secret=credential.client_secret,
+            redirect_port=self.config.oauth_settings.redirect_port,
+            scopes=self.config.oauth_settings.scopes,
+            prompt=self.config.oauth_settings.prompt,
+            access_type=self.config.oauth_settings.access_type,
+            timeout_seconds=self.config.oauth_settings.timeout_seconds,
+        )
+        oauth_flow = OAuthFlow(oauth_config)
+
         async with playwright_context(credential, self.config.browser) as (_, context):
             page = await context.new_page()
-            await perform_login(page, credential, self.config.browser)
+
+            loop = asyncio.get_running_loop()
+
+            def navigate_to_consent(url: str) -> None:
+                LOGGER.debug("Navigating Playwright page to OAuth consent URL: %s", url)
+                future = asyncio.run_coroutine_threadsafe(
+                    prepare_oauth_consent_page(page, credential, self.config.browser, url),
+                    loop,
+                )
+                try:
+                    future.result(timeout=self.config.oauth_settings.timeout_seconds)
+                except Exception as exc:
+                    LOGGER.error("Failed to prepare OAuth consent page: %s", exc)
 
             result = await asyncio.get_running_loop().run_in_executor(
                 None,
-                self.oauth_flow.run,
+                oauth_flow.run,
                 credential,
                 state,
-                self.open_browser,
+                navigate_to_consent,
             )
 
         self.db.mark_credentials_attempt(
@@ -108,7 +152,7 @@ class YouTubeReauthService:
             self.db.complete_reauth_audit(
                 audit_id,
                 status=result.status.value,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 error_message=result.error,
                 metadata=result.metadata,
             )

@@ -32,6 +32,8 @@ class AutomationCredential:
     login_email: str
     login_password: str
     profile_path: str
+    client_id: str
+    client_secret: str
     totp_secret: Optional[str] = None
     backup_codes: Optional[Sequence[str]] = None
     proxy: Optional[ProxyConfig] = None
