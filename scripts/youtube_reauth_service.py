@@ -78,8 +78,8 @@ def main(argv: list[str] | None = None) -> int:
 
     service_config = ServiceConfig()
     service_config.browser.headless = args.headless
-    service_config.oauth.redirect_port = args.redirect_port
-    service_config.oauth.timeout_seconds = args.timeout
+    service_config.oauth_settings.redirect_port = args.redirect_port
+    service_config.oauth_settings.timeout_seconds = args.timeout
 
     service = YouTubeReauthService(db=db, service_config=service_config)
 
