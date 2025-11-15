@@ -20,9 +20,11 @@ FrameLike = Union["Page", "Frame"]
 from core.auth.reauth.models import AutomationCredential, ProxyConfig
 from core.utils.logger import get_logger
 from core.utils.notifications import NotificationManager
+from core.utils.telegram_broadcast import TelegramBroadcast
 
 LOGGER = get_logger(__name__)
 NOTIFIER: Optional[NotificationManager] = None
+BROADCASTER: Optional[TelegramBroadcast] = None
 
 
 @dataclass
@@ -1147,17 +1149,53 @@ def _page_from_surface(surface: FrameLike) -> "Page":
 
 def _notify_manual_intervention(channel_name: str, message: str) -> None:
     """Send Telegram alert informing operators about required manual action."""
-    global NOTIFIER
+    global NOTIFIER, BROADCASTER
     if NOTIFIER is None:
         NOTIFIER = NotificationManager()
+    if BROADCASTER is None:
+        BROADCASTER = TelegramBroadcast()
 
+    # Escape Markdown special characters
+    def escape_markdown(text: str) -> str:
+        """Escape Markdown special characters."""
+        special_chars = ['*', '_', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+        for char in special_chars:
+            text = text.replace(char, f'\\{char}')
+        return text
+    
+    safe_channel = escape_markdown(channel_name)
+    safe_message = escape_markdown(message)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
     alert_message = (
-        f"🔐 *YouTube Reauth Requires Attention*\n\n"
-        f"*Channel:* {channel_name}\n"
-        f"*Action Needed:* {message}\n\n"
-        "Please complete the verification in the automation browser session."
+        f"🚨 *Проблема з авторизацією YouTube*\n\n"
+        f"*Канал:* {safe_channel}\n"
+        f"*Потрібна дія:* {safe_message}\n\n"
+        f"⚠️ Потрібен ручний ввід MFA коду або підтвердження\n"
+        f"Будь ласка, завершіть верифікацію в браузері автоматизації.\n\n"
+        f"_Час: {timestamp}_"
     )
     try:
+        # Try broadcast first (like daily_report)
+        if BROADCASTER:
+            subscribers = BROADCASTER.get_subscribers()
+            if not subscribers:
+                # If no subscribers - add TELEGRAM_CHAT_ID as subscriber
+                telegram_chat_id = NOTIFIER.notification_config.telegram_chat_id
+                if telegram_chat_id:
+                    try:
+                        chat_id_int = int(telegram_chat_id)
+                        BROADCASTER.add_subscriber(chat_id_int)
+                        LOGGER.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber")
+                    except (ValueError, TypeError):
+                        LOGGER.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
+            
+            result = BROADCASTER.broadcast_message(alert_message)
+            if result['success'] > 0:
+                LOGGER.info(f"MFA notification sent to {result['success']}/{result['total']} subscribers")
+                return
+        
+        # Fallback to single user notification
         NOTIFIER.send_system_alert("YouTube OAuth MFA", alert_message)
     except Exception as exc:  # pragma: no cover - defensive logging
         LOGGER.error("Failed to dispatch manual intervention alert: %s", exc)

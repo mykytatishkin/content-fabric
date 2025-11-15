@@ -13,6 +13,8 @@ from core.auth.reauth.oauth_flow import OAuthConfig, OAuthFlow
 from core.auth.reauth.playwright_client import BrowserConfig, playwright_context, prepare_oauth_consent_page
 from core.database.mysql_db import YouTubeMySQLDatabase
 from core.utils.logger import get_logger
+from core.utils.telegram_broadcast import TelegramBroadcast
+from core.utils.notifications import NotificationManager
 
 LOGGER = get_logger(__name__)
 
@@ -45,10 +47,14 @@ class YouTubeReauthService:
         db: YouTubeMySQLDatabase,
         service_config: ServiceConfig,
         open_browser: Optional[Callable[[str], None]] = None,
+        use_broadcast: bool = True,
     ) -> None:
         self.db = db
         self.config = service_config
         self.open_browser = open_browser or self._default_open_browser
+        self.use_broadcast = use_broadcast
+        self.broadcaster = TelegramBroadcast() if use_broadcast else None
+        self.notifier = NotificationManager(config_path="config/config.yaml")
 
     @staticmethod
     def _default_open_browser(url: str) -> None:
@@ -162,6 +168,11 @@ class YouTubeReauthService:
             credential.channel_name,
             result.status.value,
         )
+        
+        # Send Telegram notification if reauth failed
+        if result.status != ReauthStatus.SUCCESS:
+            self._send_reauth_error_notification(result)
+        
         return result
 
     async def run_for_channels(self, channel_names: Iterable[str]) -> List[ReauthResult]:
@@ -170,13 +181,14 @@ class YouTubeReauthService:
         for channel_name in channel_names:
             credential = self._load_credential(channel_name)
             if not credential:
-                results.append(
-                    ReauthResult(
-                        channel_name=channel_name,
-                        status=ReauthStatus.FAILED,
-                        error="Credentials not configured",
-                    )
+                failed_result = ReauthResult(
+                    channel_name=channel_name,
+                    status=ReauthStatus.FAILED,
+                    error="Credentials not configured",
                 )
+                results.append(failed_result)
+                # Send notification about missing credentials
+                self._send_reauth_error_notification(failed_result)
                 continue
 
             result = await self._run_channel(credential)
@@ -186,5 +198,92 @@ class YouTubeReauthService:
     def run_sync(self, channel_names: Iterable[str]) -> List[ReauthResult]:
         """Synchronous wrapper around async execution."""
         return asyncio.run(self.run_for_channels(channel_names))
+    
+    def _send_reauth_error_notification(self, result: ReauthResult) -> None:
+        """Send Telegram notification about reauth error."""
+        try:
+            message = self._format_reauth_error_message(result)
+            self._send_telegram_message(message)
+        except Exception as e:
+            LOGGER.error(f"Failed to send reauth error notification: {e}")
+    
+    def _format_reauth_error_message(self, result: ReauthResult) -> str:
+        """Format error message for Telegram notification."""
+        channel_name = result.channel_name
+        error = result.error or "Unknown error"
+        status = result.status.value
+        
+        # Escape Markdown special characters in user input
+        def escape_markdown(text: str) -> str:
+            """Escape Markdown special characters."""
+            special_chars = ['*', '_', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+            for char in special_chars:
+                text = text.replace(char, f'\\{char}')
+            return text
+        
+        # Escape channel name and error to prevent Markdown parsing issues
+        safe_channel = escape_markdown(channel_name)
+        safe_error = escape_markdown(error)
+        safe_status = escape_markdown(status)
+        
+        message = f"🚨 *Проблема з авторизацією YouTube*\n\n"
+        message += f"*Канал:* {safe_channel}\n"
+        message += f"*Статус:* {safe_status}\n"
+        message += f"*Помилка:* {safe_error}\n\n"
+        
+        # Add helpful context based on error type
+        if "MFA" in error or "challenge" in error.lower() or "код" in error.lower():
+            message += "⚠️ Потрібен ручний ввід MFA коду\n"
+        elif "credentials" in error.lower() or "не знайдено" in error.lower():
+            message += "⚠️ Перевірте налаштування credentials в базі даних\n"
+        elif "timeout" in error.lower():
+            message += "⚠️ Перевищено час очікування. Спробуйте знову\n"
+        elif "consent" in error.lower() or "button" in error.lower():
+            message += "⚠️ Проблема з автоматичним натисканням кнопки Continue\n"
+        
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        message += f"\n_Час: {timestamp}_"
+        
+        return message
+    
+    def _send_telegram_message(self, message: str) -> bool:
+        """
+        Send message via Telegram (broadcast or single user).
+        
+        Args:
+            message: Message to send
+            
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        try:
+            if self.use_broadcast and self.broadcaster:
+                # Check if there are subscribers
+                subscribers = self.broadcaster.get_subscribers()
+                
+                if not subscribers:
+                    # If no subscribers - add TELEGRAM_CHAT_ID as subscriber
+                    telegram_chat_id = self.notifier.notification_config.telegram_chat_id
+                    if telegram_chat_id:
+                        try:
+                            chat_id_int = int(telegram_chat_id)
+                            self.broadcaster.add_subscriber(chat_id_int)
+                            LOGGER.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber")
+                        except (ValueError, TypeError):
+                            LOGGER.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
+                
+                # Broadcast to all subscribers
+                result = self.broadcaster.broadcast_message(message)
+                success = result['success'] > 0
+                if success:
+                    LOGGER.info(f"Reauth error notification sent to {result['success']}/{result['total']} subscribers")
+                return success
+            else:
+                # Send to single user (fallback method)
+                self.notifier._send_telegram_message(message)
+                return True
+        except Exception as e:
+            LOGGER.error(f"Error sending Telegram message: {str(e)}")
+            return False
 
 
