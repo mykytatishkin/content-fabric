@@ -10,7 +10,7 @@ This folder contains all database migration scripts for the Content Fabric proje
 
 **Run migration:**
 ```bash
-python3 run_migration_upload_id.py
+python3 core/database/migrations/scripts/run_migration_upload_id.py
 ```
 
 or directly:
@@ -29,7 +29,7 @@ python3 core/database/migrations/add_upload_id_migration.py
 
 **Run migration:**
 ```bash
-python3 run_migration_error_message.py
+python3 core/database/migrations/scripts/run_migration_error_message.py
 ```
 
 or directly:
@@ -57,7 +57,7 @@ When creating a new migration:
 
 1. Create the migration file in `core/database/migrations/`
 2. Follow naming convention: `<description>_migration.py`
-3. Create a runner script in project root: `run_migration_<name>.py`
+3. Create a runner script in `core/database/migrations/scripts/`: `run_migration_<name>.py`
 4. Update this README with migration details
 5. Test thoroughly before running in production
 
