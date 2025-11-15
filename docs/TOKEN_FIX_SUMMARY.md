@@ -115,10 +115,10 @@ python3 check_token_limit.py --help   # + Решения
 
 | Файл | Назначение |
 |------|------------|
-| `REAUTH_README.md` | Краткое руководство (быстрый старт) |
+| `docs/reauth/REAUTH_README.md` | Краткое руководство (быстрый старт) |
 | `docs/youtube/05-TOKEN-REAUTH-GUIDE.md` | Полная документация (30+ страниц) |
 | `TOKEN_FIX_SUMMARY.md` | Эта сводка |
-| `.reauth_howto.md` | Snippet для README.md |
+| `DOCS_INDEX.md` | Индекс всей документации |
 
 **Обновлено:**
 - `DOCS_INDEX.md` - добавлены ссылки на новую документацию
@@ -196,9 +196,10 @@ python run_youtube_manager.py check-tokens
 
 ```
 content-fabric/
-├── REAUTH_README.md                          ← Быстрый старт
 ├── TOKEN_FIX_SUMMARY.md                      ← Эта сводка
 ├── docs/
+│   ├── reauth/
+│   │   └── REAUTH_README.md                  ← Быстрый старт
 │   └── youtube/
 │       ├── 05-TOKEN-REAUTH-GUIDE.md         ← Полное руководство
 │       └── 04-TROUBLESHOOTING.md            ← Troubleshooting
@@ -273,7 +274,7 @@ python3 check_token_limit.py
 Если проблема не решается:
 
 1. **Проверьте документацию:**
-   - [REAUTH_README.md](REAUTH_README.md)
+   - [docs/reauth/REAUTH_README.md](docs/reauth/REAUTH_README.md)
    - [docs/youtube/05-TOKEN-REAUTH-GUIDE.md](docs/youtube/05-TOKEN-REAUTH-GUIDE.md)
 
 2. **Запустите диагностику:**
