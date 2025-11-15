@@ -202,10 +202,95 @@ class YouTubeReauthService:
     def _send_reauth_error_notification(self, result: ReauthResult) -> None:
         """Send Telegram notification about reauth error."""
         try:
+            # Check if error is critical before sending notification
+            error = result.error or ""
+            LOGGER.debug(
+                "Checking if error is critical: %s (channel: %s, status: %s)",
+                error,
+                result.channel_name,
+                result.status.value
+            )
+            
+            if not self._is_critical_error(error):
+                LOGGER.info(
+                    "Skipping notification for non-critical error: %s (channel: %s)",
+                    error,
+                    result.channel_name
+                )
+                return
+            
+            LOGGER.info(
+                "Sending notification for critical error: %s (channel: %s)",
+                error,
+                result.channel_name
+            )
             message = self._format_reauth_error_message(result)
             self._send_telegram_message(message)
         except Exception as e:
             LOGGER.error(f"Failed to send reauth error notification: {e}")
+    
+    def _is_critical_error(self, error: str) -> bool:
+        """
+        Check if error is critical and requires operator attention.
+        
+        Returns:
+            True if error is critical, False for technical/non-critical errors
+        """
+        if not error:
+            return False
+        
+        error_lower = error.lower()
+        
+        # Non-critical technical errors (don't notify)
+        non_critical_patterns = [
+            "address already in use",
+            "errno 48",
+            "port already in use",
+            "connection refused",
+            "network is unreachable",
+            "temporary failure",
+        ]
+        
+        for pattern in non_critical_patterns:
+            if pattern in error_lower:
+                LOGGER.info("Non-critical technical error detected: %s - skipping notification", error)
+                return False
+        
+        # Critical errors (notify)
+        critical_patterns = [
+            "credentials",
+            "mfa",
+            "challenge",
+            "код",
+            "код подтверждения",
+            "подтверждения",
+            "timeout",
+            "consent",
+            "button",
+            "authorization",
+            "token",
+            "invalid",
+            "expired",
+            "revoked",
+            "security",
+            "verification",
+            "верифікація",
+            "підтвердження",
+            "not configured",
+            "not found",
+            "missing",
+            "failed",
+            "error",
+        ]
+        
+        for pattern in critical_patterns:
+            if pattern in error_lower:
+                LOGGER.debug("Critical pattern '%s' found in error: %s", pattern, error)
+                return True
+        
+        # Default: if we can't determine, assume it's critical (better safe than sorry)
+        LOGGER.warning("Error doesn't match known patterns, treating as critical: %s", error)
+        return True
     
     def _format_reauth_error_message(self, result: ReauthResult) -> str:
         """Format error message for Telegram notification."""

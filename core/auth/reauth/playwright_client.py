@@ -197,28 +197,22 @@ async def _handle_mfa_if_needed(
             "TOTP secret present for %s but automated MFA handling is not yet implemented.",
             credential.channel_name,
         )
-        _notify_manual_intervention(
-            credential.channel_name,
-            "TOTP challenge encountered. Manual approval required in browser.",
-        )
+        # Don't notify here - notification will be sent from service.py if auth fails
+        LOGGER.info("TOTP challenge encountered for %s - will notify if auth fails", credential.channel_name)
     elif credential.backup_codes:
         LOGGER.warning(
             "Backup codes available for %s; implement code entry when challenges appear.",
             credential.channel_name,
         )
-        _notify_manual_intervention(
-            credential.channel_name,
-            "Backup code challenge detected. Please enter a code manually.",
-        )
+        # Don't notify here - notification will be sent from service.py if auth fails
+        LOGGER.info("Backup code challenge detected for %s - will notify if auth fails", credential.channel_name)
     else:
         LOGGER.debug("No MFA data configured for %s", credential.channel_name)
         if security_message:
             await _handle_security_challenge(page, credential, browser_config, security_message)
         else:
-            _notify_manual_intervention(
-                credential.channel_name,
-                "MFA or security challenge detected but no automation data is configured.",
-            )
+            # Don't notify here - notification will be sent from service.py if auth fails
+            LOGGER.warning("MFA or security challenge detected for %s but no automation data is configured - will notify if auth fails", credential.channel_name)
 
 
 async def _handle_security_challenge(
@@ -243,10 +237,9 @@ async def _handle_security_challenge(
         credential.channel_name,
         security_message,
     )
-    _notify_manual_intervention(
-        credential.channel_name,
-        f"{security_message}\n\nСсылка на скрин: {file_path.resolve()}",
-    )
+    # Don't notify here - notification will be sent from service.py if auth fails
+    # Screenshot is saved for debugging purposes
+    LOGGER.info("Security challenge screenshot saved to %s - will notify if auth fails", file_path.resolve())
 
 
 async def _handle_account_data_prompt(
@@ -274,11 +267,9 @@ async def _handle_account_data_prompt(
     except Exception as exc:  # pragma: no cover - defensive logging
         LOGGER.debug("Unable to auto-dismiss account data prompt: %s", exc)
 
-    # notify if we couldn't skip
-    _notify_manual_intervention(
-        credential.channel_name,
-        "Google is asking to add recovery info. Please respond manually.",
-    )
+    # Don't notify for recovery info - it's not critical and doesn't block auth
+    # Recovery prompts can be safely ignored and don't prevent successful authorization
+    LOGGER.info("Recovery info prompt detected but not critical - continuing without notification")
 
 
 async def _approve_consent_if_present(
@@ -343,10 +334,8 @@ async def _approve_consent_if_present(
         LOGGER.error("Error in _approve_consent_if_present for %s: %s", credential.channel_name, exc, exc_info=True)
         raise
 
-    _notify_manual_intervention(
-        credential.channel_name,
-        "Unable to approve consent automatically. Please click Allow manually.",
-    )
+    # Don't notify here - notification will be sent from service.py if auth fails
+    LOGGER.warning("Unable to approve consent automatically for %s - will notify if auth fails", credential.channel_name)
     return False
 
 
@@ -1147,8 +1136,20 @@ def _page_from_surface(surface: FrameLike) -> "Page":
     return surface.page if hasattr(surface, "page") else surface  # type: ignore[return-value]
 
 
-def _notify_manual_intervention(channel_name: str, message: str) -> None:
-    """Send Telegram alert informing operators about required manual action."""
+def _notify_manual_intervention(channel_name: str, message: str, critical: bool = True) -> None:
+    """
+    Send Telegram alert informing operators about required manual action.
+    
+    Args:
+        channel_name: Name of the channel
+        message: Message describing the issue
+        critical: If False, don't send notification (for non-blocking issues)
+    """
+    # Skip notification for non-critical issues
+    if not critical:
+        LOGGER.debug("Skipping notification for non-critical issue: %s", message)
+        return
+    
     global NOTIFIER, BROADCASTER
     if NOTIFIER is None:
         NOTIFIER = NotificationManager()
