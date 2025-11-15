@@ -9,6 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from datetime import datetime, timedelta
+
 from core.auth.reauth.service import ServiceConfig, YouTubeReauthService  # noqa: E402
 from core.database.mysql_db import get_mysql_database  # noqa: E402
 from core.utils.logger import get_logger  # noqa: E402
@@ -87,6 +89,24 @@ def main(argv: list[str] | None = None) -> int:
 
     success = [r for r in results if r.status == r.status.SUCCESS]
     failures = [r for r in results if r.status != r.status.SUCCESS]
+
+    # Save tokens to database for successful reauths
+    for result in success:
+        if result.access_token and result.refresh_token:
+            expires_at = None
+            if result.expires_in:
+                expires_at = datetime.now() + timedelta(seconds=result.expires_in)
+            
+            saved = db.update_channel_tokens(
+                name=result.channel_name,
+                access_token=result.access_token,
+                refresh_token=result.refresh_token,
+                expires_at=expires_at
+            )
+            if saved:
+                LOGGER.info("Tokens saved to database for channel %s", result.channel_name)
+            else:
+                LOGGER.warning("Failed to save tokens to database for channel %s", result.channel_name)
 
     LOGGER.info("Reauth finished: %d success, %d failed", len(success), len(failures))
     for result in failures:

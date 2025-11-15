@@ -58,8 +58,10 @@
 - **[docs/guides/AUTO_LIKE_COMMENT.md](docs/guides/AUTO_LIKE_COMMENT.md)** - Автоматичний лайк та коментар після завантаження
 
 ### OAuth и токены:
-- **[REAUTH_README.md](REAUTH_README.md)** - 🔐 Быстрое решение проблем с токенами (NEW!)
-- **[docs/youtube/05-TOKEN-REAUTH-GUIDE.md](docs/youtube/05-TOKEN-REAUTH-GUIDE.md)** - 🔐 Полное руководство по переавторизации (NEW!)
+- **[docs/reauth/REAUTH_README.md](docs/reauth/REAUTH_README.md)** - 🔐 Быстрое решение проблем с токенами (NEW!)
+- **[docs/reauth/REAUTH_USER_GUIDE.md](docs/reauth/REAUTH_USER_GUIDE.md)** - 🔐 Полное руководство пользователя (NEW!)
+- **[docs/reauth/REAUTH_CHANGELOG_RPA_AUTH.md](docs/reauth/REAUTH_CHANGELOG_RPA_AUTH.md)** - 🔐 Changelog ветки rpa-auth (NEW!)
+- **[docs/youtube/05-TOKEN-REAUTH-GUIDE.md](docs/youtube/05-TOKEN-REAUTH-GUIDE.md)** - 🔐 Полное руководство по переавторизации
 - **[docs/youtube/04-TROUBLESHOOTING.md](docs/youtube/04-TROUBLESHOOTING.md)** - Устранение неполадок
 
 ---
