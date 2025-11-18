@@ -1,0 +1,5 @@
+{
+  "regions": [
+    { "x": 1500, "y": 800, "width": 200, "height": 100, "method": "inpaint" }
+  ]
+}
