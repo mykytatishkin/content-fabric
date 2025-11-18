@@ -113,6 +113,19 @@ class NotificationManager:
         formatted_message = f"🚨 **{alert_type}**\n\n{message}"
         self._send_notification(formatted_message, f"System Alert: {alert_type}")
     
+    def send_token_revocation_alert(self, platform: str, account: str, error_message: str):
+        """Send alert for token revocation/expiration errors."""
+        message = f"""🔐 **Token Revocation Alert**
+
+**Platform:** {platform.title()}
+**Account:** {account}
+**Error:** {error_message}
+**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+⚠️ **Action Required:** Please re-authenticate this account to restore access."""
+        
+        self._send_notification(message, f"🔐 Token Revocation: {account}")
+    
     def _send_notification(self, message: str, subject: str):
         """Send notification via all configured channels."""
         # Send via Telegram

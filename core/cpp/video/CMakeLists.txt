@@ -18,7 +18,16 @@ endif()
 
 if(VIDEO_TOOL_BUILD_TOOLS)
     find_package(PkgConfig REQUIRED)
-    find_package(FFmpeg COMPONENTS AVCODEC AVFORMAT AVFILTER AVUTIL SWSCALE REQUIRED)
+    
+    # Find FFmpeg using pkg-config (Homebrew FFmpeg doesn't provide CMake config)
+    pkg_check_modules(FFMPEG REQUIRED
+        libavcodec
+        libavformat
+        libavfilter
+        libavutil
+        libswscale
+    )
+    
     find_package(OpenCV REQUIRED)
     find_package(CLI11 REQUIRED)
     find_package(CURL REQUIRED)
@@ -47,7 +56,9 @@ if(VIDEO_TOOL_BUILD_TOOLS)
     add_executable(video_tool src/main.cpp)
 
     target_include_directories(video_tool_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
-
+    target_include_directories(video_tool_lib PUBLIC ${FFMPEG_INCLUDE_DIRS})
+    target_link_directories(video_tool_lib PUBLIC ${FFMPEG_LIBRARY_DIRS})
+    
     set(FFMPEG_LIBS ${FFMPEG_LIBRARIES})
 
     if (TARGET spdlog::spdlog)

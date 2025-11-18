@@ -138,9 +138,12 @@ class YouTubeClient(BaseAPIClient):
                         self._update_database_token(account_info, creds)
                         
                 except Exception as e:
-                    self.logger.error(f"Failed to refresh token for account {account_info.get('name', 'Unknown')}: {str(e)}")
+                    error_str = str(e)
+                    self.logger.error(f"Failed to refresh token for account {account_info.get('name', 'Unknown')}: {error_str}")
                     # If refresh fails, token might be revoked - user needs to re-authenticate
                     self.logger.error("Token may be revoked. Please re-authenticate this account.")
+                    # Store error in account_info for later use
+                    account_info['_token_error'] = error_str
                     return None
             elif not creds.valid:
                 self.logger.error(f"No valid credentials and no refresh token for account {account_info.get('name', 'Unknown')}")
@@ -260,9 +263,16 @@ class YouTubeClient(BaseAPIClient):
             # Create YouTube service with account-specific token
             youtube_service = self._create_service_with_token(account_info)
             if not youtube_service:
+                # Check for token revocation error stored in account_info
+                token_error = account_info.get('_token_error', '')
+                if token_error and ('invalid_grant' in token_error or 'Token has been expired or revoked' in token_error):
+                    error_message = f"Token revoked or expired: {token_error}. Please re-authenticate account {account_info.get('name', 'Unknown')}."
+                else:
+                    error_message = "Failed to create YouTube service with account token"
+                
                 return PostResult(
                     success=False,
-                    error_message="Failed to create YouTube service with account token",
+                    error_message=error_message,
                     platform="YouTube",
                     account=account_info.get('name', 'Unknown')
                 )

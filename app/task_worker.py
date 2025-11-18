@@ -11,6 +11,8 @@ from pathlib import Path
 from core.database.mysql_db import YouTubeMySQLDatabase, Task
 from core.api_clients.youtube_client import YouTubeClient
 from core.utils.logger import get_logger
+from core.utils.notifications import NotificationManager
+from core.utils.error_categorizer import ErrorCategorizer
 from core.voice import VoiceChanger
 
 
@@ -36,6 +38,7 @@ class TaskWorker:
         self.worker_thread: Optional[threading.Thread] = None
         self.youtube_client: Optional[YouTubeClient] = None
         self.voice_changer: Optional[VoiceChanger] = None
+        self.notification_manager = NotificationManager()
         
         # Statistics
         self.stats = {
@@ -261,6 +264,22 @@ class TaskWorker:
                 error_msg = result.error_message or "Unknown error during upload"
                 self.logger.error(f"Task #{task.id} failed: {error_msg}")
                 
+                # Check if this is a token revocation error and send notification
+                error_category = ErrorCategorizer.categorize(error_msg)
+                if error_category == 'Auth' and ('invalid_grant' in error_msg.lower() or 
+                                                  'token revoked' in error_msg.lower() or 
+                                                  'token expired' in error_msg.lower() or
+                                                  're-authenticate' in error_msg.lower()):
+                    try:
+                        self.notification_manager.send_token_revocation_alert(
+                            platform="YouTube",
+                            account=channel.name,
+                            error_message=error_msg
+                        )
+                        self.logger.info(f"Sent token revocation alert for account {channel.name}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to send token revocation notification: {e}")
+                
                 # Check if we should retry (відстежуємо в пам'яті)
                 current_retries = self.task_retries.get(task.id, 0)
                 if current_retries < self.max_retries:
@@ -279,6 +298,23 @@ class TaskWorker:
         except Exception as e:
             error_msg = f"YouTube upload error: {str(e)}"
             self.logger.error(error_msg)
+            
+            # Check if this is a token revocation error and send notification
+            error_category = ErrorCategorizer.categorize(error_msg)
+            if error_category == 'Auth' and ('invalid_grant' in error_msg.lower() or 
+                                              'token revoked' in error_msg.lower() or 
+                                              'token expired' in error_msg.lower() or
+                                              're-authenticate' in error_msg.lower()):
+                try:
+                    account_name = channel.name if channel else "Unknown"
+                    self.notification_manager.send_token_revocation_alert(
+                        platform="YouTube",
+                        account=account_name,
+                        error_message=error_msg
+                    )
+                    self.logger.info(f"Sent token revocation alert for account {account_name}")
+                except Exception as notif_e:
+                    self.logger.error(f"Failed to send token revocation notification: {notif_e}")
             
             # Check if we should retry (відстежуємо в пам'яті)
             current_retries = self.task_retries.get(task.id, 0)
