@@ -13,17 +13,33 @@ from dotenv import load_dotenv
 # Load .env if present
 load_dotenv()
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import os
 from core.database.mysql_db import get_mysql_database
 from core.utils.logger import get_logger
 
 LOGGER = get_logger("check_refresh_tokens")
 
 
+def load_mysql_config() -> dict:
+    """Load MySQL configuration from environment variables."""
+    return {
+        'host': os.getenv('MYSQL_HOST', 'localhost'),
+        'port': int(os.getenv('MYSQL_PORT', 3306)),
+        'database': os.getenv('MYSQL_DATABASE', 'content_fabric'),
+        'user': os.getenv('MYSQL_USER', 'content_fabric_user'),
+        'password': os.getenv('MYSQL_PASSWORD', ''),
+        'charset': 'utf8mb4',
+        'collation': 'utf8mb4_unicode_ci',
+        'autocommit': True
+    }
+
+
 def check_refresh_tokens(channel_names: list[str]) -> None:
     """Check and display refresh_token information for specified channels."""
-    db = get_mysql_database()
+    mysql_config = load_mysql_config()
+    db = get_mysql_database(config=mysql_config)
     
     print("=" * 72)
     print("Checking Refresh Tokens for YouTube Channels")

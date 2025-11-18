@@ -77,13 +77,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from core.database.sqlite_db import get_database_by_type
 from core.utils.logger import get_logger
 
 logger = get_logger("token_limit_checker")
+
+
+def load_mysql_config() -> dict:
+    """Load MySQL configuration from environment variables."""
+    return {
+        'host': os.getenv('MYSQL_HOST', 'localhost'),
+        'port': int(os.getenv('MYSQL_PORT', 3306)),
+        'database': os.getenv('MYSQL_DATABASE', 'content_fabric'),
+        'user': os.getenv('MYSQL_USER', 'content_fabric_user'),
+        'password': os.getenv('MYSQL_PASSWORD', ''),
+        'charset': 'utf8mb4',
+        'collation': 'utf8mb4_unicode_ci',
+        'autocommit': True
+    }
 
 
 def check_token_limits():
@@ -93,7 +107,8 @@ def check_token_limits():
     print("🔍 GOOGLE OAUTH REFRESH TOKEN LIMIT CHECKER")
     print("=" * 70)
     
-    db = get_database_by_type()
+    mysql_config = load_mysql_config()
+    db = get_database_by_type(config=mysql_config)
     channels = db.get_all_channels()
     
     if not channels:

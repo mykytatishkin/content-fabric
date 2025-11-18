@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -72,8 +73,12 @@ class YouTubeReauthService:
             LOGGER.error("Channel configuration not found for %s", channel_name)
             return None
 
-        if not channel.client_id or not channel.client_secret:
-            LOGGER.error("Missing client credentials for %s", channel_name)
+        # Get client credentials from channel or environment variables (fallback)
+        client_id = channel.client_id or os.getenv('YOUTUBE_MAIN_CLIENT_ID')
+        client_secret = channel.client_secret or os.getenv('YOUTUBE_MAIN_CLIENT_SECRET')
+        
+        if not client_id or not client_secret:
+            LOGGER.error("Missing client credentials for %s (not in DB and not in env vars)", channel_name)
             return None
 
         proxy = None
@@ -90,8 +95,8 @@ class YouTubeReauthService:
             login_email=record.login_email,
             login_password=record.login_password,
             profile_path=record.profile_path or "",
-            client_id=channel.client_id,
-            client_secret=channel.client_secret,
+            client_id=client_id,
+            client_secret=client_secret,
             totp_secret=record.totp_secret,
             backup_codes=record.backup_codes,
             proxy=proxy,
