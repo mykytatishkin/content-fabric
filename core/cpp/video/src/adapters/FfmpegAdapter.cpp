@@ -31,7 +31,7 @@ void FfmpegAdapter::openOutput(const std::string& path, core::VideoContext& ctx)
 }
 
 int FfmpegAdapter::decodeFrame(core::VideoContext& ctx, AVPacket* packet, AVFrame* frame) {
-    AVCodec* codec = avcodec_find_decoder(ctx.inputFormat->streams[ctx.videoStreamIndex]->codecpar->codec_id);
+    const AVCodec* codec = avcodec_find_decoder(ctx.inputFormat->streams[ctx.videoStreamIndex]->codecpar->codec_id);
     if (!ctx.videoDecoder) {
         ctx.videoDecoder = avcodec_alloc_context3(codec);
         avcodec_parameters_to_context(ctx.videoDecoder, ctx.inputFormat->streams[ctx.videoStreamIndex]->codecpar);

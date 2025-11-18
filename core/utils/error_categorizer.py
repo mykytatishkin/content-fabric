@@ -17,6 +17,8 @@ class ErrorCategorizer:
             r'invalid_grant',
             r'Token.*expired',
             r'Token.*revoked',
+            r'Token revoked or expired',
+            r'Token has been expired or revoked',
             r'authentication.*error',
             r'auth.*failed',
             r'credentials.*invalid',
@@ -26,8 +28,11 @@ class ErrorCategorizer:
             r'401',
             r'403',
             r'failed.*token',
+            r'failed.*refresh.*token',
             r'failed.*create.*service',
-            r'service.*token'
+            r'service.*token',
+            r're-authenticate',
+            r'reauthenticate'
         ],
         'No file': [
             r'file.*not.*found',

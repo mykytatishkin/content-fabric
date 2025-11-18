@@ -3,6 +3,7 @@
 #include "IVideoOperation.hpp"
 #include <nlohmann/json.hpp>
 #include <vector>
+#include <opencv2/core.hpp>
 
 namespace operations {
 
