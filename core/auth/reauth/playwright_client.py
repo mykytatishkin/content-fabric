@@ -64,24 +64,75 @@ async def playwright_context(
     playwright = await async_playwright().start()
     LOGGER.debug("Playwright started for channel %s", credential.channel_name)
 
-    browser = await playwright.chromium.launch(
-        headless=browser_config.headless,
-        slow_mo=browser_config.slow_mo_ms,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--disable-dev-shm-usage",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-web-security",
-            "--disable-features=IsolateOrigins,site-per-process",
-            "--disable-site-isolation-trials",
-        ],
-    )
+    # Enhanced browser args to avoid detection
+    browser_args = [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-site-isolation-trials",
+        "--disable-infobars",
+        "--disable-notifications",
+        "--disable-popup-blocking",
+        "--disable-translate",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-features=TranslateUI",
+        "--disable-ipc-flooding-protection",
+        "--enable-features=NetworkService,NetworkServiceInProcess",
+        "--force-color-profile=srgb",
+        "--metrics-recording-only",
+        "--use-mock-keychain",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--password-store=basic",
+        "--use-mock-keychain",
+    ]
+    
+    if use_persistent_context:
+        # Use persistent context with real Chrome profile
+        context = await playwright.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=browser_config.headless,
+            slow_mo=browser_config.slow_mo_ms,
+            args=browser_args,
+            user_agent=credential.user_agent or (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            proxy=proxy_config,
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/New_York",
+        )
+        browser = None  # Not needed for persistent context
+    else:
+        # Use regular launch
+        browser = await playwright.chromium.launch(
+            headless=browser_config.headless,
+            slow_mo=browser_config.slow_mo_ms,
+            args=browser_args,
+        )
 
     proxy_config = _build_proxy_settings(credential.proxy)
 
-    storage_state_path: Optional[str] = None
+    # Check if we should use persistent context (real Chrome profile)
+    use_persistent_context = False
+    user_data_dir = None
     if credential.profile_path:
+        profile_path = Path(credential.profile_path)
+        if profile_path.exists() and profile_path.is_dir():
+            # Check if it looks like a Chrome user data directory
+            if (profile_path / "Default").exists() or (profile_path / "Profile 1").exists():
+                user_data_dir = str(profile_path)
+                use_persistent_context = True
+                LOGGER.info("Using real Chrome profile from: %s", user_data_dir)
+
+    storage_state_path: Optional[str] = None
+    if credential.profile_path and not use_persistent_context:
         profile_path = Path(credential.profile_path)
         if profile_path.is_dir():
             profile_path.mkdir(parents=True, exist_ok=True)
@@ -90,68 +141,115 @@ async def playwright_context(
             profile_path.parent.mkdir(parents=True, exist_ok=True)
             storage_state_path = str(profile_path)
 
-    # Stealth script to hide automation
+    # Enhanced stealth script to hide automation
     stealth_script = """
-    // Override navigator.webdriver
-    Object.defineProperty(navigator, 'webdriver', {
-        get: () => undefined
-    });
-    
-    // Override chrome object
-    window.chrome = {
-        runtime: {}
-    };
-    
-    // Override permissions
-    const originalQuery = window.navigator.permissions.query;
-    window.navigator.permissions.query = (parameters) => (
-        parameters.name === 'notifications' ?
-            Promise.resolve({ state: Notification.permission }) :
-            originalQuery(parameters)
-    );
-    
-    // Override plugins
-    Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5]
-    });
-    
-    // Override languages
-    Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en']
-    });
-    
-    // Remove automation indicators
-    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+    (function() {
+        // Override navigator.webdriver - most important
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined,
+            configurable: true
+        });
+        
+        // Override chrome object
+        if (!window.chrome) {
+            window.chrome = {};
+        }
+        window.chrome.runtime = {};
+        
+        // Override permissions
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+            parameters.name === 'notifications' ?
+                Promise.resolve({ state: Notification.permission }) :
+                originalQuery(parameters)
+        );
+        
+        // Override plugins to look real
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+                const plugins = [];
+                for (let i = 0; i < 5; i++) {
+                    plugins.push({
+                        0: {type: 'application/x-google-chrome-pdf'},
+                        description: 'Portable Document Format',
+                        filename: 'internal-pdf-viewer',
+                        length: 1,
+                        name: 'Chrome PDF Plugin'
+                    });
+                }
+                return plugins;
+            },
+            configurable: true
+        });
+        
+        // Override languages
+        Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en'],
+            configurable: true
+        });
+        
+        // Remove all automation indicators
+        const propsToDelete = [
+            'cdc_adoQpoasnfa76pfcZLmcfl_Array',
+            'cdc_adoQpoasnfa76pfcZLmcfl_Promise',
+            'cdc_adoQpoasnfa76pfcZLmcfl_Symbol',
+            '__playwright',
+            '__pw_manual',
+            '__pw_original'
+        ];
+        propsToDelete.forEach(prop => {
+            try {
+                delete window[prop];
+            } catch (e) {}
+        });
+        
+        // Override getProperty to hide webdriver
+        const originalGetProperty = Object.getOwnPropertyDescriptor;
+        Object.getOwnPropertyDescriptor = function(obj, prop) {
+            if (prop === 'webdriver' && obj === navigator) {
+                return undefined;
+            }
+            return originalGetProperty.apply(this, arguments);
+        };
+        
+        // Make toString methods return normal values
+        const originalToString = Function.prototype.toString;
+        Function.prototype.toString = function() {
+            if (this === navigator.webdriver) {
+                return 'function webdriver() { [native code] }';
+            }
+            return originalToString.apply(this, arguments);
+        };
+    })();
     """
 
-    context = await browser.new_context(
-        user_agent=credential.user_agent or (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        ),
-        proxy=proxy_config,
-        record_video_dir=None,
-        base_url="https://accounts.google.com",
-        storage_state=storage_state_path if storage_state_path and Path(storage_state_path).exists() else None,
-        viewport={"width": 1920, "height": 1080},
-        locale="en-US",
-        timezone_id="America/New_York",
-    )
+    if not use_persistent_context:
+        context = await browser.new_context(
+            user_agent=credential.user_agent or (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            proxy=proxy_config,
+            record_video_dir=None,
+            base_url="https://accounts.google.com",
+            storage_state=storage_state_path if storage_state_path and Path(storage_state_path).exists() else None,
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/New_York",
+        )
+        context.set_default_navigation_timeout(browser_config.navigation_timeout_ms)
     
     # Add stealth script to every page
     await context.add_init_script(stealth_script)
 
-    context.set_default_navigation_timeout(browser_config.navigation_timeout_ms)
-
     try:
         yield playwright, context
     finally:
-        if storage_state_path:
+        if storage_state_path and not use_persistent_context:
             await context.storage_state(path=storage_state_path)
         await context.close()
-        await browser.close()
+        if browser:  # Only close if we created it (not persistent context)
+            await browser.close()
         await playwright.stop()
         LOGGER.debug("Playwright shutdown completed for channel %s", credential.channel_name)
 
