@@ -58,8 +58,8 @@ def resolve_channels(args: argparse.Namespace, db) -> list[str]:
         return args.channels
 
     if args.all_expiring:
-        # Get channels with tokens expiring within 7 days or already expired
-        expiring = db.get_expiring_tokens(days_ahead=7)
+        # Get channels with tokens expiring within 3 days or already expired
+        expiring = db.get_expiring_tokens(days_ahead=3)
         if expiring:
             LOGGER.info("Automatically selected %d expiring channels.", len(expiring))
             return expiring
