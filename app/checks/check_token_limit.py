@@ -80,7 +80,7 @@ load_dotenv()
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from core.database.sqlite_db import get_database_by_type
+from core.database.mysql_db import get_mysql_database
 from core.utils.logger import get_logger
 
 logger = get_logger("token_limit_checker")
@@ -108,7 +108,7 @@ def check_token_limits():
     print("=" * 70)
     
     mysql_config = load_mysql_config()
-    db = get_database_by_type(config=mysql_config)
+    db = get_mysql_database(config=mysql_config)
     channels = db.get_all_channels()
     
     if not channels:

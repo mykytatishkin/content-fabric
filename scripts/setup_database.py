@@ -16,8 +16,7 @@ load_dotenv()
 # Add core directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'core'))
 
-from core.database.sqlite_db import get_database_by_type
-from core.database.mysql_db import YouTubeMySQLDatabase
+from core.database.mysql_db import get_mysql_database, YouTubeMySQLDatabase
 
 
 def load_mysql_config(config_file: str = None) -> dict:
@@ -150,7 +149,11 @@ def test_mysql_connection(config: dict) -> bool:
 
 
 def migrate_from_sqlite(sqlite_path: str, mysql_config: dict) -> bool:
-    """Migrate data from SQLite to MySQL."""
+    """Migrate data from SQLite to MySQL.
+    
+    NOTE: This is a legacy function for migrating from old SQLite databases.
+    SQLite support has been removed from the project.
+    """
     print("📦 Starting migration from SQLite to MySQL...")
     
     try:

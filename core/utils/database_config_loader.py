@@ -5,7 +5,7 @@ Replaces YAML-based account configuration with database storage.
 
 import os
 from typing import Dict, Any, List, Optional
-from core.database.sqlite_db import get_database_by_type, YouTubeChannel
+from core.database.mysql_db import get_mysql_database, YouTubeChannel
 from core.utils.config_loader import ConfigLoader
 from core.utils.logger import get_logger
 
@@ -29,7 +29,7 @@ class DatabaseConfigLoader:
             except Exception as e:
                 self.logger.warning(f"Failed to load MySQL config: {e}")
         
-        self.db = get_database_by_type(config=mysql_config)
+        self.db = get_mysql_database(config=mysql_config)
         
         # Load base config from YAML (platforms, schedule, etc.)
         self.yaml_loader = ConfigLoader(config_path)

@@ -11,7 +11,7 @@ A comprehensive Python tool for automatically posting content to Instagram, TikT
 - ✅ **Secure Storage** - Protected token storage with automatic encryption
 - ✅ **YouTube Shorts Support** - Full automation for YouTube Shorts posting
 - ✅ **Channel Management** - Easy addition and management of YouTube channels
-- ✅ **Database Integration** - SQLite database for managing multiple YouTube channels
+- ✅ **Database Integration** - MySQL database for managing multiple YouTube channels
 - ✅ **Single OAuth Setup** - One credentials.json file for all channels
 - ✅ **Token Management** - Automatic token refresh and expiration handling
 
@@ -369,7 +369,7 @@ python main.py post --platforms youtube --accounts "Teasera,Andrew Garle"
 
 ### 🎯 Key Benefits
 - ✅ **Single OAuth Setup** - One `credentials.json` file for all channels
-- ✅ **Database Storage** - Tokens stored securely in SQLite database
+- ✅ **Database Storage** - Tokens stored securely in MySQL database
 - ✅ **Automatic Token Refresh** - No manual token management needed
 - ✅ **Scalable Architecture** - Easy to add unlimited channels
 - ✅ **CLI Management** - Powerful command-line tools

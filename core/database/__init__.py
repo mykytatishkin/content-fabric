@@ -2,25 +2,18 @@
 Database module for Content Fabric
 """
 
-from .sqlite_db import (
-    YouTubeDatabase,
-    YouTubeChannel,
-    get_database,
-    get_database_by_type
-)
+from .mysql_db import YouTubeMySQLDatabase, get_mysql_database, YouTubeChannel
 
-try:
-    from .mysql_db import YouTubeMySQLDatabase, get_mysql_database
-    MYSQL_AVAILABLE = True
-except ImportError:
-    MYSQL_AVAILABLE = False
+# Alias for backward compatibility
+YouTubeDatabase = YouTubeMySQLDatabase
+get_database = get_mysql_database
+get_database_by_type = get_mysql_database
 
 __all__ = [
-    'YouTubeDatabase',
+    'YouTubeMySQLDatabase',
+    'YouTubeDatabase',  # Alias for backward compatibility
     'YouTubeChannel',
-    'get_database',
-    'get_database_by_type',
+    'get_mysql_database',
+    'get_database',  # Alias for backward compatibility
+    'get_database_by_type',  # Alias for backward compatibility
 ]
-
-if MYSQL_AVAILABLE:
-    __all__.extend(['YouTubeMySQLDatabase', 'get_mysql_database'])

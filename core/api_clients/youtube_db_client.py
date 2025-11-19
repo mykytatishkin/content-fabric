@@ -13,7 +13,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from core.api_clients.base_client import BaseAPIClient, PostResult, RateLimitInfo
-from core.database.sqlite_db import get_database_by_type, YouTubeChannel
+from core.database.mysql_db import get_mysql_database, YouTubeChannel
 
 
 class YouTubeDBClient(BaseAPIClient):
@@ -28,7 +28,7 @@ class YouTubeDBClient(BaseAPIClient):
     def __init__(self, credentials_file: str = "credentials.json"):
         super().__init__("YouTube", "https://www.googleapis.com/youtube/v3")
         self.credentials_file = credentials_file
-        self.db = get_database_by_type()
+        self.db = get_mysql_database()
         self.youtube_service = None
         self._current_channel = None
     

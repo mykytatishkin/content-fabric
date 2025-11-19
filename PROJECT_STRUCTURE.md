@@ -20,7 +20,6 @@ content-fabric/
 │   ├── __init__.py
 │   ├── database/                    # База данных
 │   │   ├── __init__.py
-│   │   ├── sqlite_db.py             # SQLite драйвер
 │   │   ├── mysql_db.py              # MySQL драйвер
 │   │   └── base.py                  # Базовый класс
 │   ├── api_clients/                 # API клиенты
@@ -77,7 +76,7 @@ content-fabric/
 │   ├── logs/                        # Логи
 │   ├── tokens/                      # Токены (legacy)
 │   └── databases/                   # Базы данных
-│       ├── youtube_channels.db      # SQLite (legacy)
+│       └── (MySQL database)
 │       └── backups/                 # Бэкапы
 │
 ├── 📁 tests/                        # Тесты
