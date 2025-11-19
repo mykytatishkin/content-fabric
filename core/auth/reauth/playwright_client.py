@@ -509,7 +509,7 @@ async def _click_consent_button(
         await button.click(timeout=5000)
         await page_obj.wait_for_timeout(2000)
         LOGGER.info("Successfully clicked Continue button via wait_for_selector for %s.", credential.channel_name)
-        return True
+        return await _handle_consent_click_success(page_obj, browser_config, credential, "Method 1 (wait_for_selector)")
     except Exception as wait_exc:
         LOGGER.debug("wait_for_selector method failed: %s", wait_exc)
     
@@ -569,7 +569,7 @@ async def _click_consent_button(
 """, element_handle)
                 await page_obj.wait_for_timeout(2000)
                 LOGGER.info("Successfully clicked Continue button found by text for %s.", credential.channel_name)
-                return True
+                return await _handle_consent_click_success(page_obj, browser_config, credential, "Method 2 (text search)")
     except Exception as text_exc:
         LOGGER.debug("Text-based search failed: %s", text_exc)
     
@@ -677,7 +677,7 @@ async def _click_consent_button(
 """, element_handle)
                 await page_obj.wait_for_timeout(2000)
                 LOGGER.info("Successfully clicked Continue button found via clickable elements search for %s.", credential.channel_name)
-                return True
+                return await _handle_consent_click_success(page_obj, browser_config, credential, "Method 4 (clickable elements)")
     except Exception as buttons_exc:
         LOGGER.debug("Clickable elements search failed: %s", buttons_exc)
     
@@ -700,7 +700,7 @@ async def _click_consent_button(
                         await element.click(timeout=5000)
                         await page_obj.wait_for_timeout(2000)
                         LOGGER.info("Successfully clicked Continue button via XPath for %s.", credential.channel_name)
-                        return True
+                        return await _handle_consent_click_success(page_obj, browser_config, credential, "Method 5 (XPath)")
             except Exception:
                 continue
     except Exception as xpath_exc:
@@ -770,7 +770,7 @@ async def _click_consent_button(
             if clicked:
                 await page_obj.wait_for_timeout(2000)
                 LOGGER.info("Successfully clicked Continue button found by multilingual text search for %s.", credential.channel_name)
-                return True
+                return await _handle_consent_click_success(page_obj, browser_config, credential, "Method 6 (multilingual)")
     except Exception as multi_exc:
         LOGGER.debug("Multilingual text search failed: %s", multi_exc)
     
@@ -933,7 +933,7 @@ async def _click_consent_button(
                         if clicked:
                             await page_obj.wait_for_timeout(2000)
                             LOGGER.info("Successfully clicked Continue button (jsname='V67aGc') for %s.", credential.channel_name)
-                            return True
+                            return await _handle_consent_click_success(page_obj, browser_config, credential, "Method 8 (retry loop)")
                 else:
                     LOGGER.debug("Element found but not visible yet (attempt %d)", attempt + 1)
             
@@ -958,7 +958,7 @@ async def _click_consent_button(
             # Try multiple click strategies
             if await _try_click_strategies(continue_button.first, surface, browser_config):
                 LOGGER.info("Successfully clicked Continue button (jsname='V67aGc') for %s.", credential.channel_name)
-                return True
+                return await _handle_consent_click_success(page_obj, browser_config, credential, "Method 8 (retry loop - JS click)")
             else:
                 LOGGER.warning("Continue button (jsname='V67aGc') found but click failed for %s.", credential.channel_name)
     except Exception as exc:
@@ -1057,7 +1057,7 @@ async def _click_consent_button(
             button = locator.first
             if await _try_click_strategies(button, surface, browser_config):
                 LOGGER.info("Consent approved automatically for %s.", credential.channel_name)
-                return True
+                return await _handle_consent_click_success(page_obj, browser_config, credential, "Approve locators")
 
     # Fallback: search via JS for the Continue button by jsname or text
     try:
@@ -1081,11 +1081,87 @@ async def _click_consent_button(
             await surface.evaluate("(el) => el.click()", button_handle)
             await surface.wait_for_load_state("networkidle", timeout=browser_config.navigation_timeout_ms)
             LOGGER.info("Consent approved via JS fallback for %s.", credential.channel_name)
-            return True
+            return await _handle_consent_click_success(page_obj, browser_config, credential, "JS fallback")
     except Exception as js_exc:  # pragma: no cover - defensive logging
         LOGGER.debug("JS fallback consent click failed: %s", js_exc)
 
     return False
+
+
+async def _handle_consent_click_success(
+    page_obj: "Page",
+    browser_config: BrowserConfig,
+    credential: AutomationCredential,
+    method_name: str,
+) -> bool:
+    """
+    Handle successful consent button click by waiting for callback redirect.
+    Returns True if redirect detected or if we should proceed anyway.
+    """
+    LOGGER.info("Consent button clicked successfully via %s for %s, waiting for callback redirect...", 
+                method_name, credential.channel_name)
+    redirect_detected = await _wait_for_callback_redirect(page_obj, browser_config, credential)
+    if redirect_detected:
+        return True
+    else:
+        LOGGER.warning(
+            "Consent button clicked via %s but callback redirect not detected for %s. "
+            "Callback server might receive code via other means.",
+            method_name, credential.channel_name
+        )
+        # Still return True as button was clicked - callback server might receive code
+        return True
+
+
+async def _wait_for_callback_redirect(
+    page_obj: "Page",
+    browser_config: BrowserConfig,
+    credential: AutomationCredential,
+    timeout_ms: int = 30000,
+) -> bool:
+    """
+    Wait for redirect to OAuth callback URL after consent button click.
+    
+    The callback URL should be http://localhost:{port}/callback?code=...
+    Returns True if redirect to callback URL is detected, False on timeout.
+    """
+    LOGGER.info("Waiting for callback redirect for %s (timeout: %dms)...", credential.channel_name, timeout_ms)
+    
+    try:
+        # Use Playwright's wait_for_url with pattern matching
+        # Callback URL pattern: http://localhost:{port}/callback?code=...
+        try:
+            # Wait for URL that matches callback pattern
+            await page_obj.wait_for_url(
+                lambda url: url and (
+                    ("localhost" in url.lower() or "127.0.0.1" in url.lower()) and
+                    "/callback" in url.lower() and
+                    "code=" in url.lower()
+                ),
+                timeout=timeout_ms,
+                wait_until="domcontentloaded"
+            )
+            callback_url = page_obj.url
+            LOGGER.info("Callback redirect detected for %s: %s", credential.channel_name, callback_url[:100])
+            return True
+        except Exception as nav_exc:
+            # Fallback: check current URL manually
+            current_url = page_obj.url
+            if current_url and "localhost" in current_url.lower() and "/callback" in current_url.lower() and "code=" in current_url.lower():
+                LOGGER.info("Callback redirect detected (fallback check) for %s: %s", credential.channel_name, current_url[:100])
+                return True
+            
+            LOGGER.warning(
+                "Timeout waiting for callback redirect for %s. Current URL: %s. Error: %s",
+                credential.channel_name,
+                current_url[:200] if current_url else "unknown",
+                nav_exc
+            )
+            return False
+            
+    except Exception as exc:
+        LOGGER.error("Error waiting for callback redirect for %s: %s", credential.channel_name, exc, exc_info=True)
+        return False
 
 
 async def _scroll_to_bottom(surface: FrameLike) -> None:
