@@ -71,6 +71,10 @@ async def playwright_context(
             "--disable-blink-features=AutomationControlled",
             "--disable-dev-shm-usage",
             "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-web-security",
+            "--disable-features=IsolateOrigins,site-per-process",
+            "--disable-site-isolation-trials",
         ],
     )
 
@@ -86,13 +90,58 @@ async def playwright_context(
             profile_path.parent.mkdir(parents=True, exist_ok=True)
             storage_state_path = str(profile_path)
 
+    # Stealth script to hide automation
+    stealth_script = """
+    // Override navigator.webdriver
+    Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+    });
+    
+    // Override chrome object
+    window.chrome = {
+        runtime: {}
+    };
+    
+    // Override permissions
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+    );
+    
+    // Override plugins
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+    });
+    
+    // Override languages
+    Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en']
+    });
+    
+    // Remove automation indicators
+    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+    """
+
     context = await browser.new_context(
-        user_agent=credential.user_agent,
+        user_agent=credential.user_agent or (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
         proxy=proxy_config,
         record_video_dir=None,
         base_url="https://accounts.google.com",
         storage_state=storage_state_path if storage_state_path and Path(storage_state_path).exists() else None,
+        viewport={"width": 1920, "height": 1080},
+        locale="en-US",
+        timezone_id="America/New_York",
     )
+    
+    # Add stealth script to every page
+    await context.add_init_script(stealth_script)
 
     context.set_default_navigation_timeout(browser_config.navigation_timeout_ms)
 
@@ -485,6 +534,24 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig) 
         LOGGER.debug("Unable to toggle consent checkboxes: %s", exc)
 
 
+async def _simulate_human_activity(page_obj: "Page", browser_config: BrowserConfig) -> None:
+    """Simulate human-like activity before clicking to avoid detection."""
+    try:
+        # Random mouse movements (humans don't keep mouse still)
+        for _ in range(random.randint(1, 3)):
+            x = random.randint(100, 800)
+            y = random.randint(100, 600)
+            await page_obj.mouse.move(x, y, steps=random.randint(3, 8))
+            await asyncio.sleep(random.uniform(0.1, 0.3))
+        
+        # Small random scroll
+        scroll_amount = random.randint(-100, 100)
+        await page_obj.mouse.wheel(0, scroll_amount)
+        await asyncio.sleep(random.uniform(0.2, 0.4))
+    except Exception:
+        pass  # Ignore errors in human simulation
+
+
 async def _click_consent_button(
     surface: FrameLike,
     browser_config: BrowserConfig,
@@ -499,6 +566,9 @@ async def _click_consent_button(
     except Exception:
         pass
     await page_obj.wait_for_timeout(2000)
+    
+    # Simulate human activity before clicking (helps avoid detection)
+    await _simulate_human_activity(page_obj, browser_config)
     
     # METHOD 1: Try waiting for selector to appear (Playwright's built-in wait)
     try:
