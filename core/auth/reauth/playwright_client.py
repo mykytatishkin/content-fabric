@@ -506,8 +506,12 @@ async def _click_consent_button(
         await surface.wait_for_selector("div[jsname='V67aGc']", state="visible", timeout=15000)
         button = surface.locator("div[jsname='V67aGc']").first
         await button.scroll_into_view_if_needed()
-        await button.click(timeout=5000)
-        await page_obj.wait_for_timeout(2000)
+        # Use human-like click with mouse movement
+        await _human_pause(browser_config)
+        if not await _human_like_click(button, page_obj, browser_config):
+            # Fallback to regular click if human-like fails
+            await button.click(timeout=5000, delay=random.randint(50, 150))
+        await page_obj.wait_for_timeout(random.randint(1500, 2500))
         LOGGER.info("Successfully clicked Continue button via wait_for_selector for %s.", credential.channel_name)
         return await _handle_consent_click_success(page_obj, credential, "Method 1 (wait_for_selector)")
     except Exception as wait_exc:
@@ -697,8 +701,12 @@ async def _click_consent_button(
                     is_visible = await element.is_visible()
                     if is_visible:
                         await element.scroll_into_view_if_needed()
-                        await element.click(timeout=5000)
-                        await page_obj.wait_for_timeout(2000)
+                        # Use human-like click
+                        await _human_pause(browser_config)
+                        element_locator = surface.locator(f"xpath={xpath}").first
+                        if not await _human_like_click(element_locator, page_obj, browser_config):
+                            await element.click(timeout=5000, delay=random.randint(50, 150))
+                        await page_obj.wait_for_timeout(random.randint(1500, 2500))
                         LOGGER.info("Successfully clicked Continue button via XPath for %s.", credential.channel_name)
                         return await _handle_consent_click_success(page_obj, credential, "Method 5 (XPath)")
             except Exception:
@@ -1122,6 +1130,10 @@ async def _wait_for_callback_redirect(
     
     The callback URL should be http://localhost:{port}/callback?code=...
     Returns True if redirect to callback URL is detected, False on timeout.
+    
+    Note: We don't actually need to wait for the redirect in Playwright - the callback
+    server will receive the request independently. This function is mainly for logging
+    and verification purposes.
     """
     LOGGER.info("Waiting for callback redirect for %s (timeout: %dms)...", credential.channel_name, timeout_ms)
     
@@ -1148,6 +1160,16 @@ async def _wait_for_callback_redirect(
             LOGGER.info("Callback redirect already detected for %s: %s", credential.channel_name, current_url[:100])
             return True
         
+        # Check all frames in the page
+        try:
+            for frame in page_obj.frames:
+                frame_url = frame.url
+                if is_callback_url(frame_url):
+                    LOGGER.info("Callback redirect detected in frame for %s: %s", credential.channel_name, frame_url[:100])
+                    return True
+        except Exception as frame_exc:
+            LOGGER.debug("Error checking frames: %s", frame_exc)
+        
         # Try using wait_for_url with glob pattern (more reliable than lambda)
         try:
             # Use glob pattern to match callback URL
@@ -1171,12 +1193,14 @@ async def _wait_for_callback_redirect(
                 elapsed_ms = (asyncio.get_event_loop().time() - start_time) * 1000
                 if elapsed_ms >= timeout_ms:
                     current_url = page_obj.url
-                    LOGGER.warning(
-                        "Timeout waiting for callback redirect for %s after %dms. Current URL: %s",
+                    LOGGER.info(
+                        "Timeout waiting for callback redirect in Playwright for %s after %dms. "
+                        "Current URL: %s. Note: Callback server may still receive the request independently.",
                         credential.channel_name,
                         int(elapsed_ms),
                         current_url[:200] if current_url else "unknown"
                     )
+                    # Don't return False - callback server might receive it independently
                     return False
                 
                 # Check current URL
@@ -1185,6 +1209,13 @@ async def _wait_for_callback_redirect(
                     if is_callback_url(current_url):
                         LOGGER.info("Callback redirect detected via polling for %s: %s", credential.channel_name, current_url[:100])
                         return True
+                    
+                    # Also check all frames
+                    for frame in page_obj.frames:
+                        frame_url = frame.url
+                        if is_callback_url(frame_url):
+                            LOGGER.info("Callback redirect detected in frame (polling) for %s: %s", credential.channel_name, frame_url[:100])
+                            return True
                 except Exception as url_exc:
                     LOGGER.debug("Error getting current URL: %s", url_exc)
                 
@@ -1199,8 +1230,17 @@ async def _wait_for_callback_redirect(
             if is_callback_url(current_url):
                 LOGGER.info("Callback redirect detected in error handler for %s: %s", credential.channel_name, current_url[:100])
                 return True
+            
+            # Check frames one more time
+            for frame in page_obj.frames:
+                frame_url = frame.url
+                if is_callback_url(frame_url):
+                    LOGGER.info("Callback redirect detected in frame (error handler) for %s: %s", credential.channel_name, frame_url[:100])
+                    return True
         except Exception:
             pass
+        # Don't fail completely - callback server might receive it
+        LOGGER.warning("Could not detect callback redirect in Playwright for %s, but callback server may receive it independently", credential.channel_name)
         return False
 
 
@@ -1214,6 +1254,47 @@ async def _scroll_to_bottom(surface: FrameLike) -> None:
         LOGGER.debug("Unable to scroll consent page: %s", exc)
 
 
+async def _human_like_click(
+    button: "Locator",
+    page_obj: "Page",
+    browser_config: BrowserConfig,
+) -> bool:
+    """
+    Perform a human-like click with mouse movement, hover, and delays.
+    This helps avoid detection by anti-bot systems.
+    """
+    try:
+        # Get element bounding box
+        box = await button.bounding_box()
+        if not box:
+            return False
+        
+        # Calculate center of element
+        center_x = box["x"] + box["width"] / 2
+        center_y = box["y"] + box["height"] / 2
+        
+        # Add small random offset to make it more human-like
+        offset_x = random.uniform(-5, 5)
+        offset_y = random.uniform(-5, 5)
+        target_x = center_x + offset_x
+        target_y = center_y + offset_y
+        
+        # Move mouse to element with slight delay (human-like movement)
+        await _human_pause(browser_config)
+        await page_obj.mouse.move(target_x, target_y, steps=random.randint(5, 15))
+        
+        # Hover for a moment (humans don't click instantly)
+        await asyncio.sleep(random.uniform(0.1, 0.3))
+        
+        # Click with slight delay
+        await page_obj.mouse.click(target_x, target_y, delay=random.randint(50, 150))
+        
+        return True
+    except Exception as exc:
+        LOGGER.debug("Human-like click failed: %s", exc)
+        return False
+
+
 async def _try_click_strategies(
     button: "Locator",
     surface: FrameLike,
@@ -1224,21 +1305,106 @@ async def _try_click_strategies(
     except Exception:
         pass
 
-    strategies = ("normal", "force", "js", "enter")
+    page_obj = _page_from_surface(surface)
+    
+    # Try human-like click first (most likely to work and avoid detection)
+    strategies = ("human_like", "normal", "force", "js", "enter")
     for attempt in strategies:
         try:
-            if attempt == "normal":
-                await button.click(timeout=browser_config.navigation_timeout_ms)
+            if attempt == "human_like":
+                # Use mouse movement and click for more human-like interaction
+                if await _human_like_click(button, page_obj, browser_config):
+                    await asyncio.sleep(random.uniform(0.2, 0.5))  # Human-like pause after click
+                    LOGGER.debug("Consent button clicked using 'human_like' strategy.")
+                    return True
+            elif attempt == "normal":
+                # Add delay before click
+                await _human_pause(browser_config)
+                await button.click(timeout=browser_config.navigation_timeout_ms, delay=random.randint(50, 150))
             elif attempt == "force":
-                await button.click(timeout=browser_config.navigation_timeout_ms, force=True)
+                await _human_pause(browser_config)
+                await button.click(timeout=browser_config.navigation_timeout_ms, force=True, delay=random.randint(50, 150))
             elif attempt == "js":
+                # Try hover first, then click
+                try:
+                    await button.hover(timeout=2000)
+                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                except Exception:
+                    pass
                 handle = await button.element_handle()
                 if handle:
-                    await surface.evaluate("(el) => el.click()", handle)
+                    # Use more realistic mouse events
+                    await surface.evaluate("""
+(el) => {
+  // Create realistic mouse events
+  const rect = el.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  
+  const mouseMove = new MouseEvent('mousemove', {
+    view: window,
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y
+  });
+  el.dispatchEvent(mouseMove);
+  
+  const mouseOver = new MouseEvent('mouseover', {
+    view: window,
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y
+  });
+  el.dispatchEvent(mouseOver);
+  
+  const mouseDown = new MouseEvent('mousedown', {
+    view: window,
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    button: 0
+  });
+  el.dispatchEvent(mouseDown);
+  
+  setTimeout(() => {
+    const mouseUp = new MouseEvent('mouseup', {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+      button: 0
+    });
+    el.dispatchEvent(mouseUp);
+    
+    const clickEvent = new MouseEvent('click', {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+      button: 0
+    });
+    el.dispatchEvent(clickEvent);
+  }, 50);
+}
+""", handle)
                 else:
                     raise RuntimeError("No element handle for JS click")
             elif attempt == "enter":
+                # Focus element first
+                try:
+                    await button.focus(timeout=2000)
+                    await asyncio.sleep(random.uniform(0.1, 0.2))
+                except Exception:
+                    pass
                 await _page_from_surface(surface).keyboard.press("Enter")
+            
+            # Wait a bit after click (human-like)
+            await asyncio.sleep(random.uniform(0.2, 0.5))
             await surface.wait_for_load_state("networkidle", timeout=browser_config.navigation_timeout_ms)
             LOGGER.debug("Consent button clicked using '%s' strategy.", attempt)
             return True

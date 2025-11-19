@@ -56,10 +56,26 @@ class _OAuthCallbackHandler(BaseHTTPRequestHandler):
             payload = {
                 "code": params.get("code", [None])[0],
                 "error": params.get("error", [None])[0],
+                "error_description": params.get("error_description", [None])[0],
+                "error_uri": params.get("error_uri", [None])[0],
                 "state": params.get("state", [None])[0],
             }
 
             if payload["error"]:
+                # Log detailed error information
+                error_msg = f"OAuth authorization error: {payload['error']}"
+                if payload.get("error_description"):
+                    error_msg += f" - {payload['error_description']}"
+                if payload.get("error_uri"):
+                    error_msg += f" (URI: {payload['error_uri']})"
+                LOGGER.error(
+                    "OAuth callback received error. Path: %s, Error: %s, Description: %s, URI: %s",
+                    self.path,
+                    payload["error"],
+                    payload.get("error_description"),
+                    payload.get("error_uri")
+                )
+                
                 self.send_response(400)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
@@ -68,6 +84,11 @@ class _OAuthCallbackHandler(BaseHTTPRequestHandler):
                     "<p>Please return to the application.</p></body></html>".encode()
                 )
             else:
+                LOGGER.info(
+                    "OAuth callback received successfully. Path: %s, Has code: %s",
+                    self.path,
+                    "yes" if payload["code"] else "no"
+                )
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
@@ -132,6 +153,8 @@ class OAuthFlow:
 
     def _store_result(self, payload: Dict[str, Optional[str]]) -> None:
         """Store callback payload."""
+        LOGGER.debug("Storing OAuth callback result: error=%s, has_code=%s", 
+                    payload.get("error"), "yes" if payload.get("code") else "no")
         self._result = payload
 
     def wait_for_authorization(self) -> Dict[str, Optional[str]]:
@@ -191,10 +214,20 @@ class OAuthFlow:
             outcome = self.wait_for_authorization()
 
             if outcome.get("error"):
+                error_msg = outcome["error"]
+                # Include error_description if available for better diagnostics
+                if outcome.get("error_description"):
+                    error_msg = f"{error_msg}: {outcome['error_description']}"
+                LOGGER.error(
+                    "OAuth authorization failed for %s. Error: %s, Error description: %s",
+                    credential.channel_name,
+                    outcome.get("error"),
+                    outcome.get("error_description")
+                )
                 return ReauthResult(
                     channel_name=credential.channel_name,
                     status=ReauthStatus.FAILED,
-                    error=outcome["error"],
+                    error=error_msg,
                 )
 
             code = outcome.get("code")
