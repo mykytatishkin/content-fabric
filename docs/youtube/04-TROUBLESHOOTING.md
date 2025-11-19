@@ -29,8 +29,7 @@ grep "from src\." scripts/*.py
 
 # Должны быть:
 from core.utils.database_config_loader import DatabaseConfigLoader
-from core.database import get_database_by_type
-from core.database.sqlite_db import YouTubeDatabase
+from core.database.mysql_db import get_mysql_database
 from core.database.mysql_db import YouTubeMySQLDatabase
 ```
 
@@ -42,7 +41,7 @@ from src.database import get_database_by_type
 
 # ✅ НОВОЕ (правильно)
 from core.utils.database_config_loader import DatabaseConfigLoader
-from core.database import get_database_by_type
+from core.database.mysql_db import get_mysql_database
 ```
 
 ### ❌ Ошибка: `ImportError: cannot import name 'get_database_by_type'`
@@ -52,10 +51,10 @@ from core.database import get_database_by_type
 **Решение:**
 ```python
 # ✅ Правильный импорт
-from core.database import get_database_by_type
+from core.database.mysql_db import get_mysql_database
 
 # Использование
-db = get_database_by_type()  # Автоматически выбирает SQLite или MySQL
+db = get_mysql_database()  # Использует MySQL
 ```
 
 ---
@@ -435,7 +434,7 @@ python run_youtube_manager.py check-tokens
 ```bash
 # Python interactive test
 python3 << EOF
-from core.database import get_database_by_type
+from core.database.mysql_db import get_mysql_database
 from core.auth.oauth_manager import OAuthManager
 
 # Test database
@@ -490,7 +489,7 @@ python scripts/account_manager.py db list
 
 ### Database диагностика
 
-- [ ] База данных существует: `ls -la data/databases/youtube_channels.db` (SQLite)
+- [ ] База данных MySQL настроена и доступна
 - [ ] Подключение к MySQL работает: `mysql -h localhost -u content_fabric -p`
 - [ ] Каналы есть в базе: `python scripts/account_manager.py db list`
 - [ ] Токены не истекли: `python run_youtube_manager.py check-tokens`
@@ -519,26 +518,25 @@ python scripts/account_manager.py authorize --platform youtube --account "Кан
 python scripts/account_manager.py authorize --platform youtube --account "Канал 3"
 ```
 
-### Q: Как переключиться с SQLite на MySQL?
+### Q: Как настроить MySQL базу данных?
 
 ```bash
-# 1. Экспортируйте текущие данные
-python run_youtube_manager.py export --output backup.json
-
-# 2. Настройте MySQL
+# 1. Настройте MySQL через Docker
 cd docker
 docker-compose up -d
+
+# 2. Создайте схему базы данных
 python run_setup_database.py
 
-# 3. Обновите .env для использования MySQL
-echo "USE_MYSQL=true" >> .env
+# 3. Настройте переменные окружения в .env
+# MYSQL_HOST=localhost
+# MYSQL_PORT=3306
+# MYSQL_DATABASE=content_fabric
+# MYSQL_USER=content_fabric_user
+# MYSQL_PASSWORD=your_password
 
-# 4. Импортируйте данные
-python run_youtube_manager.py import backup.json
-
-# 5. Переавторизуйте каналы (токены не переносятся)
-python scripts/account_manager.py db list
-# Авторизуйте каналы без токенов
+# 4. Проверьте подключение
+python scripts/test_integration.py
 ```
 
 ### Q: Как добавить канал с другого Google аккаунта?
@@ -557,9 +555,6 @@ python scripts/account_manager.py add-channel "Другой аккаунт" "@ot
 
 ```bash
 # ⚠️ ВНИМАНИЕ: Это удалит ВСЕ каналы и токены
-
-# SQLite
-rm data/databases/youtube_channels.db
 
 # MySQL
 mysql -u content_fabric -p -e "DROP DATABASE content_fabric; CREATE DATABASE content_fabric;"

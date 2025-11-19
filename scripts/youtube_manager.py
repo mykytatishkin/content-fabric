@@ -15,12 +15,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import will be handled by scripts/__init__.py
-from core.database.sqlite_db import get_database_by_type, YouTubeChannel
+from core.database.mysql_db import get_mysql_database, YouTubeChannel
 
 
 def cmd_add_channel(args):
     """Add a new YouTube channel."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     
     success = db.add_channel(
         name=args.name,
@@ -38,7 +38,7 @@ def cmd_add_channel(args):
 
 def cmd_list_channels(args):
     """List all YouTube channels."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     channels = db.get_all_channels(enabled_only=args.enabled_only)
     
     if not channels:
@@ -59,7 +59,7 @@ def cmd_list_channels(args):
 
 def cmd_enable_channel(args):
     """Enable a channel."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     if db.enable_channel(args.name):
         print(f"✅ Канал '{args.name}' включен")
     else:
@@ -68,7 +68,7 @@ def cmd_enable_channel(args):
 
 def cmd_disable_channel(args):
     """Disable a channel."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     if db.disable_channel(args.name):
         print(f"✅ Канал '{args.name}' отключен")
     else:
@@ -77,7 +77,7 @@ def cmd_disable_channel(args):
 
 def cmd_delete_channel(args):
     """Delete a channel."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     if db.delete_channel(args.name):
         print(f"✅ Канал '{args.name}' удален")
     else:
@@ -86,7 +86,7 @@ def cmd_delete_channel(args):
 
 def cmd_show_channel(args):
     """Show detailed channel information."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     channel = db.get_channel(args.name)
     
     if not channel:
@@ -105,7 +105,7 @@ def cmd_show_channel(args):
 
 def cmd_export_config(args):
     """Export configuration to config.yaml format."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     config = db.export_config()
     
     if args.output:
@@ -118,7 +118,7 @@ def cmd_export_config(args):
 
 def cmd_import_config(args):
     """Import configuration from config.yaml."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     
     with open(args.file, 'r', encoding='utf-8') as f:
         config = json.load(f)
@@ -129,7 +129,7 @@ def cmd_import_config(args):
 
 def cmd_check_tokens(args):
     """Check token status for all channels."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     channels = db.get_all_channels(enabled_only=True)
     
     print("🔑 Статус токенов:")
@@ -142,7 +142,7 @@ def cmd_check_tokens(args):
 
 def cmd_setup_demo():
     """Setup demo channels."""
-    db = get_database_by_type()
+    db = get_mysql_database()
     
     # Add demo channels
     demo_channels = [

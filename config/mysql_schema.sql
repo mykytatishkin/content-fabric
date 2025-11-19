@@ -1,5 +1,4 @@
 -- MySQL Schema for Content Fabric YouTube Database
--- Migration from SQLite to MySQL
 
 -- Create database (run this as root user)
 -- CREATE DATABASE content_fabric CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

@@ -58,11 +58,12 @@ def resolve_channels(args: argparse.Namespace, db) -> list[str]:
         return args.channels
 
     if args.all_expiring:
-        expiring = db.get_expired_tokens()
+        # Get channels with tokens expiring within 7 days or already expired
+        expiring = db.get_expiring_tokens(days_ahead=7)
         if expiring:
             LOGGER.info("Automatically selected %d expiring channels.", len(expiring))
             return expiring
-        LOGGER.info("No channels with expired tokens found.")
+        LOGGER.info("No channels with expiring tokens found.")
         return []
 
     raise SystemExit("No channels provided. Pass channel names or use --all-expiring.")
@@ -107,6 +108,47 @@ def main(argv: list[str] | None = None) -> int:
                 LOGGER.info("Tokens saved to database for channel %s", result.channel_name)
             else:
                 LOGGER.warning("Failed to save tokens to database for channel %s", result.channel_name)
+            
+            # Save profile_path if it was used during reauth
+            # Get credential to check if profile_path was set
+            credential = db.get_account_credentials(result.channel_name, include_disabled=True)
+            if credential:
+                from pathlib import Path
+                project_root = Path(__file__).parent.parent
+                
+                # Determine the actual profile directory path
+                if credential.profile_path:
+                    # If profile_path is set, use it but ensure it's a directory path
+                    profile_path_obj = Path(credential.profile_path)
+                    # Check if it's a file path (has extension like .json) or is actually a file
+                    if profile_path_obj.suffix and profile_path_obj.suffix.lower() in ['.json', '.txt', '.log']:
+                        # If it's a file path, use parent directory
+                        actual_profile_path = str(profile_path_obj.parent)
+                    elif profile_path_obj.is_file():
+                        # If it exists and is a file, use parent directory
+                        actual_profile_path = str(profile_path_obj.parent)
+                    else:
+                        # It's already a directory path
+                        actual_profile_path = credential.profile_path
+                else:
+                    # If profile_path is not set, create default path
+                    actual_profile_path = str(project_root / "data" / "profiles" / result.channel_name)
+                
+                # Ensure the directory exists
+                Path(actual_profile_path).mkdir(parents=True, exist_ok=True)
+                
+                # Update profile_path in database if it changed or was empty
+                if not credential.profile_path or credential.profile_path != actual_profile_path:
+                    profile_saved = db.update_profile_path(result.channel_name, actual_profile_path)
+                    if profile_saved:
+                        LOGGER.info("Profile path saved to database for channel %s: %s", 
+                                  result.channel_name, actual_profile_path)
+                    else:
+                        LOGGER.warning("Failed to save profile path for channel %s", result.channel_name)
+                else:
+                    # Profile path already set correctly
+                    LOGGER.debug("Profile path already set for channel %s: %s", 
+                               result.channel_name, actual_profile_path)
 
     LOGGER.info("Reauth finished: %d success, %d failed", len(success), len(failures))
     for result in failures:

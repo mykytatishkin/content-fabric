@@ -163,9 +163,9 @@ class YouTubeClient(BaseAPIClient):
     def _update_database_token(self, account_info: Dict[str, Any], creds):
         """Update database with refreshed token."""
         try:
-            from core.database.sqlite_db import get_database_by_type
+            from core.database.mysql_db import get_mysql_database
             
-            db = get_database_by_type()
+            db = get_mysql_database()
             account_name = account_info.get('name')
             
             if account_name and db:

@@ -23,8 +23,8 @@ def test_database_connection():
     print("🔍 Testing database connection...")
     
     try:
-        from core.database.sqlite_db import get_database_by_type
-        db = get_database_by_type()
+        from core.database.mysql_db import get_mysql_database
+        db = get_mysql_database()
         print("✅ Database connection successful")
         return db
     except Exception as e:

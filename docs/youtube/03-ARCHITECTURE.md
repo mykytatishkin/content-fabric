@@ -39,7 +39,7 @@ Content Fabric использует многоуровневую архитек�
          ▼                     ▼
 ┌─────────────────┐   ┌─────────────────┐
 │  Database       │   │  OAuth Manager  │
-│  (SQLite/MySQL) │   │                 │
+│  (MySQL) │   │                 │
 └────────┬────────┘   └────────┬────────┘
          │                     │
          └──────────┬──────────┘
@@ -84,17 +84,17 @@ from core.database import get_database_by_type
 
 **Импорты:**
 ```python
-from core.database.sqlite_db import get_database_by_type, YouTubeChannel
+from core.database.mysql_db import get_mysql_database, YouTubeChannel
 ```
 
 ---
 
 ### 2. Database Layer
 
-#### SQLite Database
-**Расположение:** `core/database/sqlite_db.py`
+#### MySQL Database
+**Расположение:** `core/database/mysql_db.py`
 
-**Класс:** `YouTubeDatabase`
+**Класс:** `YouTubeMySQLDatabase`
 
 **Основные методы:**
 ```python
@@ -210,13 +210,13 @@ class DatabaseConfigLoader:
 **Особенности:**
 - Автоматически подставляет credentials из `.env` если не указаны
 - Совместим с существующим ConfigLoader
-- Поддерживает SQLite и MySQL
+- Использует MySQL для хранения данных
 
 ---
 
 ## 🗄️ База данных
 
-### Схема SQLite/MySQL
+### Схема MySQL
 
 #### Таблица: youtube_channels
 
@@ -525,7 +525,6 @@ content-fabric/
 │   │   └── token_manager.py         # Управление токенами
 │   │
 │   ├── database/
-│   │   ├── sqlite_db.py             # SQLite реализация
 │   │   ├── mysql_db.py              # MySQL реализация
 │   │   └── __init__.py              # get_database_by_type()
 │   │
@@ -543,7 +542,7 @@ content-fabric/
 │
 ├── data/
 │   └── databases/
-│       └── youtube_channels.db      # SQLite база
+│       └── (MySQL database)
 │
 └── credentials.json                 # OAuth credentials
 ```
@@ -553,11 +552,6 @@ content-fabric/
 ## 🔒 Security Architecture
 
 ### 1. Хранение токенов
-
-**SQLite:**
-- База данных: `data/databases/youtube_channels.db`
-- Права доступа: `600` (только владелец)
-- Токены хранятся в plaintext (локальная база)
 
 **MySQL:**
 - База данных: удалённый сервер
@@ -626,12 +620,14 @@ class BaseAPIClient:
 
 ### 1. Database Access
 ```python
-# ✅ Используйте context manager
-with sqlite3.connect(db_path) as conn:
-    cursor.execute(...)
+# ✅ Используйте MySQL database instance
+from core.database.mysql_db import get_mysql_database
 
-# ✅ Используйте prepared statements
-cursor.execute("SELECT * FROM channels WHERE name = ?", (name,))
+db = get_mysql_database()
+channel = db.get_channel(name)
+
+# ✅ Используйте prepared statements (автоматически в mysql_db)
+db.add_channel(name, channel_id, client_id, client_secret)
 ```
 
 ### 2. Error Handling

@@ -310,12 +310,42 @@ class YouTubeMySQLDatabase:
         return datetime.now() >= channel.token_expires_at
     
     def get_expired_tokens(self) -> List[str]:
-        """Get list of channels with expired tokens."""
+        """Get list of channels with expired tokens.
+        
+        Only returns channels that have token_expires_at set and are actually expired.
+        Channels without expiration dates are not included.
+        """
         expired_channels = []
+        now = datetime.now()
         for channel in self.get_all_channels(enabled_only=True):
-            if self.is_token_expired(channel.name):
-                expired_channels.append(channel.name)
+            # Only consider channels with a valid expiration date
+            if channel.token_expires_at:
+                # Check if token is expired (current time >= expiration time)
+                if now >= channel.token_expires_at:
+                    expired_channels.append(channel.name)
         return expired_channels
+    
+    def get_expiring_tokens(self, days_ahead: int = 7) -> List[str]:
+        """Get list of channels with tokens expiring soon or already expired.
+        
+        Args:
+            days_ahead: Number of days to look ahead for expiring tokens (default: 7)
+        
+        Returns:
+            List of channel names with tokens expiring within the specified days or already expired.
+            Only includes channels that have token_expires_at set.
+        """
+        expiring_channels = []
+        now = datetime.now()
+        threshold = now + timedelta(days=days_ahead)
+        
+        for channel in self.get_all_channels(enabled_only=True):
+            # Only consider channels with a valid expiration date
+            if channel.token_expires_at:
+                # Check if token is expired or expiring within the threshold
+                if channel.token_expires_at <= threshold:
+                    expiring_channels.append(channel.name)
+        return expiring_channels
     
     def export_config(self) -> Dict[str, Any]:
         """Export current configuration for config.yaml compatibility."""
@@ -598,6 +628,28 @@ class YouTubeMySQLDatabase:
             return True
         except Error as e:
             print(f"❌ Error updating credentials attempt for '{channel_name}': {e}")
+            return False
+    
+    def update_profile_path(self, channel_name: str, profile_path: str) -> bool:
+        """Update profile_path for a channel's credentials.
+        
+        Args:
+            channel_name: Name of the channel
+            profile_path: Path to the browser profile directory
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            query = """
+                UPDATE youtube_account_credentials
+                SET profile_path = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE channel_name = %s
+            """
+            self._execute_query(query, (profile_path, channel_name))
+            return True
+        except Error as e:
+            print(f"❌ Error updating profile_path for '{channel_name}': {e}")
             return False
 
     # ==================== Re-auth Audit ====================

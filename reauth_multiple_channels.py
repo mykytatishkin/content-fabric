@@ -56,7 +56,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from core.auth.oauth_manager import OAuthManager
-from core.database.sqlite_db import get_database_by_type
+from core.database.mysql_db import get_mysql_database
 from core.utils.logger import get_logger
 
 logger = get_logger("reauth_multiple")
@@ -106,7 +106,7 @@ def main():
     # Check for --expired flag
     if sys.argv[1] == "--expired":
         print("\n🔍 Finding channels with expired tokens...")
-        db = get_database_by_type()
+        db = get_mysql_database()
         channels = db.get_all_channels(enabled_only=True)
         
         channel_names = []
