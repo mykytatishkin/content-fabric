@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Script to check refresh_token values for YouTube channels.
-Useful for verifying that reauthorization updated the tokens.
+NOTE: This script only checks if refresh_token EXISTS in database.
+It does NOT check if the token is VALID. 
+For validity check, use: check_refresh_token_validity.py
 """
 
 from __future__ import annotations
@@ -65,8 +67,10 @@ def check_refresh_tokens(channel_names: list[str]) -> None:
                 channel.refresh_token[-10:] if len(channel.refresh_token) > 20 
                 else channel.refresh_token
             )
-            print(f"   ✅ Refresh Token: {token_preview}")
+            print(f"   ✅ Refresh Token: {token_preview} (exists in DB)")
             print(f"   Token Length: {len(channel.refresh_token)} characters")
+            print(f"   ⚠️  NOTE: This only checks if token EXISTS, not if it's VALID")
+            print(f"   💡 To check validity, run: python3 app/checks/check_refresh_token_validity.py {channel_name}")
         else:
             print(f"   ❌ No refresh_token found")
         
