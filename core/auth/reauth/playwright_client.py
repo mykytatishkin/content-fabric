@@ -32,9 +32,9 @@ class BrowserConfig:
     """Configuration options for Playwright browser sessions."""
 
     headless: bool = False
-    slow_mo_ms: int = 0
+    slow_mo_ms: int = 50  # Add slight delay between actions by default
     navigation_timeout_ms: int = 60000
-    human_delay_range_ms: tuple[int, int] = (300, 750)
+    human_delay_range_ms: tuple[int, int] = (500, 1200)  # Increased delays for more human-like behavior
 
 
 def _build_proxy_settings(proxy: Optional[ProxyConfig]) -> Optional[dict]:
@@ -220,6 +220,36 @@ async def playwright_context(
             }
             return originalToString.apply(this, arguments);
         };
+        
+        // Override Notification to prevent detection
+        const OriginalNotification = window.Notification;
+        window.Notification = function(title, options) {
+            return new OriginalNotification(title, options);
+        };
+        Object.setPrototypeOf(window.Notification, OriginalNotification);
+        Object.defineProperty(window.Notification, 'permission', {
+            get: () => OriginalNotification.permission
+        });
+        
+        // Override document.documentElement.webdriver
+        Object.defineProperty(document.documentElement, 'webdriver', {
+            get: () => undefined,
+            configurable: true
+        });
+        
+        // Override window.navigator.webdriver getter
+        const originalNavigator = window.navigator;
+        Object.defineProperty(window, 'navigator', {
+            get: () => {
+                const nav = originalNavigator;
+                Object.defineProperty(nav, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true
+                });
+                return nav;
+            },
+            configurable: true
+        });
     })();
     """
 
@@ -607,6 +637,9 @@ async def _is_consent_screen(surface: FrameLike) -> bool:
 
 async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig) -> None:
     try:
+        # Pause before interacting with checkboxes (humans read first)
+        await asyncio.sleep(random.uniform(0.5, 1.2))
+        
         select_all_locators = [
             surface.locator("text='Select all'"),
             surface.locator("text='Вибрати все'"),
@@ -617,8 +650,13 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig) 
         if any(counts):
             for locator in select_all_locators:
                 if await locator.count():
+                    # Human-like pause before clicking
+                    await asyncio.sleep(random.uniform(0.3, 0.7))
                     await locator.first.click()
-                    await _page_from_surface(surface).wait_for_timeout(browser_config.human_delay_range_ms[0])
+                    # Longer pause after clicking (humans pause after actions)
+                    await _page_from_surface(surface).wait_for_timeout(
+                        random.randint(browser_config.human_delay_range_ms[0], browser_config.human_delay_range_ms[1])
+                    )
                     break
 
         checkboxes = surface.locator('input[type="checkbox"]')
@@ -626,8 +664,11 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig) 
         for idx in range(total):
             checkbox = checkboxes.nth(idx)
             if not await checkbox.is_checked():
+                # Variable pause between checkbox clicks (more human-like)
+                await asyncio.sleep(random.uniform(0.15, 0.4))
                 await checkbox.click()
-                await _page_from_surface(surface).wait_for_timeout(100)
+                # Small pause after each click
+                await _page_from_surface(surface).wait_for_timeout(random.randint(80, 200))
     except Exception as exc:  # pragma: no cover - defensive logging
         LOGGER.debug("Unable to toggle consent checkboxes: %s", exc)
 
@@ -635,17 +676,26 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig) 
 async def _simulate_human_activity(page_obj: "Page", browser_config: BrowserConfig) -> None:
     """Simulate human-like activity before clicking to avoid detection."""
     try:
-        # Random mouse movements (humans don't keep mouse still)
-        for _ in range(random.randint(1, 3)):
-            x = random.randint(100, 800)
-            y = random.randint(100, 600)
-            await page_obj.mouse.move(x, y, steps=random.randint(3, 8))
-            await asyncio.sleep(random.uniform(0.1, 0.3))
+        # More extensive random mouse movements (humans don't keep mouse still)
+        num_movements = random.randint(2, 5)
+        for _ in range(num_movements):
+            x = random.randint(50, 1800)
+            y = random.randint(50, 1000)
+            # Use more steps for smoother, more human-like movement
+            steps = random.randint(10, 25)
+            await page_obj.mouse.move(x, y, steps=steps)
+            # Variable pause between movements (humans pause randomly)
+            await asyncio.sleep(random.uniform(0.15, 0.5))
         
-        # Small random scroll
-        scroll_amount = random.randint(-100, 100)
-        await page_obj.mouse.wheel(0, scroll_amount)
-        await asyncio.sleep(random.uniform(0.2, 0.4))
+        # Small random scrolls (humans scroll to read)
+        num_scrolls = random.randint(1, 3)
+        for _ in range(num_scrolls):
+            scroll_amount = random.randint(-200, 200)
+            await page_obj.mouse.wheel(0, scroll_amount)
+            await asyncio.sleep(random.uniform(0.3, 0.7))
+        
+        # Final pause to simulate reading
+        await asyncio.sleep(random.uniform(0.5, 1.5))
     except Exception:
         pass  # Ignore errors in human simulation
 
@@ -656,17 +706,31 @@ async def _click_consent_button(
     credential: AutomationCredential,
 ) -> bool:
     page_obj = _page_from_surface(surface)
+    
+    # Wait for page to be fully loaded first
+    try:
+        await page_obj.wait_for_load_state("networkidle", timeout=15000)
+    except Exception:
+        try:
+            await page_obj.wait_for_load_state("domcontentloaded", timeout=10000)
+        except Exception:
+            pass
+    
+    # Important: Wait longer before interacting (humans read the page first)
+    initial_pause = random.uniform(2.0, 4.0)
+    await page_obj.wait_for_timeout(int(initial_pause * 1000))
+    
+    # Scroll down slowly to simulate reading
     await _scroll_to_bottom(surface)
     
-    # Wait for page to be ready and element to potentially appear
-    try:
-        await page_obj.wait_for_load_state("domcontentloaded", timeout=10000)
-    except Exception:
-        pass
-    await page_obj.wait_for_timeout(2000)
+    # Additional pause after scrolling (humans pause after scrolling)
+    await asyncio.sleep(random.uniform(1.0, 2.5))
     
-    # Simulate human activity before clicking (helps avoid detection)
+    # Extensive human activity simulation before clicking
     await _simulate_human_activity(page_obj, browser_config)
+    
+    # Final pause before attempting to click (critical for avoiding detection)
+    await asyncio.sleep(random.uniform(0.8, 1.8))
     
     # METHOD 1: Try waiting for selector to appear (Playwright's built-in wait)
     try:
@@ -674,12 +738,17 @@ async def _click_consent_button(
         await surface.wait_for_selector("div[jsname='V67aGc']", state="visible", timeout=15000)
         button = surface.locator("div[jsname='V67aGc']").first
         await button.scroll_into_view_if_needed()
+        
+        # Additional pause after scrolling to button (humans read before clicking)
+        await asyncio.sleep(random.uniform(0.8, 1.5))
+        
         # Use human-like click with mouse movement
         await _human_pause(browser_config)
         if not await _human_like_click(button, page_obj, browser_config):
-            # Fallback to regular click if human-like fails
-            await button.click(timeout=5000, delay=random.randint(50, 150))
-        await page_obj.wait_for_timeout(random.randint(1500, 2500))
+            # Fallback to regular click if human-like fails (but still with delay)
+            await asyncio.sleep(random.uniform(0.3, 0.6))
+            await button.click(timeout=5000, delay=random.randint(100, 200))
+        await page_obj.wait_for_timeout(random.randint(2000, 3500))
         LOGGER.info("Successfully clicked Continue button via wait_for_selector for %s.", credential.channel_name)
         return await _handle_consent_click_success(page_obj, credential, "Method 1 (wait_for_selector)")
     except Exception as wait_exc:
@@ -1414,10 +1483,25 @@ async def _wait_for_callback_redirect(
 
 async def _scroll_to_bottom(surface: FrameLike) -> None:
     try:
-        await surface.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         page_obj = _page_from_surface(surface)
-        await page_obj.wait_for_timeout(300)
-        await page_obj.mouse.wheel(0, 2000)
+        
+        # Get page height for smooth scrolling
+        page_height = await surface.evaluate("document.body.scrollHeight")
+        viewport_height = await surface.evaluate("window.innerHeight")
+        
+        # Scroll in multiple smaller steps (more human-like than one big scroll)
+        scroll_steps = random.randint(3, 6)
+        scroll_per_step = (page_height - viewport_height) / scroll_steps
+        
+        for step in range(scroll_steps):
+            scroll_position = scroll_per_step * (step + 1)
+            await surface.evaluate(f"window.scrollTo({{ top: {scroll_position}, behavior: 'smooth' }})")
+            # Variable pause between scroll steps (humans pause while reading)
+            await page_obj.wait_for_timeout(random.randint(200, 500))
+        
+        # Final small scroll with mouse wheel (humans use mouse wheel)
+        await page_obj.mouse.wheel(0, random.randint(300, 800))
+        await page_obj.wait_for_timeout(random.randint(300, 600))
     except Exception as exc:  # pragma: no cover - defensive logging
         LOGGER.debug("Unable to scroll consent page: %s", exc)
 
@@ -1441,21 +1525,47 @@ async def _human_like_click(
         center_x = box["x"] + box["width"] / 2
         center_y = box["y"] + box["height"] / 2
         
-        # Add small random offset to make it more human-like
-        offset_x = random.uniform(-5, 5)
-        offset_y = random.uniform(-5, 5)
+        # Add larger random offset to make it more human-like (humans don't click exactly center)
+        offset_x = random.uniform(-8, 8)
+        offset_y = random.uniform(-8, 8)
         target_x = center_x + offset_x
         target_y = center_y + offset_y
         
-        # Move mouse to element with slight delay (human-like movement)
-        await _human_pause(browser_config)
-        await page_obj.mouse.move(target_x, target_y, steps=random.randint(5, 15))
+        # Get current mouse position (if available) for smoother movement
+        try:
+            # Move mouse away first (humans often move mouse before clicking)
+            current_x = random.randint(100, 500)
+            current_y = random.randint(100, 400)
+            await page_obj.mouse.move(current_x, current_y, steps=random.randint(5, 10))
+            await asyncio.sleep(random.uniform(0.2, 0.4))
+        except Exception:
+            pass
         
-        # Hover for a moment (humans don't click instantly)
-        await asyncio.sleep(random.uniform(0.1, 0.3))
+        # Move mouse to element with smooth, human-like movement
+        # Use more steps for smoother curve
+        steps = random.randint(15, 30)
+        await page_obj.mouse.move(target_x, target_y, steps=steps)
         
-        # Click with slight delay
-        await page_obj.mouse.click(target_x, target_y, delay=random.randint(50, 150))
+        # Hover for a moment (humans pause before clicking)
+        hover_time = random.uniform(0.3, 0.7)
+        await asyncio.sleep(hover_time)
+        
+        # Small micro-movement before click (humans adjust position slightly)
+        micro_offset_x = random.uniform(-2, 2)
+        micro_offset_y = random.uniform(-2, 2)
+        await page_obj.mouse.move(
+            target_x + micro_offset_x, 
+            target_y + micro_offset_y, 
+            steps=random.randint(3, 6)
+        )
+        await asyncio.sleep(random.uniform(0.1, 0.2))
+        
+        # Click with variable delay (humans have variable click speed)
+        click_delay = random.randint(80, 200)
+        await page_obj.mouse.click(target_x, target_y, delay=click_delay)
+        
+        # Small pause after click (humans don't move instantly after clicking)
+        await asyncio.sleep(random.uniform(0.2, 0.4))
         
         return True
     except Exception as exc:
