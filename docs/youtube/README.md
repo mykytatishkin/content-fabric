@@ -12,6 +12,8 @@
    - Переменные окружения
    - Credentials файл
 
+   > 💡 **Для детальной настройки Google Cloud Console с нуля**: см. [Google Cloud Console Setup Guide](../setup/GOOGLE_CLOUD_CONSOLE_SETUP.md)
+
 2. **[02-CLI-GUIDE.md](02-CLI-GUIDE.md)** - Использование CLI утилит
    - `account_manager.py` - управление каналами
    - `run_youtube_manager.py` - управление через базу

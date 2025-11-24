@@ -25,6 +25,7 @@
 ### Быстрый старт:
 - **[docs/setup/QUICK_START.md](docs/setup/QUICK_START.md)** - Быстрая установка
 - **[docs/setup/PLATFORM_SETUP_GUIDE.md](docs/setup/PLATFORM_SETUP_GUIDE.md)** - Настройка платформ
+- **[docs/setup/GOOGLE_CLOUD_CONSOLE_SETUP.md](docs/setup/GOOGLE_CLOUD_CONSOLE_SETUP.md)** - 🔧 Google Cloud Console с нуля
 
 ### База данных:
 - **[docs/setup/MYSQL_SETUP_GUIDE.md](docs/setup/MYSQL_SETUP_GUIDE.md)** - MySQL
