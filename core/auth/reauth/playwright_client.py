@@ -64,6 +64,21 @@ async def playwright_context(
     playwright = await async_playwright().start()
     LOGGER.debug("Playwright started for channel %s", credential.channel_name)
 
+    # Build proxy config first
+    proxy_config = _build_proxy_settings(credential.proxy)
+
+    # Check if we should use persistent context (real Chrome profile)
+    use_persistent_context = False
+    user_data_dir = None
+    if credential.profile_path:
+        profile_path = Path(credential.profile_path)
+        if profile_path.exists() and profile_path.is_dir():
+            # Check if it looks like a Chrome user data directory
+            if (profile_path / "Default").exists() or (profile_path / "Profile 1").exists():
+                user_data_dir = str(profile_path)
+                use_persistent_context = True
+                LOGGER.info("Using real Chrome profile from: %s", user_data_dir)
+
     # Enhanced browser args to avoid detection
     browser_args = [
         "--disable-blink-features=AutomationControlled",
@@ -116,20 +131,6 @@ async def playwright_context(
             slow_mo=browser_config.slow_mo_ms,
             args=browser_args,
         )
-
-    proxy_config = _build_proxy_settings(credential.proxy)
-
-    # Check if we should use persistent context (real Chrome profile)
-    use_persistent_context = False
-    user_data_dir = None
-    if credential.profile_path:
-        profile_path = Path(credential.profile_path)
-        if profile_path.exists() and profile_path.is_dir():
-            # Check if it looks like a Chrome user data directory
-            if (profile_path / "Default").exists() or (profile_path / "Profile 1").exists():
-                user_data_dir = str(profile_path)
-                use_persistent_context = True
-                LOGGER.info("Using real Chrome profile from: %s", user_data_dir)
 
     storage_state_path: Optional[str] = None
     if credential.profile_path and not use_persistent_context:
