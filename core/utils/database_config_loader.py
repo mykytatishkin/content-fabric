@@ -58,19 +58,39 @@ class DatabaseConfigLoader:
             config_channels = []
             
             for channel in channels:
-                # Get OAuth credentials from environment variables
-                client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', channel.client_id)
-                client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', channel.client_secret)
+                # Get OAuth credentials from console if available, otherwise from channel or env
+                client_id = channel.client_id
+                client_secret = channel.client_secret
+                credentials_file = 'credentials.json'
+                
+                # If channel has a console_id, get credentials from console
+                if channel.console_id:
+                    console = self.db.get_console(channel.console_id)
+                    if console and console.enabled:
+                        client_id = console.client_id
+                        client_secret = console.client_secret
+                        if console.credentials_file:
+                            credentials_file = console.credentials_file
+                        self.logger.debug(f"Using console '{console.name}' for channel '{channel.name}'")
+                    else:
+                        self.logger.warning(f"Console {channel.console_id} not found or disabled for channel '{channel.name}', using channel credentials")
+                
+                # Fallback to environment variables if credentials are empty
+                if not client_id:
+                    client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', '')
+                if not client_secret:
+                    client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', '')
                 
                 config_channel = {
                     'name': channel.name,
                     'channel_id': channel.channel_id,
                     'client_id': client_id,
                     'client_secret': client_secret,
-                    'credentials_file': 'credentials.json',
+                    'credentials_file': credentials_file,
                     'enabled': channel.enabled,
                     # Add database-specific fields
                     'db_id': channel.id,
+                    'console_id': channel.console_id,
                     'access_token': channel.access_token,
                     'refresh_token': channel.refresh_token,
                     'token_expires_at': channel.token_expires_at.isoformat() if channel.token_expires_at else None
@@ -87,10 +107,21 @@ class DatabaseConfigLoader:
     def add_youtube_channel(self, name: str, channel_id: str, 
                            client_id: Optional[str] = None, 
                            client_secret: Optional[str] = None,
-                           enabled: bool = True) -> bool:
+                           enabled: bool = True,
+                           console_id: Optional[int] = None) -> bool:
         """Add a new YouTube channel to database."""
         try:
-            # Use environment variables if not provided
+            # If console_id is provided, use credentials from console
+            if console_id:
+                console = self.db.get_console(console_id)
+                if console and console.enabled:
+                    client_id = console.client_id
+                    client_secret = console.client_secret
+                    self.logger.info(f"Using console '{console.name}' for channel '{name}'")
+                else:
+                    self.logger.warning(f"Console {console_id} not found or disabled, using provided credentials")
+            
+            # Use environment variables if not provided and no console
             if not client_id:
                 client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', '')
             if not client_secret:
@@ -101,7 +132,8 @@ class DatabaseConfigLoader:
                 channel_id=channel_id,
                 client_id=client_id,
                 client_secret=client_secret,
-                enabled=enabled
+                enabled=enabled,
+                console_id=console_id
             )
             
             if success:

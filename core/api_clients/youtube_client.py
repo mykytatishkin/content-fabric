@@ -79,6 +79,10 @@ class YouTubeClient(BaseAPIClient):
                 self.logger.error(f"No access token for account {account_info.get('name', 'Unknown')}")
                 return None
             
+            # Get client_id and client_secret from account_info (from console) or fallback to instance values
+            client_id = account_info.get('client_id', self.client_id)
+            client_secret = account_info.get('client_secret', self.client_secret)
+            
             # Parse expiry time if available
             expiry = None
             if token_expires_at:
@@ -95,8 +99,8 @@ class YouTubeClient(BaseAPIClient):
                 token=access_token,
                 refresh_token=refresh_token,
                 token_uri="https://oauth2.googleapis.com/token",
-                client_id=self.client_id,
-                client_secret=self.client_secret,
+                client_id=client_id,
+                client_secret=client_secret,
                 scopes=self.SCOPES,
                 expiry=expiry
             )
