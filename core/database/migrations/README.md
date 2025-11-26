@@ -43,6 +43,47 @@ python3 core/database/migrations/add_error_message_migration.py
 - Enables error categorization in daily reports (Auth, No file, etc.)
 - Checks if column already exists (safe to run multiple times)
 
+### 3. Add Google Cloud Console support
+**File**: `add_google_consoles_migration.py`  
+**Purpose**: Adds support for multiple Google Cloud Console projects to distribute API quota
+
+**Run migration:**
+```bash
+# Using default config (config/mysql_config.yaml)
+python3 core/database/migrations/scripts/run_migration_google_consoles.py
+
+# Or specify custom config file for production
+python3 core/database/migrations/scripts/run_migration_google_consoles.py --config config/mysql_config_prod.yaml
+```
+
+or directly:
+```bash
+python3 core/database/migrations/add_google_consoles_migration.py --config config/mysql_config_prod.yaml
+```
+
+**What it does:**
+- Creates `google_consoles` table to store multiple Google Cloud Console projects
+- Adds `console_id` column to `youtube_channels` table
+- Enables channels to use different Google Cloud Console projects
+- Helps distribute API quota across multiple console projects
+- Stores `project_id` and `redirect_uris` from credentials.json
+- Checks if tables/columns already exist (safe to run multiple times)
+
+### 4. Add project_id and redirect_uris to google_consoles
+**File**: `add_google_consoles_fields_migration.py`  
+**Purpose**: Adds `project_id` and `redirect_uris` fields to existing `google_consoles` table
+
+**Run migration:**
+```bash
+python3 core/database/migrations/scripts/run_migration_google_consoles_fields.py
+```
+
+**What it does:**
+- Adds `project_id VARCHAR(255)` column to store Google Cloud Project ID
+- Adds `redirect_uris JSON` column to store OAuth redirect URIs
+- Adds index on `project_id` for better query performance
+- Safe to run if fields already exist
+
 ## Migration Guidelines
 
 1. All migrations should be idempotent (safe to run multiple times)

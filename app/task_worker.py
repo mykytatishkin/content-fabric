@@ -178,12 +178,19 @@ class TaskWorker:
             True if successful, False otherwise
         """
         try:
-            # Initialize YouTube client if not already set
+            # Initialize YouTube client with channel credentials (may be from console)
+            # Note: YouTubeClient will use credentials from account_info in post_video,
+            # but we initialize it here for compatibility
             if not self.youtube_client:
                 self.youtube_client = YouTubeClient(
                     client_id=channel.client_id,
                     client_secret=channel.client_secret
                 )
+            else:
+                # Update client credentials if channel uses different console
+                # (though account_info will override this in post_video)
+                self.youtube_client.client_id = channel.client_id
+                self.youtube_client.client_secret = channel.client_secret
             
             # Prepare video metadata
             video_metadata = {
@@ -526,11 +533,11 @@ class TaskWorker:
     def _get_channel_by_id(self, channel_id: int):
         """Get channel from database by ID."""
         try:
-            # Get channel by ID
+            # Get channel by ID (including console_id)
             query = """
                 SELECT id, name, channel_id, client_id, client_secret,
                        access_token, refresh_token, token_expires_at,
-                       enabled, created_at, updated_at
+                       console_id, enabled, created_at, updated_at
                 FROM youtube_channels WHERE id = %s
             """
             self.db._ensure_connection()
@@ -541,7 +548,7 @@ class TaskWorker:
             
             if row:
                 from core.database.mysql_db import YouTubeChannel
-                return YouTubeChannel(
+                channel = YouTubeChannel(
                     id=row[0],
                     name=row[1],
                     channel_id=row[2],
@@ -550,10 +557,22 @@ class TaskWorker:
                     access_token=row[5],
                     refresh_token=row[6],
                     token_expires_at=row[7],
-                    enabled=bool(row[8]),
-                    created_at=row[9],
-                    updated_at=row[10]
+                    console_id=row[8],
+                    enabled=bool(row[9]),
+                    created_at=row[10],
+                    updated_at=row[11]
                 )
+                
+                # If channel has a console, get credentials from console
+                if channel.console_id:
+                    console = self.db.get_console(channel.console_id)
+                    if console and console.enabled:
+                        # Override with console credentials
+                        channel.client_id = console.client_id
+                        channel.client_secret = console.client_secret
+                        self.logger.debug(f"Using console '{console.name}' credentials for channel '{channel.name}'")
+                
+                return channel
             return None
         except Exception as e:
             self.logger.error(f"Error getting channel by ID: {str(e)}")
