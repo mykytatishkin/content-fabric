@@ -98,10 +98,11 @@ def main():
     # console add - добавить консоль
     console_add_parser = console_subparsers.add_parser('add', help='Добавить новую Google Cloud Console')
     console_add_parser.add_argument('name', help='Имя консоли в системе')
-    console_add_parser.add_argument('client_id', help='OAuth Client ID')
-    console_add_parser.add_argument('client_secret', help='OAuth Client Secret')
+    console_add_parser.add_argument('client_id', nargs='?', help='OAuth Client ID (не требуется если используется --from-file)')
+    console_add_parser.add_argument('client_secret', nargs='?', help='OAuth Client Secret (не требуется если используется --from-file)')
+    console_add_parser.add_argument('--from-file', help='Путь к credentials.json файлу (автоматически извлекает все данные)')
     console_add_parser.add_argument('--project-id', help='Google Cloud Project ID (из credentials.json)')
-    console_add_parser.add_argument('--credentials-file', help='Путь к credentials.json файлу')
+    console_add_parser.add_argument('--credentials-file', help='Путь к credentials.json файлу для хранения')
     console_add_parser.add_argument('--redirect-uris', nargs='+', help='OAuth redirect URIs (можно указать несколько)')
     console_add_parser.add_argument('--description', help='Описание консоли')
     
@@ -462,13 +463,73 @@ def handle_console_command(auto_poster: SocialMediaAutoPoster, args):
     
     if args.console_command == 'add':
         print(f"➕ Добавление Google Cloud Console: {args.name}")
+        
+        # Если указан --from-file, читаем данные из файла
+        if getattr(args, 'from_file', None):
+            import json
+            from pathlib import Path
+            
+            creds_file = Path(args.from_file)
+            if not creds_file.exists():
+                print(f"❌ Файл не найден: {creds_file}")
+                return
+            
+            try:
+                with open(creds_file, 'r') as f:
+                    creds_data = json.load(f)
+                
+                # Поддерживаем оба формата: {"installed": {...}} и прямой формат
+                if 'installed' in creds_data:
+                    installed = creds_data['installed']
+                else:
+                    installed = creds_data
+                
+                client_id = installed.get('client_id')
+                client_secret = installed.get('client_secret')
+                project_id = installed.get('project_id')
+                redirect_uris = installed.get('redirect_uris', [])
+                
+                if not client_id or not client_secret:
+                    print("❌ Файл не содержит client_id или client_secret")
+                    return
+                
+                print(f"📄 Данные из файла {creds_file.name}:")
+                print(f"   Client ID: {client_id[:50]}...")
+                print(f"   Project ID: {project_id}")
+                print(f"   Redirect URIs: {', '.join(redirect_uris) if redirect_uris else 'нет'}")
+                
+                # Используем данные из файла, но можно переопределить через аргументы
+                final_client_id = args.client_id if args.client_id else client_id
+                final_client_secret = args.client_secret if args.client_secret else client_secret
+                final_project_id = getattr(args, 'project_id', None) or project_id
+                final_redirect_uris = getattr(args, 'redirect_uris', None) or redirect_uris
+                final_credentials_file = getattr(args, 'credentials_file', None) or str(creds_file)
+                
+            except json.JSONDecodeError as e:
+                print(f"❌ Ошибка парсинга JSON: {e}")
+                return
+            except Exception as e:
+                print(f"❌ Ошибка чтения файла: {e}")
+                return
+        else:
+            # Используем данные из аргументов
+            if not args.client_id or not args.client_secret:
+                print("❌ Укажите client_id и client_secret, или используйте --from-file")
+                return
+            
+            final_client_id = args.client_id
+            final_client_secret = args.client_secret
+            final_project_id = getattr(args, 'project_id', None)
+            final_redirect_uris = getattr(args, 'redirect_uris', None)
+            final_credentials_file = getattr(args, 'credentials_file', None)
+        
         success = db_loader.db.add_console(
             name=args.name,
-            client_id=args.client_id,
-            client_secret=args.client_secret,
-            project_id=getattr(args, 'project_id', None),
-            credentials_file=getattr(args, 'credentials_file', None),
-            redirect_uris=getattr(args, 'redirect_uris', None),
+            client_id=final_client_id,
+            client_secret=final_client_secret,
+            project_id=final_project_id,
+            credentials_file=final_credentials_file,
+            redirect_uris=final_redirect_uris,
             description=getattr(args, 'description', None)
         )
         
