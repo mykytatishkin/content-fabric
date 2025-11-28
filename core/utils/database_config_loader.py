@@ -82,6 +82,7 @@ class DatabaseConfigLoader:
                     'enabled': channel.enabled,
                     # Add database-specific fields
                     'db_id': channel.id,
+                    'console_id': channel.console_id,
                     'access_token': channel.access_token,
                     'refresh_token': channel.refresh_token,
                     'token_expires_at': channel.token_expires_at.isoformat() if channel.token_expires_at else None
@@ -126,7 +127,8 @@ class DatabaseConfigLoader:
                 console_name=console_name,
                 client_id=client_id,
                 client_secret=client_secret,
-                enabled=enabled
+                enabled=enabled,
+                console_id=console_id
             )
             
             if success:
