@@ -178,13 +178,22 @@ class TaskWorker:
             True if successful, False otherwise
         """
         try:
-            # Initialize YouTube client with channel credentials (may be from console)
-            # Note: YouTubeClient will use credentials from account_info in post_video,
-            # but we initialize it here for compatibility
+            # Get OAuth credentials from google_consoles table via console_name
+            # Fallback to deprecated channel.client_id/client_secret
+            credentials = self.db.get_console_credentials_for_channel(channel.name)
+            
+            if not credentials:
+                self.logger.error(f"No OAuth credentials found for channel '{channel.name}'")
+                return False
+            
+            client_id = credentials['client_id']
+            client_secret = credentials['client_secret']
+            
+            # Initialize YouTube client if not already set
             if not self.youtube_client:
                 self.youtube_client = YouTubeClient(
-                    client_id=channel.client_id,
-                    client_secret=channel.client_secret
+                    client_id=client_id,
+                    client_secret=client_secret
                 )
             else:
                 # Update client credentials if channel uses different console
@@ -214,8 +223,8 @@ class TaskWorker:
                 'channel_id': channel.channel_id,
                 'access_token': channel.access_token,
                 'refresh_token': channel.refresh_token,
-                'client_id': channel.client_id,
-                'client_secret': channel.client_secret
+                'client_id': client_id,
+                'client_secret': client_secret
             }
             
             self.logger.info(f"Uploading video to YouTube channel: {channel.name}")
@@ -535,7 +544,7 @@ class TaskWorker:
         try:
             # Get channel by ID (including console_id)
             query = """
-                SELECT id, name, channel_id, client_id, client_secret,
+                SELECT id, name, channel_id, console_name, client_id, client_secret,
                        access_token, refresh_token, token_expires_at,
                        console_id, enabled, created_at, updated_at
                 FROM youtube_channels WHERE id = %s
@@ -552,12 +561,12 @@ class TaskWorker:
                     id=row[0],
                     name=row[1],
                     channel_id=row[2],
-                    client_id=row[3],
-                    client_secret=row[4],
-                    access_token=row[5],
-                    refresh_token=row[6],
-                    token_expires_at=row[7],
-                    console_id=row[8],
+                    console_name=row[3],
+                    client_id=row[4],
+                    client_secret=row[5],
+                    access_token=row[6],
+                    refresh_token=row[7],
+                    token_expires_at=row[8],
                     enabled=bool(row[9]),
                     created_at=row[10],
                     updated_at=row[11]

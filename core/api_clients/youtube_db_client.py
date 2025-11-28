@@ -52,6 +52,18 @@ class YouTubeDBClient(BaseAPIClient):
             return False
         
         try:
+            # Get OAuth credentials from google_consoles table via console_name
+            # Fallback to deprecated channel.client_id/client_secret
+            credentials = self.db.get_console_credentials_for_channel(self._current_channel.name)
+            
+            if not credentials:
+                self.logger.error(f"No OAuth credentials found for channel '{self._current_channel.name}'")
+                return False
+            
+            client_id = credentials['client_id']
+            client_secret = credentials['client_secret']
+            credentials_file = credentials.get('credentials_file', self.credentials_file)
+            
             creds = None
             
             # Try to get credentials from database
@@ -63,8 +75,8 @@ class YouTubeDBClient(BaseAPIClient):
                     token=self._current_channel.access_token,
                     refresh_token=self._current_channel.refresh_token,
                     token_uri="https://oauth2.googleapis.com/token",
-                    client_id=self._current_channel.client_id,
-                    client_secret=self._current_channel.client_secret,
+                    client_id=client_id,
+                    client_secret=client_secret,
                     scopes=self.SCOPES
                 )
             
@@ -88,12 +100,12 @@ class YouTubeDBClient(BaseAPIClient):
                 
                 if not creds:
                     # Start OAuth flow
-                    if not os.path.exists(self.credentials_file):
-                        self.logger.error(f"Credentials file '{self.credentials_file}' not found")
+                    if not os.path.exists(credentials_file):
+                        self.logger.error(f"Credentials file '{credentials_file}' not found")
                         return False
                     
                     flow = InstalledAppFlow.from_client_secrets_file(
-                        self.credentials_file, self.SCOPES
+                        credentials_file, self.SCOPES
                     )
                     creds = flow.run_local_server(port=0)
                     
