@@ -195,6 +195,11 @@ class TaskWorker:
                     client_id=client_id,
                     client_secret=client_secret
                 )
+            else:
+                # Update client credentials if channel uses different console
+                # (though account_info will override this in post_video)
+                self.youtube_client.client_id = channel.client_id
+                self.youtube_client.client_secret = channel.client_secret
             
             # Prepare video metadata
             video_metadata = {
@@ -537,11 +542,11 @@ class TaskWorker:
     def _get_channel_by_id(self, channel_id: int):
         """Get channel from database by ID."""
         try:
-            # Get channel by ID
+            # Get channel by ID (including console_id)
             query = """
                 SELECT id, name, channel_id, console_name, client_id, client_secret,
                        access_token, refresh_token, token_expires_at,
-                       enabled, created_at, updated_at
+                       console_id, enabled, created_at, updated_at
                 FROM youtube_channels WHERE id = %s
             """
             self.db._ensure_connection()
@@ -552,7 +557,7 @@ class TaskWorker:
             
             if row:
                 from core.database.mysql_db import YouTubeChannel
-                return YouTubeChannel(
+                channel = YouTubeChannel(
                     id=row[0],
                     name=row[1],
                     channel_id=row[2],
@@ -566,6 +571,17 @@ class TaskWorker:
                     created_at=row[10],
                     updated_at=row[11]
                 )
+                
+                # If channel has a console, get credentials from console
+                if channel.console_id:
+                    console = self.db.get_console(channel.console_id)
+                    if console and console.enabled:
+                        # Override with console credentials
+                        channel.client_id = console.client_id
+                        channel.client_secret = console.client_secret
+                        self.logger.debug(f"Using console '{console.name}' credentials for channel '{channel.name}'")
+                
+                return channel
             return None
         except Exception as e:
             self.logger.error(f"Error getting channel by ID: {str(e)}")

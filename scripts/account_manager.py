@@ -87,8 +87,37 @@ def main():
     add_channel_parser = subparsers.add_parser('add-channel', help='Добавить новый YouTube канал')
     add_channel_parser.add_argument('name', help='Имя канала в системе')
     add_channel_parser.add_argument('channel_id', help='ID YouTube канала')
+    add_channel_parser.add_argument('--console', help='Имя Google Cloud Console для использования')
     add_channel_parser.add_argument('--auto-auth', action='store_true', 
                                    help='Автоматически авторизовать канал после добавления')
+    
+    # Команды для работы с Google Cloud Consoles
+    console_parser = subparsers.add_parser('console', help='Управление Google Cloud Console проектами')
+    console_subparsers = console_parser.add_subparsers(dest='console_command', help='Команды для консолей')
+    
+    # console add - добавить консоль
+    console_add_parser = console_subparsers.add_parser('add', help='Добавить новую Google Cloud Console')
+    console_add_parser.add_argument('name', help='Имя консоли в системе')
+    console_add_parser.add_argument('client_id', nargs='?', help='OAuth Client ID (не требуется если используется --from-file)')
+    console_add_parser.add_argument('client_secret', nargs='?', help='OAuth Client Secret (не требуется если используется --from-file)')
+    console_add_parser.add_argument('--from-file', help='Путь к credentials.json файлу (автоматически извлекает все данные)')
+    console_add_parser.add_argument('--project-id', help='Google Cloud Project ID (из credentials.json)')
+    console_add_parser.add_argument('--credentials-file', help='Путь к credentials.json файлу для хранения')
+    console_add_parser.add_argument('--redirect-uris', nargs='+', help='OAuth redirect URIs (можно указать несколько)')
+    console_add_parser.add_argument('--description', help='Описание консоли')
+    
+    # console list - список консолей
+    console_list_parser = console_subparsers.add_parser('list', help='Показать все консоли')
+    console_list_parser.add_argument('--enabled-only', action='store_true', help='Показать только включенные')
+    
+    # console remove - удалить консоль
+    console_remove_parser = console_subparsers.add_parser('remove', help='Удалить консоль')
+    console_remove_parser.add_argument('name', help='Имя консоли для удаления')
+    
+    # channel set-console - установить консоль для канала
+    channel_console_parser = subparsers.add_parser('set-console', help='Установить консоль для канала')
+    channel_console_parser.add_argument('channel_name', help='Имя канала')
+    channel_console_parser.add_argument('console_name', help='Имя консоли (или "none" для удаления)')
     
     # Команда для миграции из YAML в базу данных
     migrate_parser = subparsers.add_parser('migrate', help='Мигрировать каналы из YAML в базу данных')
@@ -109,6 +138,7 @@ def main():
     db_add_parser.add_argument('channel_id', help='ID YouTube канала')
     db_add_parser.add_argument('--client-id', help='OAuth Client ID (по умолчанию из .env)')
     db_add_parser.add_argument('--client-secret', help='OAuth Client Secret (по умолчанию из .env)')
+    db_add_parser.add_argument('--console', help='Имя Google Cloud Console для использования')
     db_add_parser.add_argument('--disabled', action='store_true', help='Добавить как отключенный')
     
     # db remove - удалить канал из БД
@@ -150,6 +180,10 @@ def main():
             handle_token_info(auto_poster, args)
         elif args.command == 'add-channel':
             handle_add_channel(auto_poster, args)
+        elif args.command == 'console':
+            handle_console_command(auto_poster, args)
+        elif args.command == 'set-console':
+            handle_set_console(auto_poster, args)
         elif args.command == 'migrate':
             handle_migrate(auto_poster, args)
         elif args.command == 'db':
@@ -358,10 +392,21 @@ def handle_add_channel(auto_poster: SocialMediaAutoPoster, args):
     # Создаем DatabaseConfigLoader для работы с БД
     db_loader = DatabaseConfigLoader()
     
+    # Получаем console_id если указана консоль
+    console_id = None
+    if args.console:
+        console = db_loader.db.get_console_by_name(args.console)
+        if console:
+            console_id = console.id
+            print(f"📱 Использование консоли: {console.name}")
+        else:
+            print(f"⚠️  Консоль '{args.console}' не найдена, канал будет добавлен без консоли")
+    
     # Добавляем канал в базу данных
     success = db_loader.add_youtube_channel(
         name=args.name,
-        channel_id=args.channel_id
+        channel_id=args.channel_id,
+        console_id=console_id
     )
     
     if success:
@@ -410,6 +455,168 @@ def handle_migrate(auto_poster: SocialMediaAutoPoster, args):
             print("   Используйте: python3 account_manager.py db list")
 
 
+def handle_console_command(auto_poster: SocialMediaAutoPoster, args):
+    """Обработать команды работы с Google Cloud Consoles."""
+    from core.utils.database_config_loader import DatabaseConfigLoader
+    
+    db_loader = DatabaseConfigLoader()
+    
+    if args.console_command == 'add':
+        print(f"➕ Добавление Google Cloud Console: {args.name}")
+        
+        # Если указан --from-file, читаем данные из файла
+        if getattr(args, 'from_file', None):
+            import json
+            from pathlib import Path
+            
+            creds_file = Path(args.from_file)
+            if not creds_file.exists():
+                print(f"❌ Файл не найден: {creds_file}")
+                return
+            
+            try:
+                with open(creds_file, 'r') as f:
+                    creds_data = json.load(f)
+                
+                # Поддерживаем оба формата: {"installed": {...}} и прямой формат
+                if 'installed' in creds_data:
+                    installed = creds_data['installed']
+                else:
+                    installed = creds_data
+                
+                client_id = installed.get('client_id')
+                client_secret = installed.get('client_secret')
+                project_id = installed.get('project_id')
+                redirect_uris = installed.get('redirect_uris', [])
+                
+                if not client_id or not client_secret:
+                    print("❌ Файл не содержит client_id или client_secret")
+                    return
+                
+                print(f"📄 Данные из файла {creds_file.name}:")
+                print(f"   Client ID: {client_id[:50]}...")
+                print(f"   Project ID: {project_id}")
+                print(f"   Redirect URIs: {', '.join(redirect_uris) if redirect_uris else 'нет'}")
+                
+                # Используем данные из файла, но можно переопределить через аргументы
+                final_client_id = args.client_id if args.client_id else client_id
+                final_client_secret = args.client_secret if args.client_secret else client_secret
+                final_project_id = getattr(args, 'project_id', None) or project_id
+                final_redirect_uris = getattr(args, 'redirect_uris', None) or redirect_uris
+                final_credentials_file = getattr(args, 'credentials_file', None) or str(creds_file)
+                
+            except json.JSONDecodeError as e:
+                print(f"❌ Ошибка парсинга JSON: {e}")
+                return
+            except Exception as e:
+                print(f"❌ Ошибка чтения файла: {e}")
+                return
+        else:
+            # Используем данные из аргументов
+            if not args.client_id or not args.client_secret:
+                print("❌ Укажите client_id и client_secret, или используйте --from-file")
+                return
+            
+            final_client_id = args.client_id
+            final_client_secret = args.client_secret
+            final_project_id = getattr(args, 'project_id', None)
+            final_redirect_uris = getattr(args, 'redirect_uris', None)
+            final_credentials_file = getattr(args, 'credentials_file', None)
+        
+        success = db_loader.db.add_console(
+            name=args.name,
+            client_id=final_client_id,
+            client_secret=final_client_secret,
+            project_id=final_project_id,
+            credentials_file=final_credentials_file,
+            redirect_uris=final_redirect_uris,
+            description=getattr(args, 'description', None)
+        )
+        
+        if success:
+            print(f"✅ Консоль '{args.name}' успешно добавлена!")
+        else:
+            print(f"❌ Ошибка: Консоль '{args.name}' уже существует")
+    
+    elif args.console_command == 'list':
+        print("📱 Google Cloud Consoles:")
+        consoles = db_loader.db.get_all_consoles(enabled_only=getattr(args, 'enabled_only', False))
+        
+        if not consoles:
+            print("📭 Консоли не найдены")
+            return
+        
+        for console in consoles:
+            status_icon = "✅" if console.enabled else "❌"
+            print(f"   {status_icon} {console.name} (ID: {console.id})")
+            if console.project_id:
+                print(f"      Project ID: {console.project_id}")
+            if console.description:
+                print(f"      Описание: {console.description}")
+            if console.credentials_file:
+                print(f"      Credentials: {console.credentials_file}")
+            if console.redirect_uris:
+                print(f"      Redirect URIs: {', '.join(console.redirect_uris)}")
+            print(f"      Создана: {console.created_at}")
+    
+    elif args.console_command == 'remove':
+        print(f"🗑️ Удаление консоли '{args.name}'...")
+        console = db_loader.db.get_console_by_name(args.name)
+        if not console:
+            print(f"❌ Консоль '{args.name}' не найдена")
+            return
+        
+        # Удаляем связь с каналами (устанавливаем console_id в NULL)
+        channels = db_loader.db.get_all_channels()
+        affected = 0
+        for channel in channels:
+            if channel.console_id == console.id:
+                db_loader.db.update_channel_console(channel.name, None)
+                affected += 1
+        
+        # Удаляем консоль
+        query = "DELETE FROM google_consoles WHERE id = %s"
+        db_loader.db._execute_query(query, (console.id,))
+        print(f"✅ Консоль '{args.name}' удалена")
+        if affected > 0:
+            print(f"   У {affected} каналов удалена связь с консолью")
+
+
+def handle_set_console(auto_poster: SocialMediaAutoPoster, args):
+    """Обработать команду set-console."""
+    from core.utils.database_config_loader import DatabaseConfigLoader
+    
+    db_loader = DatabaseConfigLoader()
+    
+    # Проверяем существование канала
+    channel = db_loader.db.get_channel(args.channel_name)
+    if not channel:
+        print(f"❌ Канал '{args.channel_name}' не найден")
+        return
+    
+    # Если указано "none", удаляем связь
+    if args.console_name.lower() == 'none':
+        success = db_loader.db.update_channel_console(args.channel_name, None)
+        if success:
+            print(f"✅ Связь с консолью удалена для канала '{args.channel_name}'")
+        else:
+            print(f"❌ Ошибка при удалении связи")
+        return
+    
+    # Получаем консоль
+    console = db_loader.db.get_console_by_name(args.console_name)
+    if not console:
+        print(f"❌ Консоль '{args.console_name}' не найдена")
+        return
+    
+    # Устанавливаем связь
+    success = db_loader.db.update_channel_console(args.channel_name, console.id)
+    if success:
+        print(f"✅ Канал '{args.channel_name}' теперь использует консоль '{console.name}'")
+    else:
+        print(f"❌ Ошибка при установке связи")
+
+
 def handle_db_command(auto_poster: SocialMediaAutoPoster, args):
     """Обработать команды работы с базой данных."""
     from core.utils.database_config_loader import DatabaseConfigLoader
@@ -447,12 +654,24 @@ def handle_db_command(auto_poster: SocialMediaAutoPoster, args):
     
     elif args.db_command == 'add':
         print(f"➕ Добавление канала '{args.name}' в базу данных...")
+        
+        # Получаем console_id если указана консоль
+        console_id = None
+        if getattr(args, 'console', None):
+            console = db_loader.db.get_console_by_name(args.console)
+            if console:
+                console_id = console.id
+                print(f"📱 Использование консоли: {console.name}")
+            else:
+                print(f"⚠️  Консоль '{args.console}' не найдена, канал будет добавлен без консоли")
+        
         success = db_loader.add_youtube_channel(
             name=args.name,
             channel_id=args.channel_id,
             client_id=args.client_id,
             client_secret=args.client_secret,
-            enabled=not args.disabled
+            enabled=not args.disabled,
+            console_id=console_id
         )
         
         if success:
