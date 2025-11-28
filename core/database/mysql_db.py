@@ -14,13 +14,28 @@ from pathlib import Path
 
 
 @dataclass
+class GoogleConsole:
+    """Google Cloud Console credentials data structure."""
+    id: int
+    name: str  # Unique identifier for the console
+    client_id: str
+    client_secret: str
+    credentials_file: Optional[str] = None
+    description: Optional[str] = None
+    enabled: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
 class YouTubeChannel:
     """YouTube channel data structure."""
     id: int
     name: str
     channel_id: str
-    client_id: str
-    client_secret: str
+    console_name: Optional[str] = None  # Reference to google_consoles.name
+    client_id: Optional[str] = None  # Deprecated: kept for backward compatibility
+    client_secret: Optional[str] = None  # Deprecated: kept for backward compatibility
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     token_expires_at: Optional[datetime] = None
@@ -158,16 +173,26 @@ class YouTubeMySQLDatabase:
             self.connection.rollback()
             raise
     
-    def add_channel(self, name: str, channel_id: str, client_id: str, 
-                   client_secret: str, enabled: bool = True) -> bool:
-        """Add a new YouTube channel."""
+    def add_channel(self, name: str, channel_id: str, console_name: Optional[str] = None,
+                   client_id: Optional[str] = None, client_secret: Optional[str] = None,
+                   enabled: bool = True) -> bool:
+        """Add a new YouTube channel.
+        
+        Args:
+            name: Channel name
+            channel_id: YouTube channel ID
+            console_name: Reference to google_consoles.name (preferred)
+            client_id: OAuth client ID (deprecated, use console_name instead)
+            client_secret: OAuth client secret (deprecated, use console_name instead)
+            enabled: Whether channel is enabled
+        """
         try:
             query = """
                 INSERT INTO youtube_channels 
-                (name, channel_id, client_id, client_secret, enabled)
-                VALUES (%s, %s, %s, %s, %s)
+                (name, channel_id, console_name, client_id, client_secret, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
-            self._execute_query(query, (name, channel_id, client_id, client_secret, enabled))
+            self._execute_query(query, (name, channel_id, console_name, client_id, client_secret, enabled))
             return True
         except Error as e:
             if e.errno == 1062:  # Duplicate entry
@@ -177,7 +202,7 @@ class YouTubeMySQLDatabase:
     def get_channel(self, name: str) -> Optional[YouTubeChannel]:
         """Get channel by name."""
         query = """
-            SELECT id, name, channel_id, client_id, client_secret,
+            SELECT id, name, channel_id, console_name, client_id, client_secret,
                    access_token, refresh_token, token_expires_at,
                    enabled, created_at, updated_at
             FROM youtube_channels WHERE name = %s
@@ -190,14 +215,15 @@ class YouTubeMySQLDatabase:
                 id=row[0],
                 name=row[1],
                 channel_id=row[2],
-                client_id=row[3],
-                client_secret=row[4],
-                access_token=row[5],
-                refresh_token=row[6],
-                token_expires_at=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
+                console_name=row[3],
+                client_id=row[4],
+                client_secret=row[5],
+                access_token=row[6],
+                refresh_token=row[7],
+                token_expires_at=row[8],
+                enabled=bool(row[9]),
+                created_at=row[10],
+                updated_at=row[11]
             )
         return None
     
@@ -205,14 +231,14 @@ class YouTubeMySQLDatabase:
         """Get all channels."""
         if enabled_only:
             query = """
-                SELECT id, name, channel_id, client_id, client_secret,
+                SELECT id, name, channel_id, console_name, client_id, client_secret,
                        access_token, refresh_token, token_expires_at,
                        enabled, created_at, updated_at
                 FROM youtube_channels WHERE enabled = 1
             """
         else:
             query = """
-                SELECT id, name, channel_id, client_id, client_secret,
+                SELECT id, name, channel_id, console_name, client_id, client_secret,
                        access_token, refresh_token, token_expires_at,
                        enabled, created_at, updated_at
                 FROM youtube_channels
@@ -226,14 +252,15 @@ class YouTubeMySQLDatabase:
                 id=row[0],
                 name=row[1],
                 channel_id=row[2],
-                client_id=row[3],
-                client_secret=row[4],
-                access_token=row[5],
-                refresh_token=row[6],
-                token_expires_at=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
+                console_name=row[3],
+                client_id=row[4],
+                client_secret=row[5],
+                access_token=row[6],
+                refresh_token=row[7],
+                token_expires_at=row[8],
+                enabled=bool(row[9]),
+                created_at=row[10],
+                updated_at=row[11]
             ))
         
         return channels
@@ -356,12 +383,26 @@ class YouTubeMySQLDatabase:
         }
         
         for channel in self.get_all_channels():
+            # Get OAuth credentials from google_consoles table via console_name
+            # Fallback to deprecated channel.client_id/client_secret
+            credentials = self.get_console_credentials_for_channel(channel.name)
+            
+            if credentials:
+                client_id = credentials['client_id']
+                client_secret = credentials['client_secret']
+                credentials_file = credentials.get('credentials_file', 'credentials.json')
+            else:
+                client_id = channel.client_id or ''
+                client_secret = channel.client_secret or ''
+                credentials_file = 'credentials.json'
+            
             config['accounts']['youtube'].append({
                 'name': channel.name,
                 'channel_id': channel.channel_id,
-                'client_id': channel.client_id,
-                'client_secret': channel.client_secret,
-                'credentials_file': 'credentials.json',  # Single file for all
+                'console_name': channel.console_name,
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'credentials_file': credentials_file,
                 'enabled': channel.enabled
             })
         
@@ -384,6 +425,170 @@ class YouTubeMySQLDatabase:
         
         return imported_count
     
+    # ==================== Google Console Methods ====================
+    
+    def add_google_console(self, name: str, client_id: str, client_secret: str,
+                          credentials_file: Optional[str] = None,
+                          description: Optional[str] = None,
+                          enabled: bool = True) -> bool:
+        """Add a new Google Cloud Console configuration.
+        
+        Args:
+            name: Unique name for the console (used as identifier)
+            client_id: OAuth Client ID from Google Cloud Console
+            client_secret: OAuth Client Secret from Google Cloud Console
+            credentials_file: Path to credentials.json file (optional)
+            description: Optional description
+            enabled: Whether console is enabled
+        """
+        try:
+            query = """
+                INSERT INTO google_consoles 
+                (name, client_id, client_secret, credentials_file, description, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            self._execute_query(query, (name, client_id, client_secret, credentials_file, description, enabled))
+            return True
+        except Error as e:
+            if e.errno == 1062:  # Duplicate entry
+                return False
+            raise
+    
+    def get_google_console(self, name: str) -> Optional[GoogleConsole]:
+        """Get Google Console by name."""
+        query = """
+            SELECT id, name, client_id, client_secret, credentials_file, description,
+                   enabled, created_at, updated_at
+            FROM google_consoles WHERE name = %s
+        """
+        results = self._execute_query(query, (name,), fetch=True)
+        
+        if results:
+            row = results[0]
+            return GoogleConsole(
+                id=row[0],
+                name=row[1],
+                client_id=row[2],
+                client_secret=row[3],
+                credentials_file=row[4],
+                description=row[5],
+                enabled=bool(row[6]),
+                created_at=row[7],
+                updated_at=row[8]
+            )
+        return None
+    
+    def get_all_google_consoles(self, enabled_only: bool = False) -> List[GoogleConsole]:
+        """Get all Google Console configurations."""
+        if enabled_only:
+            query = """
+                SELECT id, name, client_id, client_secret, credentials_file, description,
+                       enabled, created_at, updated_at
+                FROM google_consoles WHERE enabled = 1
+            """
+        else:
+            query = """
+                SELECT id, name, client_id, client_secret, credentials_file, description,
+                       enabled, created_at, updated_at
+                FROM google_consoles
+            """
+        
+        results = self._execute_query(query, fetch=True)
+        consoles = []
+        
+        for row in results:
+            consoles.append(GoogleConsole(
+                id=row[0],
+                name=row[1],
+                client_id=row[2],
+                client_secret=row[3],
+                credentials_file=row[4],
+                description=row[5],
+                enabled=bool(row[6]),
+                created_at=row[7],
+                updated_at=row[8]
+            ))
+        
+        return consoles
+    
+    def update_google_console(self, name: str, client_id: Optional[str] = None,
+                              client_secret: Optional[str] = None,
+                              credentials_file: Optional[str] = None,
+                              description: Optional[str] = None,
+                              enabled: Optional[bool] = None) -> bool:
+        """Update Google Console configuration."""
+        try:
+            updates = []
+            params = []
+            
+            if client_id is not None:
+                updates.append("client_id = %s")
+                params.append(client_id)
+            if client_secret is not None:
+                updates.append("client_secret = %s")
+                params.append(client_secret)
+            if credentials_file is not None:
+                updates.append("credentials_file = %s")
+                params.append(credentials_file)
+            if description is not None:
+                updates.append("description = %s")
+                params.append(description)
+            if enabled is not None:
+                updates.append("enabled = %s")
+                params.append(enabled)
+            
+            if not updates:
+                return False
+            
+            updates.append("updated_at = NOW()")
+            params.append(name)
+            
+            query = f"UPDATE google_consoles SET {', '.join(updates)} WHERE name = %s"
+            self._execute_query(query, tuple(params))
+            return True
+        except Error:
+            return False
+    
+    def delete_google_console(self, name: str) -> bool:
+        """Delete a Google Console configuration."""
+        try:
+            query = "DELETE FROM google_consoles WHERE name = %s"
+            self._execute_query(query, (name,))
+            return True
+        except Error:
+            return False
+    
+    def get_console_credentials_for_channel(self, channel_name: str) -> Optional[Dict[str, str]]:
+        """Get OAuth credentials for a channel from its associated Google Console.
+        
+        Returns:
+            Dict with 'client_id', 'client_secret', and 'credentials_file' if found,
+            None if channel or console not found
+        """
+        channel = self.get_channel(channel_name)
+        if not channel:
+            return None
+        
+        # If channel has console_name, get credentials from google_consoles
+        if channel.console_name:
+            console = self.get_google_console(channel.console_name)
+            if console and console.enabled:
+                return {
+                    'client_id': console.client_id,
+                    'client_secret': console.client_secret,
+                    'credentials_file': console.credentials_file or 'credentials.json'
+                }
+        
+        # Fallback to deprecated channel.client_id/client_secret for backward compatibility
+        if channel.client_id and channel.client_secret:
+            return {
+                'client_id': channel.client_id,
+                'client_secret': channel.client_secret,
+                'credentials_file': 'credentials.json'
+            }
+        
+        return None
+    
     def get_database_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
         try:
@@ -396,6 +601,12 @@ class YouTubeMySQLDatabase:
             
             # Get expired tokens count
             expired_count = len(self.get_expired_tokens())
+            
+            # Get Google Console count
+            try:
+                console_count = self._execute_query("SELECT COUNT(*) FROM google_consoles", fetch=True)[0][0]
+            except (Error, IndexError, TypeError):
+                console_count = 0
             
             # Get task stats
             try:
@@ -412,6 +623,7 @@ class YouTubeMySQLDatabase:
                 'disabled_channels': channel_count - enabled_count,
                 'total_tokens': token_count,
                 'expired_tokens': expired_count,
+                'total_consoles': console_count,
                 'total_tasks': task_count,
                 'pending_tasks': pending_count,
                 'completed_tasks': completed_count,
