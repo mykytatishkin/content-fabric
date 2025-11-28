@@ -6,7 +6,7 @@ import os
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
@@ -46,12 +46,85 @@ class YouTubeDBClient(BaseAPIClient):
         self._current_channel = channel
         return self._authenticate_for_channel()
     
+    def _get_console_credentials(self) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """Get client_id, client_secret, and credentials_file from console if available.
+        
+        Returns:
+            Tuple of (client_id, client_secret, credentials_file)
+        """
+        if not self._current_channel or not self._current_channel.console_id:
+            # Use channel's own credentials
+            return (
+                self._current_channel.client_id,
+                self._current_channel.client_secret,
+                self.credentials_file
+            )
+        
+        # Get console data
+        console = self.db.get_google_console(self._current_channel.console_id)
+        if not console:
+            self.logger.warning(
+                f"Console ID {self._current_channel.console_id} not found, "
+                f"using channel's own credentials for '{self._current_channel.name}'"
+            )
+            return (
+                self._current_channel.client_id,
+                self._current_channel.client_secret,
+                self.credentials_file
+            )
+        
+        if not console.enabled:
+            self.logger.warning(
+                f"Console '{console.name}' is disabled, "
+                f"using channel's own credentials for '{self._current_channel.name}'"
+            )
+            return (
+                self._current_channel.client_id,
+                self._current_channel.client_secret,
+                self.credentials_file
+            )
+        
+        # Parse client_secrets JSON to get client_secret
+        client_secret = None
+        try:
+            if console.client_secrets:
+                secrets_data = json.loads(console.client_secrets)
+                # client_secrets can be a dict with 'installed' or 'web' key
+                if isinstance(secrets_data, dict):
+                    if 'installed' in secrets_data:
+                        client_secret = secrets_data['installed'].get('client_secret')
+                    elif 'web' in secrets_data:
+                        client_secret = secrets_data['web'].get('client_secret')
+                    else:
+                        # Try direct access
+                        client_secret = secrets_data.get('client_secret')
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            self.logger.warning(f"Failed to parse client_secrets from console: {e}")
+        
+        # Use console's credentials_file if available, otherwise use default
+        credentials_file = console.credentials_file or self.credentials_file
+        
+        self.logger.info(
+            f"Using console '{console.name}' credentials for channel '{self._current_channel.name}'"
+        )
+        
+        return (console.client_id, client_secret, credentials_file)
+    
     def _authenticate_for_channel(self) -> bool:
         """Authenticate for the current channel."""
         if not self._current_channel:
             return False
         
         try:
+            # Get credentials from console if available
+            client_id, client_secret, credentials_file = self._get_console_credentials()
+            
+            if not client_id or not client_secret:
+                self.logger.error(
+                    f"Missing client_id or client_secret for channel '{self._current_channel.name}'"
+                )
+                return False
+            
             creds = None
             
             # Try to get credentials from database
@@ -63,8 +136,8 @@ class YouTubeDBClient(BaseAPIClient):
                     token=self._current_channel.access_token,
                     refresh_token=self._current_channel.refresh_token,
                     token_uri="https://oauth2.googleapis.com/token",
-                    client_id=self._current_channel.client_id,
-                    client_secret=self._current_channel.client_secret,
+                    client_id=client_id,
+                    client_secret=client_secret,
                     scopes=self.SCOPES
                 )
             
@@ -88,12 +161,15 @@ class YouTubeDBClient(BaseAPIClient):
                 
                 if not creds:
                     # Start OAuth flow
-                    if not os.path.exists(self.credentials_file):
-                        self.logger.error(f"Credentials file '{self.credentials_file}' not found")
+                    if not credentials_file or not os.path.exists(credentials_file):
+                        self.logger.error(
+                            f"Credentials file '{credentials_file}' not found for channel "
+                            f"'{self._current_channel.name}'"
+                        )
                         return False
                     
                     flow = InstalledAppFlow.from_client_secrets_file(
-                        self.credentials_file, self.SCOPES
+                        credentials_file, self.SCOPES
                     )
                     creds = flow.run_local_server(port=0)
                     

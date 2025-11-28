@@ -73,12 +73,49 @@ class YouTubeReauthService:
             LOGGER.error("Channel configuration not found for %s", channel_name)
             return None
 
-        # Get client credentials from channel or environment variables (fallback)
-        client_id = channel.client_id or os.getenv('YOUTUBE_MAIN_CLIENT_ID')
-        client_secret = channel.client_secret or os.getenv('YOUTUBE_MAIN_CLIENT_SECRET')
+        # Get client credentials from console if available, otherwise from channel
+        client_id = None
+        client_secret = None
+        
+        if channel.console_id:
+            console = self.db.get_google_console(channel.console_id)
+            if console and console.enabled:
+                client_id = console.client_id
+                # Parse client_secrets JSON to get client_secret
+                try:
+                    if console.client_secrets:
+                        import json
+                        secrets_data = json.loads(console.client_secrets)
+                        if isinstance(secrets_data, dict):
+                            if 'installed' in secrets_data:
+                                client_secret = secrets_data['installed'].get('client_secret')
+                            elif 'web' in secrets_data:
+                                client_secret = secrets_data['web'].get('client_secret')
+                            else:
+                                client_secret = secrets_data.get('client_secret')
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    LOGGER.warning(f"Failed to parse client_secrets from console: {e}")
+                
+                if client_id and client_secret:
+                    LOGGER.info(
+                        "Using console '%s' credentials for channel '%s'",
+                        console.name, channel_name
+                    )
+        
+        # Fallback to channel's own credentials
+        if not client_id:
+            client_id = channel.client_id
+        if not client_secret:
+            client_secret = channel.client_secret
+        
+        # Final fallback to environment variables
+        if not client_id:
+            client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID')
+        if not client_secret:
+            client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET')
         
         if not client_id or not client_secret:
-            LOGGER.error("Missing client credentials for %s (not in DB and not in env vars)", channel_name)
+            LOGGER.error("Missing client credentials for %s (not in console, channel, or env vars)", channel_name)
             return None
 
         proxy = None

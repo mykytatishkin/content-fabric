@@ -116,6 +116,27 @@ def main():
     db_remove_parser.add_argument('name', help='Имя канала для удаления')
     info_parser.add_argument('--json', action='store_true', help='Вывод в JSON формате')
     
+    # db console - управление Google консолями
+    db_console_parser = db_subparsers.add_parser('console', help='Управление Google Cloud Console')
+    console_subparsers = db_console_parser.add_subparsers(dest='console_command', help='Команды для консолей')
+    
+    # console add - добавить консоль из файла
+    console_add_parser = console_subparsers.add_parser('add', help='Добавить Google Console из файла')
+    console_add_parser.add_argument('name', help='Имя консоли')
+    console_add_parser.add_argument('credentials_file', help='Путь к файлу credentials.json')
+    console_add_parser.add_argument('--description', help='Описание консоли')
+    console_add_parser.add_argument('--project-id', help='Google Cloud Project ID')
+    console_add_parser.add_argument('--disabled', action='store_true', help='Добавить как отключенную')
+    
+    # console list - список консолей 
+    console_list_parser = console_subparsers.add_parser('list', help='Показать все консоли')
+    console_list_parser.add_argument('--enabled-only', action='store_true', help='Показать только включенные')
+    
+    # console set - установить консоль для канала
+    console_set_parser = console_subparsers.add_parser('set', help='Установить консоль для канала')
+    console_set_parser.add_argument('channel_name', help='Имя канала')
+    console_set_parser.add_argument('console_id', type=int, help='ID консоли (или 0 для удаления)')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -410,7 +431,7 @@ def handle_migrate(auto_poster: SocialMediaAutoPoster, args):
             print("   Используйте: python3 account_manager.py db list")
 
 
-def handle_db_command(auto_poster: SocialMediaAutoPoster, args):
+def handle_db_command(_auto_poster: SocialMediaAutoPoster, args):
     """Обработать команды работы с базой данных."""
     from core.utils.database_config_loader import DatabaseConfigLoader
     
@@ -468,6 +489,145 @@ def handle_db_command(auto_poster: SocialMediaAutoPoster, args):
             print(f"✅ Канал '{args.name}' успешно удален!")
         else:
             print(f"❌ Ошибка: Канал '{args.name}' не найден")
+    
+    elif args.db_command == 'console':
+        from core.database.mysql_db import get_mysql_database
+        db = get_mysql_database()
+        
+        if args.console_command == 'add':
+            import json
+            from pathlib import Path
+            
+            print(f"➕ Добавление Google Console '{args.name}' из файла...")
+            
+            # Проверка существования файла
+            credentials_path = Path(args.credentials_file)
+            if not credentials_path.exists():
+                print(f"❌ Ошибка: Файл '{args.credentials_file}' не найден")
+                return
+            
+            # Чтение credentials.json
+            try:
+                with open(credentials_path, 'r', encoding='utf-8') as f:
+                    credentials_data = json.load(f)
+            except json.JSONDecodeError as e:
+                print(f"❌ Ошибка: Не удалось распарсить JSON файл: {e}")
+                return
+            except Exception as e:
+                print(f"❌ Ошибка при чтении файла: {e}")
+                return
+            
+            # Извлечение client_id и client_secret
+            client_id = None
+            client_secrets_json = None
+            
+            if 'installed' in credentials_data:
+                client_id = credentials_data['installed'].get('client_id')
+                client_secrets_json = json.dumps(credentials_data['installed'])
+            elif 'web' in credentials_data:
+                client_id = credentials_data['web'].get('client_id')
+                client_secrets_json = json.dumps(credentials_data['web'])
+            else:
+                # Попытка прямого доступа
+                client_id = credentials_data.get('client_id')
+                client_secrets_json = json.dumps(credentials_data)
+            
+            if not client_id:
+                print("❌ Ошибка: Не найден client_id в файле credentials.json")
+                return
+            
+            # Извлечение project_id если доступен
+            project_id = args.project_id
+            if not project_id:
+                if 'installed' in credentials_data:
+                    project_id = credentials_data['installed'].get('project_id')
+                elif 'web' in credentials_data:
+                    project_id = credentials_data['web'].get('project_id')
+                else:
+                    project_id = credentials_data.get('project_id')
+            
+            # Извлечение redirect_uris если доступны
+            redirect_uris = None
+            if 'web' in credentials_data and 'redirect_uris' in credentials_data['web']:
+                redirect_uris = json.dumps(credentials_data['web']['redirect_uris'])
+            
+            # Использование абсолютного пути для credentials_file
+            credentials_file_abs = str(credentials_path.absolute())
+            
+            # Добавление консоли в БД
+            success = db.add_google_console(
+                name=args.name,
+                client_id=client_id,
+                client_secrets=client_secrets_json,
+                credentials_file=credentials_file_abs,
+                description=args.description,
+                enabled=not args.disabled,
+                project_id=project_id,
+                redirect_uris=redirect_uris
+            )
+            
+            if success:
+                print(f"✅ Google Console '{args.name}' успешно добавлена!")
+                print(f"   Client ID: {client_id[:20]}...")
+                print(f"   Credentials file: {credentials_file_abs}")
+                if project_id:
+                    print(f"   Project ID: {project_id}")
+            else:
+                print(f"❌ Ошибка: Консоль '{args.name}' уже существует")
+        
+        elif args.console_command == 'list':
+            print("🔧 Google Consoles в базе данных:")
+            consoles = db.get_all_google_consoles(enabled_only=args.enabled_only)
+            
+            if not consoles:
+                print("📭 Консоли не найдены")
+                return
+            
+            print(f"   Всего: {len(consoles)}")
+            print()
+            
+            for console in consoles:
+                status_icon = "✅" if console.enabled else "❌"
+                print(f"   {status_icon} [{console.id}] {console.name}")
+                if console.description:
+                    print(f"      Описание: {console.description}")
+                if console.project_id:
+                    print(f"      Project ID: {console.project_id}")
+                if console.credentials_file:
+                    print(f"      Credentials: {console.credentials_file}")
+                if console.created_at:
+                    print(f"      Создана: {console.created_at}")
+        
+        elif args.console_command == 'set':
+            print(f"🔗 Установка консоли для канала '{args.channel_name}'...")
+            
+            console_id = args.console_id if args.console_id > 0 else None
+            
+            if console_id:
+                # Проверка существования консоли
+                console = db.get_google_console(console_id)
+                if not console:
+                    print(f"❌ Ошибка: Консоль с ID {console_id} не найдена")
+                    return
+                if not console.enabled:
+                    print(f"⚠️  Внимание: Консоль '{console.name}' отключена")
+            
+            # Проверка существования канала
+            channel = db.get_channel(args.channel_name)
+            if not channel:
+                print(f"❌ Ошибка: Канал '{args.channel_name}' не найден")
+                return
+            
+            success = db.update_channel_console(args.channel_name, console_id)
+            
+            if success:
+                if console_id:
+                    console = db.get_google_console(console_id)
+                    print(f"✅ Канал '{args.channel_name}' теперь использует консоль '{console.name}'")
+                else:
+                    print(f"✅ Консоль удалена для канала '{args.channel_name}' (используются собственные credentials)")
+            else:
+                print(f"❌ Ошибка при обновлении консоли для канала '{args.channel_name}'")
 
 
 if __name__ == "__main__":

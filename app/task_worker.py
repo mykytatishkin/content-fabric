@@ -178,11 +178,46 @@ class TaskWorker:
             True if successful, False otherwise
         """
         try:
-            # Initialize YouTube client if not already set
-            if not self.youtube_client:
+            # Get console credentials if available
+            client_id = channel.client_id
+            client_secret = channel.client_secret
+            
+            if channel.console_id:
+                console = self.db.get_google_console(channel.console_id)
+                if console and console.enabled:
+                    client_id = console.client_id
+                    # Parse client_secrets JSON to get client_secret
+                    try:
+                        import json
+                        if console.client_secrets:
+                            secrets_data = json.loads(console.client_secrets)
+                            if isinstance(secrets_data, dict):
+                                if 'installed' in secrets_data:
+                                    client_secret = secrets_data['installed'].get('client_secret')
+                                elif 'web' in secrets_data:
+                                    client_secret = secrets_data['web'].get('client_secret')
+                                else:
+                                    client_secret = secrets_data.get('client_secret')
+                    except (json.JSONDecodeError, KeyError, TypeError) as e:
+                        self.logger.warning(
+                            f"Failed to parse client_secrets from console for channel '{channel.name}': {e}. "
+                            f"Using channel's own credentials."
+                        )
+                        client_id = channel.client_id
+                        client_secret = channel.client_secret
+                    else:
+                        self.logger.info(
+                            f"Using console '{console.name}' credentials for channel '{channel.name}'"
+                        )
+            
+            # Initialize YouTube client if not already set or if credentials changed
+            if not self.youtube_client or (
+                hasattr(self.youtube_client, 'client_id') and 
+                self.youtube_client.client_id != client_id
+            ):
                 self.youtube_client = YouTubeClient(
-                    client_id=channel.client_id,
-                    client_secret=channel.client_secret
+                    client_id=client_id,
+                    client_secret=client_secret
                 )
             
             # Prepare video metadata
@@ -201,14 +236,14 @@ class TaskWorker:
                 if 'category' in task.add_info:
                     video_metadata['categoryId'] = str(task.add_info['category'])
             
-            # Prepare account info
+            # Prepare account info with console credentials
             account_info = {
                 'name': channel.name,
                 'channel_id': channel.channel_id,
                 'access_token': channel.access_token,
                 'refresh_token': channel.refresh_token,
-                'client_id': channel.client_id,
-                'client_secret': channel.client_secret
+                'client_id': client_id,
+                'client_secret': client_secret
             }
             
             self.logger.info(f"Uploading video to YouTube channel: {channel.name}")
