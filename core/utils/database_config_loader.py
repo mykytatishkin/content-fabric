@@ -58,16 +58,27 @@ class DatabaseConfigLoader:
             config_channels = []
             
             for channel in channels:
-                # Get OAuth credentials from environment variables
-                client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', channel.client_id)
-                client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', channel.client_secret)
+                # Get OAuth credentials from google_consoles table via console_name
+                # Fallback to deprecated channel.client_id/client_secret, then environment variables
+                credentials = self.db.get_console_credentials_for_channel(channel.name)
+                
+                if credentials:
+                    client_id = credentials['client_id']
+                    client_secret = credentials['client_secret']
+                    credentials_file = credentials.get('credentials_file', 'credentials.json')
+                else:
+                    # Fallback to environment variables
+                    client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', channel.client_id or '')
+                    client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', channel.client_secret or '')
+                    credentials_file = 'credentials.json'
                 
                 config_channel = {
                     'name': channel.name,
                     'channel_id': channel.channel_id,
+                    'console_name': channel.console_name,
                     'client_id': client_id,
                     'client_secret': client_secret,
-                    'credentials_file': 'credentials.json',
+                    'credentials_file': credentials_file,
                     'enabled': channel.enabled,
                     # Add database-specific fields
                     'db_id': channel.id,
@@ -85,20 +96,34 @@ class DatabaseConfigLoader:
             return []
     
     def add_youtube_channel(self, name: str, channel_id: str, 
+                           console_name: Optional[str] = None,
                            client_id: Optional[str] = None, 
                            client_secret: Optional[str] = None,
                            enabled: bool = True) -> bool:
-        """Add a new YouTube channel to database."""
+        """Add a new YouTube channel to database.
+        
+        Args:
+            name: Channel name
+            channel_id: YouTube channel ID
+            console_name: Reference to google_consoles.name (preferred)
+            client_id: OAuth client ID (deprecated, use console_name instead)
+            client_secret: OAuth client secret (deprecated, use console_name instead)
+            enabled: Whether channel is enabled
+        """
         try:
-            # Use environment variables if not provided
-            if not client_id:
-                client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', '')
-            if not client_secret:
-                client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', '')
+            # If console_name is provided, use it (preferred method)
+            # Otherwise, fallback to client_id/client_secret for backward compatibility
+            if not console_name:
+                # Use environment variables if not provided
+                if not client_id:
+                    client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', '')
+                if not client_secret:
+                    client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', '')
             
             success = self.db.add_channel(
                 name=name,
                 channel_id=channel_id,
+                console_name=console_name,
                 client_id=client_id,
                 client_secret=client_secret,
                 enabled=enabled

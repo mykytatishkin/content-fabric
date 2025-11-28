@@ -4,13 +4,30 @@
 -- CREATE DATABASE content_fabric CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 -- USE content_fabric;
 
+-- Create google_consoles table for storing Google Cloud Console credentials
+CREATE TABLE IF NOT EXISTS google_consoles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL COMMENT 'Human-readable name for the console (used as unique identifier)',
+    client_id TEXT NOT NULL COMMENT 'OAuth Client ID from Google Cloud Console',
+    client_secret TEXT NOT NULL COMMENT 'OAuth Client Secret from Google Cloud Console',
+    credentials_file CHAR(500) COMMENT 'Path to credentials.json file (optional)',
+    description TEXT COMMENT 'Optional description of the console/project',
+    enabled TINYINT(1) DEFAULT 1 COMMENT 'Whether this console is active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    INDEX idx_name (name),
+    INDEX idx_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Create youtube_channels table
 CREATE TABLE IF NOT EXISTS youtube_channels (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) UNIQUE NOT NULL,
     channel_id VARCHAR(255) NOT NULL,
-    client_id TEXT NOT NULL,
-    client_secret TEXT NOT NULL,
+    console_name VARCHAR(255) COMMENT 'Reference to google_consoles.name (nullable for backward compatibility)',
+    client_id TEXT COMMENT 'Deprecated: use google_consoles.client_id instead (kept for backward compatibility)',
+    client_secret TEXT COMMENT 'Deprecated: use google_consoles.client_secret instead (kept for backward compatibility)',
     access_token TEXT,
     refresh_token TEXT,
     token_expires_at DATETIME,
@@ -18,8 +35,10 @@ CREATE TABLE IF NOT EXISTS youtube_channels (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
+    FOREIGN KEY (console_name) REFERENCES google_consoles(name) ON DELETE SET NULL,
     INDEX idx_name (name),
     INDEX idx_channel_id (channel_id),
+    INDEX idx_console_name (console_name),
     INDEX idx_enabled (enabled),
     INDEX idx_token_expires (token_expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

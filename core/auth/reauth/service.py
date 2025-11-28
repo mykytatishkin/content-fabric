@@ -73,12 +73,20 @@ class YouTubeReauthService:
             LOGGER.error("Channel configuration not found for %s", channel_name)
             return None
 
-        # Get client credentials from channel or environment variables (fallback)
-        client_id = channel.client_id or os.getenv('YOUTUBE_MAIN_CLIENT_ID')
-        client_secret = channel.client_secret or os.getenv('YOUTUBE_MAIN_CLIENT_SECRET')
+        # Get client credentials from google_consoles table via console_name
+        # Fallback to deprecated channel.client_id/client_secret, then environment variables
+        credentials = self.db.get_console_credentials_for_channel(channel_name)
+        
+        if credentials:
+            client_id = credentials['client_id']
+            client_secret = credentials['client_secret']
+        else:
+            # Fallback to environment variables
+            client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID')
+            client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET')
         
         if not client_id or not client_secret:
-            LOGGER.error("Missing client credentials for %s (not in DB and not in env vars)", channel_name)
+            LOGGER.error("Missing client credentials for %s (not in google_consoles, not in channel, and not in env vars)", channel_name)
             return None
 
         proxy = None
