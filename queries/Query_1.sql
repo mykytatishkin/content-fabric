@@ -1,0 +1,1 @@
+select id, account_id, error_message from tasks where status = 2 and date_post >= '2025-11-06';
