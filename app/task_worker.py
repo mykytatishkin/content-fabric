@@ -58,6 +58,9 @@ class TaskWorker:
         
         # Track channels currently being re-authenticated to avoid duplicate reauths
         self.ongoing_reauths = set()
+        
+        # Track reauth threads for proper cleanup
+        self.reauth_threads: Dict[str, threading.Thread] = {}
     
     def set_youtube_client(self, client: YouTubeClient):
         """Set YouTube API client."""
@@ -83,6 +86,17 @@ class TaskWorker:
         self.running = False
         if self.worker_thread:
             self.worker_thread.join(timeout=5)
+        
+        # Wait for reauth threads to complete (with timeout)
+        if self.reauth_threads:
+            self.logger.info(f"Waiting for {len(self.reauth_threads)} reauth thread(s) to complete...")
+            for channel_name, thread in self.reauth_threads.items():
+                if thread.is_alive():
+                    self.logger.info(f"Waiting for reauth thread for {channel_name} to complete...")
+                    thread.join(timeout=30)  # Give reauth threads time to clean up
+                    if thread.is_alive():
+                        self.logger.warning(f"Reauth thread for {channel_name} did not complete within timeout")
+        
         self.logger.info("Task worker stopped")
     
     def _worker_loop(self):
@@ -99,13 +113,30 @@ class TaskWorker:
                         if not self.running:
                             break
                         
-                        self._process_task(task)
+                        # Process each task with individual error handling
+                        # This ensures one failed task doesn't stop the entire loop
+                        try:
+                            self._process_task(task)
+                        except Exception as task_error:
+                            self.logger.error(f"Error processing task #{task.id}: {str(task_error)}", exc_info=True)
+                            # Continue to next task
+                            continue
                 
                 # Sleep for the specified interval
                 time.sleep(self.check_interval)
                 
+            except KeyboardInterrupt:
+                # Allow graceful shutdown on Ctrl+C
+                self.logger.warning("Worker loop interrupted by KeyboardInterrupt")
+                self.running = False
+                break
+            except SystemExit:
+                # Allow system exit to propagate
+                raise
             except Exception as e:
-                self.logger.error(f"Worker loop error: {str(e)}")
+                # Catch all other exceptions to prevent worker from crashing
+                self.logger.error(f"Worker loop error: {str(e)}", exc_info=True)
+                # Sleep before retrying to avoid tight error loop
                 time.sleep(self.check_interval)
     
     def _process_task(self, task: Task):
@@ -605,25 +636,26 @@ class TaskWorker:
             channel_name: Name of the channel that needs re-authentication
             error_message: Error message describing the token revocation
         """
-        # Check if reauth is already in progress for this channel
-        if channel_name in self.ongoing_reauths:
-            self.logger.info(f"Re-authentication already in progress for channel {channel_name}, skipping duplicate request")
-            return
-        
-        # Send notification about token revocation
         try:
-            self.notification_manager.send_token_revocation_alert(
-                platform="YouTube",
-                account=channel_name,
-                error_message=error_message
-            )
-            self.logger.info(f"Sent token revocation alert for account {channel_name}")
-        except Exception as e:
-            self.logger.error(f"Failed to send token revocation notification: {e}")
-        
-        # Send Telegram message about starting re-authentication
-        try:
-            message = f"""🔐 **Автоматична переавторизація YouTube каналу**
+            # Check if reauth is already in progress for this channel
+            if channel_name in self.ongoing_reauths:
+                self.logger.info(f"Re-authentication already in progress for channel {channel_name}, skipping duplicate request")
+                return
+            
+            # Send notification about token revocation
+            try:
+                self.notification_manager.send_token_revocation_alert(
+                    platform="YouTube",
+                    account=channel_name,
+                    error_message=error_message
+                )
+                self.logger.info(f"Sent token revocation alert for account {channel_name}")
+            except Exception as e:
+                self.logger.error(f"Failed to send token revocation notification: {e}")
+            
+            # Send Telegram message about starting re-authentication
+            try:
+                message = f"""🔐 **Автоматична переавторизація YouTube каналу**
 
 **Канал:** {channel_name}
 **Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -632,39 +664,50 @@ class TaskWorker:
 🔄 Запускаю автоматичну переавторизацію...
 
 Очікуйте повідомлення про результат."""
+                
+                # Ensure we have subscribers (add TELEGRAM_CHAT_ID if no subscribers)
+                subscribers = self.telegram_broadcast.get_subscribers()
+                if not subscribers:
+                    telegram_chat_id = self.notification_manager.notification_config.telegram_chat_id
+                    if telegram_chat_id:
+                        try:
+                            chat_id_int = int(telegram_chat_id)
+                            self.telegram_broadcast.add_subscriber(chat_id_int)
+                            self.logger.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber for reauth notifications")
+                        except (ValueError, TypeError):
+                            self.logger.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
+                
+                # Try to send via broadcast (to group)
+                result = self.telegram_broadcast.broadcast_message(message)
+                if result['success'] > 0:
+                    self.logger.info(f"Sent reauth notification to Telegram group: {result['success']}/{result['total']} subscribers")
+                else:
+                    # Fallback to single chat if broadcast fails
+                    self.notification_manager._send_telegram_message(message)
+                    self.logger.info("Sent reauth notification via fallback method")
+            except Exception as e:
+                self.logger.error(f"Failed to send Telegram reauth notification: {e}")
             
-            # Ensure we have subscribers (add TELEGRAM_CHAT_ID if no subscribers)
-            subscribers = self.telegram_broadcast.get_subscribers()
-            if not subscribers:
-                telegram_chat_id = self.notification_manager.notification_config.telegram_chat_id
-                if telegram_chat_id:
-                    try:
-                        chat_id_int = int(telegram_chat_id)
-                        self.telegram_broadcast.add_subscriber(chat_id_int)
-                        self.logger.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber for reauth notifications")
-                    except (ValueError, TypeError):
-                        self.logger.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
-            
-            # Try to send via broadcast (to group)
-            result = self.telegram_broadcast.broadcast_message(message)
-            if result['success'] > 0:
-                self.logger.info(f"Sent reauth notification to Telegram group: {result['success']}/{result['total']} subscribers")
-            else:
-                # Fallback to single chat if broadcast fails
-                self.notification_manager._send_telegram_message(message)
-                self.logger.info("Sent reauth notification via fallback method")
+            # Start re-authentication in background thread
+            # NOTE: NOT using daemon=True to prevent memory corruption when process exits
+            # Playwright needs proper cleanup, so we use regular thread
+            # Wrap in try-except to prevent any exception from crashing the main loop
+            try:
+                reauth_thread = threading.Thread(
+                    target=self._run_reauth_in_background,
+                    args=(channel_name,),
+                    daemon=False,  # Changed from True to prevent memory corruption
+                    name=f"Reauth-{channel_name}"
+                )
+                self.reauth_threads[channel_name] = reauth_thread
+                reauth_thread.start()
+                self.logger.info(f"Started re-authentication thread for channel {channel_name}")
+            except Exception as e:
+                self.logger.error(f"Failed to start re-authentication thread for {channel_name}: {e}", exc_info=True)
+                # Don't raise - allow main loop to continue
         except Exception as e:
-            self.logger.error(f"Failed to send Telegram reauth notification: {e}")
-        
-        # Start re-authentication in background thread
-        reauth_thread = threading.Thread(
-            target=self._run_reauth_in_background,
-            args=(channel_name,),
-            daemon=True,
-            name=f"Reauth-{channel_name}"
-        )
-        reauth_thread.start()
-        self.logger.info(f"Started re-authentication thread for channel {channel_name}")
+            # Catch-all to ensure main loop never crashes due to reauth handling
+            self.logger.error(f"Unexpected error in _handle_token_revocation for {channel_name}: {e}", exc_info=True)
     
     def _run_reauth_in_background(self, channel_name: str):
         """
@@ -675,6 +718,7 @@ class TaskWorker:
             channel_name: Name of the channel to re-authenticate
         """
         self.ongoing_reauths.add(channel_name)
+        reauth_service = None
         try:
             self.logger.info(f"Starting re-authentication for channel {channel_name}")
             
@@ -692,6 +736,7 @@ class TaskWorker:
             )
             
             # Run re-authentication (same as run_youtube_reauth.py)
+            # Wrap in try-except to ensure proper cleanup even on errors
             results = reauth_service.run_sync([channel_name])
             
             if results and len(results) > 0:
@@ -740,6 +785,10 @@ class TaskWorker:
             else:
                 self.logger.error(f"❌ No results returned from re-authentication for channel {channel_name}")
                 
+        except KeyboardInterrupt:
+            # Handle graceful shutdown
+            self.logger.warning(f"Re-authentication interrupted for channel {channel_name}")
+            raise  # Re-raise to allow proper shutdown
         except Exception as e:
             self.logger.error(f"Error during re-authentication for channel {channel_name}: {str(e)}", exc_info=True)
             
@@ -760,8 +809,19 @@ class TaskWorker:
             except Exception as notif_e:
                 self.logger.error(f"Failed to send error notification: {notif_e}")
         finally:
-            # Remove from ongoing reauths set
+            # Ensure Playwright resources are cleaned up
+            # The reauth_service should handle cleanup via context managers,
+            # but we log here to track completion
+            try:
+                # Force garbage collection to help release Playwright resources
+                import gc
+                gc.collect()
+            except Exception as gc_e:
+                self.logger.warning(f"Error during cleanup: {gc_e}")
+            
+            # Remove from ongoing reauths set and thread tracking
             self.ongoing_reauths.discard(channel_name)
+            self.reauth_threads.pop(channel_name, None)
             self.logger.info(f"Completed re-authentication process for channel {channel_name}")
     
     def get_stats(self) -> Dict[str, Any]:

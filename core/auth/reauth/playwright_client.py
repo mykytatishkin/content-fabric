@@ -276,12 +276,33 @@ async def playwright_context(
     try:
         yield playwright, context
     finally:
-        if storage_state_path and not use_persistent_context:
-            await context.storage_state(path=storage_state_path)
-        await context.close()
-        if browser:  # Only close if we created it (not persistent context)
-            await browser.close()
-        await playwright.stop()
+        # Ensure proper cleanup of Playwright resources to prevent memory corruption
+        # Close resources in reverse order of creation
+        try:
+            if storage_state_path and not use_persistent_context:
+                try:
+                    await context.storage_state(path=storage_state_path)
+                except Exception as e:
+                    LOGGER.warning(f"Failed to save storage state: {e}")
+        except Exception as e:
+            LOGGER.warning(f"Error in storage state cleanup: {e}")
+        
+        try:
+            await context.close()
+        except Exception as e:
+            LOGGER.warning(f"Error closing context: {e}")
+        
+        try:
+            if browser:  # Only close if we created it (not persistent context)
+                await browser.close()
+        except Exception as e:
+            LOGGER.warning(f"Error closing browser: {e}")
+        
+        try:
+            await playwright.stop()
+        except Exception as e:
+            LOGGER.warning(f"Error stopping Playwright: {e}")
+        
         LOGGER.debug("Playwright shutdown completed for channel %s", credential.channel_name)
 
 
