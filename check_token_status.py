@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Check the actual token status in the database for all channels.
-This helps diagnose why tokens are marked as expired.
+Check the refresh token status in the database for all channels.
+This helps diagnose which channels have refresh tokens available.
 """
 
 import sys
@@ -23,9 +23,9 @@ logger = get_logger("check_token_status")
 
 
 def main():
-    """Check token status for all channels."""
+    """Check refresh token status for all channels."""
     print("\n" + "=" * 80)
-    print("Token Status Check")
+    print("Refresh Token Status Check")
     print("=" * 80 + "\n")
     
     db = get_mysql_database()
@@ -44,94 +44,77 @@ def main():
     now = datetime.now()
     
     # Categories
-    expired_by_date = []
-    expired_by_null = []
     valid_tokens = []
     no_token = []
     
     for channel in channels:
-        has_access_token = bool(channel.access_token)
         has_refresh_token = bool(channel.refresh_token)
-        expires_at = channel.token_expires_at
         
-        if not has_access_token:
+        if not has_refresh_token:
             no_token.append(channel)
             continue
         
-        if expires_at is None:
-            expired_by_null.append(channel)
-        elif now >= expires_at:
-            expired_by_date.append(channel)
-        else:
-            valid_tokens.append(channel)
+        # Refresh tokens typically don't expire, so we just check if they exist
+        valid_tokens.append(channel)
     
     # Print results
-    print("📊 Token Status Summary:")
+    print("📊 Refresh Token Status Summary:")
     print("-" * 80)
-    print(f"✅ Valid tokens: {len(valid_tokens)}")
-    print(f"❌ Expired (by date): {len(expired_by_date)}")
-    print(f"⚠️  Expired (no expiry date): {len(expired_by_null)}")
-    print(f"🚫 No access token: {len(no_token)}")
+    print(f"✅ Valid refresh tokens: {len(valid_tokens)}")
+    print(f"🚫 No refresh token: {len(no_token)}")
     print()
     
-    if expired_by_null:
-        print("⚠️  Channels with tokens but NO expiry date (marked as expired):")
+    if valid_tokens:
+        print("✅ Channels with refresh tokens:")
         print("-" * 80)
-        for ch in expired_by_null:
+        for ch in valid_tokens:
             print(f"   - {ch.name}")
-            print(f"     Access Token: {'Yes' if ch.access_token else 'No'}")
             print(f"     Refresh Token: {'Yes' if ch.refresh_token else 'No'}")
-            print(f"     Expires At: NULL")
+            print(f"     Access Token: {'Yes' if ch.access_token else 'No'}")
+            if ch.token_expires_at:
+                time_until = ch.token_expires_at - now
+                days = time_until.days
+                hours = time_until.seconds // 3600
+                if time_until.total_seconds() > 0:
+                    print(f"     Access Token expires in: {days} day(s), {hours} hour(s)")
+                else:
+                    time_since = now - ch.token_expires_at
+                    print(f"     Access Token expired: {time_since.days} day(s) ago")
+                print(f"     Access Token Expires At: {ch.token_expires_at}")
+            else:
+                print("     Access Token Expires At: NULL")
             print(f"     Updated At: {ch.updated_at}")
             print()
     
-    if expired_by_date:
-        print("❌ Channels with tokens expired by date:")
-        print("-" * 80)
-        for ch in expired_by_date:
-            time_since = now - ch.token_expires_at
-            print(f"   - {ch.name}")
-            print(f"     Expired: {time_since.days} day(s) ago")
-            print(f"     Expires At: {ch.token_expires_at}")
-            print()
-    
-    if valid_tokens:
-        print("✅ Channels with valid tokens:")
-        print("-" * 80)
-        for ch in valid_tokens:
-            time_until = ch.token_expires_at - now
-            days = time_until.days
-            hours = time_until.seconds // 3600
-            print(f"   - {ch.name}")
-            print(f"     Expires in: {days} day(s), {hours} hour(s)")
-            print(f"     Expires At: {ch.token_expires_at}")
-            print()
-    
     if no_token:
-        print("🚫 Channels without access tokens:")
+        print("🚫 Channels without refresh tokens:")
         print("-" * 80)
         for ch in no_token:
             print(f"   - {ch.name}")
+            print("     Refresh Token: No")
+            print(f"     Access Token: {'Yes' if ch.access_token else 'No'}")
             print()
     
-    # Check what is_token_expired returns
+    # Check refresh token status for each channel
     print("\n" + "=" * 80)
-    print("is_token_expired() Results:")
+    print("Refresh Token Status Details:")
     print("=" * 80 + "\n")
     
-    expired_count = 0
     for channel in channels:
-        is_expired = db.is_token_expired(channel.name)
-        if is_expired:
-            expired_count += 1
-            status = "❌ EXPIRED"
-        else:
-            status = "✅ VALID"
+        has_refresh = bool(channel.refresh_token)
+        has_access = bool(channel.access_token)
         
-        expires_info = f"Expires: {channel.token_expires_at}" if channel.token_expires_at else "No expiry date"
-        print(f"{status} - {channel.name} ({expires_info})")
+        if has_refresh:
+            status = "✅ HAS REFRESH TOKEN"
+        else:
+            status = "❌ NO REFRESH TOKEN"
+        
+        access_info = "Has access token" if has_access else "No access token"
+        expires_info = f"Access expires: {channel.token_expires_at}" if channel.token_expires_at else "No access expiry date"
+        print(f"{status} - {channel.name} ({access_info}, {expires_info})")
     
-    print(f"\nTotal marked as expired by is_token_expired(): {expired_count}/{len(channels)}")
+    refresh_count = len([c for c in channels if c.refresh_token])
+    print(f"\nTotal channels with refresh tokens: {refresh_count}/{len(channels)}")
     
     return 0
 
