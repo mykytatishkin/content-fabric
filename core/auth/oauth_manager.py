@@ -81,8 +81,8 @@ class OAuthManager:
     def __init__(self, config_path: str = "config.yaml", use_database: bool = True):
         self.config_path = config_path
         self.use_database = use_database
-        self.config = self._load_config()
         self.logger = get_logger("oauth_manager")
+        self.config = self._load_config()
         self.token_manager = TokenManager(config_path)
         self.callback_port = 8080
         self.callback_server = None
@@ -98,7 +98,11 @@ class OAuthManager:
                 config_loader = ConfigLoader(self.config_path)
                 return config_loader.load_config()
         except Exception as e:
-            self.logger.error(f"Ошибка загрузки конфигурации: {e}")
+            if hasattr(self, 'logger') and self.logger:
+                self.logger.error(f"Ошибка загрузки конфигурации: {e}")
+            else:
+                # Fallback если logger еще не инициализирован
+                print(f"Ошибка загрузки конфигурации: {e}")
             return {}
     
     def get_authorization_url(self, platform: str, account_name: str, 
