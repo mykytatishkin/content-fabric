@@ -504,12 +504,29 @@ class OAuthManager:
         expires_in = token_data.get('expires_in', 3600)  # 1 час
         scope = token_data.get('scope')
         
+        # Если refresh_token не пришел, сохранить существующий из базы данных
+        # (Google не всегда возвращает refresh_token при повторной авторизации)
+        refresh_token_to_save = refresh_token
+        if not refresh_token:
+            try:
+                from core.database import get_database_by_type
+                db = get_database_by_type()
+                if db:
+                    existing_channel = db.get_channel(account_name)
+                    if existing_channel and existing_channel.refresh_token:
+                        refresh_token_to_save = existing_channel.refresh_token
+                        self.logger.info(f"Refresh token не получен от Google, используется существующий для {account_name}")
+                    else:
+                        self.logger.warning(f"Refresh token не получен и не найден в базе для {account_name}")
+            except Exception as e:
+                self.logger.error(f"Ошибка при получении существующего refresh_token: {str(e)}")
+        
         # Сохранить токен в TokenManager
         success = self.token_manager.add_token(
             platform="youtube",
             account_name=account_name,
             access_token=access_token,
-            refresh_token=refresh_token,
+            refresh_token=refresh_token_to_save,
             expires_in=expires_in,
             scope=scope
         )
@@ -525,7 +542,7 @@ class OAuthManager:
                     db_success = db.update_channel_tokens(
                         name=account_name,
                         access_token=access_token,
-                        refresh_token=refresh_token,
+                        refresh_token=refresh_token_to_save,
                         expires_at=expires_at
                     )
                     if db_success:
