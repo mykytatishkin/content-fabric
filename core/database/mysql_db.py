@@ -331,10 +331,25 @@ class YouTubeMySQLDatabase:
         return self.delete_channel(name)
     
     def is_token_expired(self, name: str) -> bool:
-        """Check if channel token is expired."""
+        """Check if channel token is expired.
+        
+        A token is considered expired if:
+        1. Channel doesn't exist
+        2. No access_token is present
+        3. token_expires_at is set AND current time >= expiration time
+        
+        Note: If token_expires_at is None but access_token exists, 
+        the token is NOT considered expired (it may be refreshable).
+        """
         channel = self.get_channel(name)
-        if not channel or not channel.token_expires_at:
+        if not channel or not channel.access_token:
             return True
+        
+        # If no expiry date is set, but we have an access token,
+        # don't consider it expired (it can be refreshed)
+        if not channel.token_expires_at:
+            return False
+        
         return datetime.now() >= channel.token_expires_at
     
     def get_expired_tokens(self) -> List[str]:
