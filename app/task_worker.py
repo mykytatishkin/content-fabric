@@ -4,7 +4,7 @@ Task Worker for processing scheduled tasks from MySQL database.
 
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Callable, Dict, Any
 from pathlib import Path
 
@@ -17,6 +17,7 @@ from core.utils.telegram_broadcast import TelegramBroadcast
 from core.voice import VoiceChanger
 from core.auth.reauth.service import YouTubeReauthService, ServiceConfig
 from core.auth.reauth.models import ReauthStatus
+from scripts.youtube_reauth_service import save_reauth_tokens_to_db
 
 
 class TaskWorker:
@@ -668,6 +669,7 @@ class TaskWorker:
     def _run_reauth_in_background(self, channel_name: str):
         """
         Run re-authentication for a channel in background thread.
+        Uses the same mechanism as run_youtube_reauth.py
         
         Args:
             channel_name: Name of the channel to re-authenticate
@@ -676,26 +678,29 @@ class TaskWorker:
         try:
             self.logger.info(f"Starting re-authentication for channel {channel_name}")
             
-            # Create reauth service configuration
+            # Create reauth service configuration (same as run_youtube_reauth.py)
             service_config = ServiceConfig()
             service_config.browser.headless = True  # Run in headless mode
             service_config.oauth_settings.redirect_port = 8080
             service_config.oauth_settings.timeout_seconds = 300
             
-            # Initialize reauth service
+            # Initialize reauth service (same as run_youtube_reauth.py)
             reauth_service = YouTubeReauthService(
                 db=self.db,
                 service_config=service_config,
                 use_broadcast=True
             )
             
-            # Run re-authentication
+            # Run re-authentication (same as run_youtube_reauth.py)
             results = reauth_service.run_sync([channel_name])
             
             if results and len(results) > 0:
                 result = results[0]
                 if result.status == ReauthStatus.SUCCESS:
                     self.logger.info(f"✅ Successfully re-authenticated channel {channel_name}")
+                    
+                    # Save tokens to database using the same function as run_youtube_reauth.py
+                    save_reauth_tokens_to_db(self.db, result)
                     
                     # Send success notification
                     try:
@@ -704,9 +709,10 @@ class TaskWorker:
 **Канал:** {channel_name}
 **Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-🎉 Канал успішно переавторизовано. Тепер можна продовжувати публікацію."""
-                        result = self.telegram_broadcast.broadcast_message(success_message)
-                        if result['success'] == 0:
+🎉 Канал успішно переавторизовано. Токени збережено в БД.
+Тепер можна продовжувати публікацію."""
+                        broadcast_result = self.telegram_broadcast.broadcast_message(success_message)
+                        if broadcast_result['success'] == 0:
                             # Fallback to single chat
                             self.notification_manager._send_telegram_message(success_message)
                     except Exception as e:
@@ -723,7 +729,8 @@ class TaskWorker:
 **Помилка:** {error_msg}
 **Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-⚠️ Не вдалося автоматично переавторизувати канал. Потрібна ручна переавторизація."""
+⚠️ Не вдалося автоматично переавторизувати канал. Потрібна ручна переавторизація.
+Запустіть: python3 run_youtube_reauth.py \"{channel_name}\" """
                         broadcast_result = self.telegram_broadcast.broadcast_message(failure_message)
                         if broadcast_result['success'] == 0:
                             # Fallback to single chat
@@ -744,7 +751,8 @@ class TaskWorker:
 **Помилка:** {str(e)}
 **Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-⚠️ Виникла помилка під час автоматичної переавторизації. Потрібна ручна переавторизація."""
+⚠️ Виникла помилка під час автоматичної переавторизації. Потрібна ручна переавторизація.
+Запустіть: python3 run_youtube_reauth.py \"{channel_name}\" """
                 broadcast_result = self.telegram_broadcast.broadcast_message(error_message)
                 if broadcast_result['success'] == 0:
                     # Fallback to single chat
