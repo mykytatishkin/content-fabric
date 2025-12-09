@@ -57,6 +57,7 @@ sys.path.insert(0, str(project_root))
 
 from core.auth.oauth_manager import OAuthManager
 from core.database.mysql_db import get_mysql_database
+from core.database import get_database_by_type
 from core.utils.logger import get_logger
 
 logger = get_logger("reauth_multiple")

@@ -46,7 +46,15 @@ class _OAuthCallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: D401
         """Handle the OAuth redirect."""
         try:
+            # Ignore non-callback paths
             if self.path == "/favicon.ico":
+                self.send_response(404)
+                self.end_headers()
+                return
+            
+            # Ignore Chrome DevTools and other non-OAuth requests
+            if not self.path.startswith("/callback"):
+                LOGGER.debug("Ignoring non-callback request: %s", self.path)
                 self.send_response(404)
                 self.end_headers()
                 return
@@ -83,11 +91,13 @@ class _OAuthCallbackHandler(BaseHTTPRequestHandler):
                     "<html><body><h1>Authorization Error</h1>"
                     "<p>Please return to the application.</p></body></html>".encode()
                 )
-            else:
+                self.callback(payload)
+            elif payload["code"]:
+                # Only process callbacks with authorization code
                 LOGGER.info(
-                    "OAuth callback received successfully. Path: %s, Has code: %s",
+                    "OAuth callback received successfully. Path: %s, Has code: yes, State: %s",
                     self.path,
-                    "yes" if payload["code"] else "no"
+                    payload.get("state", "unknown")
                 )
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
@@ -96,8 +106,17 @@ class _OAuthCallbackHandler(BaseHTTPRequestHandler):
                     "<html><body><h1>Authorization Complete</h1>"
                     "<p>You can close this window.</p></body></html>".encode()
                 )
-
-            self.callback(payload)
+                self.callback(payload)
+            else:
+                # Callback without code - ignore it (might be Chrome DevTools or other requests)
+                LOGGER.debug("OAuth callback received without code, ignoring: %s", self.path)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(
+                    "<html><body><h1>OK</h1></body></html>".encode()
+                )
+                # Don't call callback for requests without code
         except Exception as exc:  # pragma: no cover - defensive logging
             LOGGER.exception("Error handling OAuth callback: %s", exc)
             self.callback({"code": None, "error": str(exc), "state": None})
@@ -152,9 +171,15 @@ class OAuthFlow:
         self._server = None
 
     def _store_result(self, payload: Dict[str, Optional[str]]) -> None:
-        """Store callback payload."""
-        LOGGER.debug("Storing OAuth callback result: error=%s, has_code=%s", 
-                    payload.get("error"), "yes" if payload.get("code") else "no")
+        """Store callback payload. Only store if we don't already have a result with a code."""
+        # If we already have a result with a code, don't overwrite it
+        if self._result and self._result.get("code") and not payload.get("code"):
+            LOGGER.debug("Ignoring callback without code, already have code: %s", payload)
+            return
+        
+        LOGGER.info("Storing OAuth callback result: error=%s, has_code=%s, state=%s", 
+                    payload.get("error"), "yes" if payload.get("code") else "no",
+                    payload.get("state", "unknown"))
         self._result = payload
 
     def wait_for_authorization(self) -> Dict[str, Optional[str]]:
