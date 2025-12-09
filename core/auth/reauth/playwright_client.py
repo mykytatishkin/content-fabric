@@ -584,7 +584,12 @@ async def _approve_consent_if_present(
             if "consent" in url_lower or "oauth" in url_lower:
                 LOGGER.info("URL contains 'consent' or 'oauth' - forcing consent screen handling for %s", credential.channel_name)
                 try:
-                    await _select_all_scopes(surface, browser_config, credential)
+                    # Check if Select All is already checked before selecting
+                    select_all_checked = await _check_select_all_status(surface, credential)
+                    if not select_all_checked:
+                        await _select_all_scopes(surface, browser_config, credential)
+                    else:
+                        LOGGER.info("Select All already checked, skipping selection in fallback")
                     if await _click_consent_button(surface, browser_config, credential):
                         LOGGER.info("Successfully clicked consent button (URL-based fallback) for %s", credential.channel_name)
                         return True
@@ -596,8 +601,12 @@ async def _approve_consent_if_present(
                 page_text_lower = await surface.evaluate("() => document.body.innerText.toLowerCase()")
                 if "contentfactory" in page_text_lower or "wants access" in page_text_lower or "google account" in page_text_lower:
                     LOGGER.info("Found consent-related text, attempting to click button anyway for %s", credential.channel_name)
-                    # Force attempt to click the button
-                    await _select_all_scopes(surface, browser_config, credential)
+                    # Check if Select All is already checked before selecting
+                    select_all_checked = await _check_select_all_status(surface, credential)
+                    if not select_all_checked:
+                        await _select_all_scopes(surface, browser_config, credential)
+                    else:
+                        LOGGER.info("Select All already checked, skipping selection in text-based fallback")
                     if await _click_consent_button(surface, browser_config, credential):
                         LOGGER.info("Successfully clicked consent button (text-based fallback) for %s", credential.channel_name)
                         return True
@@ -613,23 +622,18 @@ async def _approve_consent_if_present(
         if not select_all_checked:
             LOGGER.info("🔍 Select All checkbox is not checked, clicking it for %s...", credential.channel_name)
             await _select_all_scopes(surface, browser_config, credential)
-            LOGGER.info("✅ Scopes selected for %s", credential.channel_name)
+            LOGGER.info("✅ Scopes selected for %s, immediately clicking Continue...", credential.channel_name)
         else:
-            LOGGER.info("✅ Select All checkbox already checked for %s, skipping selection", credential.channel_name)
+            LOGGER.info("✅ Select All checkbox already checked for %s, clicking Continue immediately", credential.channel_name)
 
+        # Immediately click Continue after selecting scopes - no delays, no checks
         LOGGER.info("🖱️  Calling _click_consent_button for %s...", credential.channel_name)
         if await _click_consent_button(surface, browser_config, credential):
             LOGGER.info("✅ Successfully clicked consent button for %s", credential.channel_name)
             
-            # Check if "no access" dialog appeared after clicking Continue
-            if await _handle_no_access_dialog(page, surface, browser_config, credential):
-                LOGGER.info("✅ Handled 'no access' dialog, retrying consent for %s", credential.channel_name)
-                # Retry: select all scopes again and click Continue
-                await _select_all_scopes(surface, browser_config, credential)
-                if await _click_consent_button(surface, browser_config, credential):
-                    LOGGER.info("✅ Successfully clicked consent button after retry for %s", credential.channel_name)
-                    return True
-            
+            # Don't check for dialog here - just return success
+            # If dialog appears, it will be handled by callback server or next attempt
+            # The key is: if checkbox is checked, just click Continue and don't wait for dialog
             return True
     except Exception as exc:
         LOGGER.error("Error in _approve_consent_if_present for %s: %s", credential.channel_name, exc, exc_info=True)
@@ -772,39 +776,89 @@ async def _handle_no_access_dialog(
         # Wait a bit for dialog to appear (reduced)
         await page.wait_for_timeout(500)
         
-        # Check for dialog text indicators
-        dialog_indicators = [
-            "You did not allow any access",
-            "did not allow any access",
-            "Do you want to continue without allowing",
-            "не предоставили доступ",
-            "не надали доступ",
-        ]
-        
-        page_text = ""
+        # METHOD 1: Check for dialog by jsname and role attributes (most reliable)
         try:
-            page_text = await page.evaluate("() => document.body.innerText")
+            # Check for dialog with role="dialog" and aria-modal="true"
+            dialog_by_role = page.locator('div[role="dialog"][aria-modal="true"]')
+            if await dialog_by_role.count() > 0:
+                # Check if it contains the "You did not allow any access" text
+                dialog_text = await dialog_by_role.first.inner_text()
+                if "did not allow any access" in dialog_text.lower() or "continue without allowing" in dialog_text.lower():
+                    LOGGER.info("⚠️  'No access' dialog detected by role attribute for %s", credential.channel_name)
+                    has_dialog = True
+                else:
+                    has_dialog = False
+            else:
+                has_dialog = False
         except Exception:
-            pass
+            has_dialog = False
         
-        # Check if dialog is present
-        has_dialog = any(indicator.lower() in page_text.lower() for indicator in dialog_indicators)
-        
+        # METHOD 2: Check for specific jsname attributes
         if not has_dialog:
-            # Also check for dialog buttons
-            cancel_buttons = [
-                surface.locator("text='Go back'"),
-                surface.locator("text='Cancel'"),
-                surface.locator("button:has-text('Go back')"),
-                surface.locator("button:has-text('Cancel')"),
+            try:
+                # Check for button with jsname="K4efff" (Go back button in no-access dialog)
+                go_back_button = surface.locator('button[jsname="K4efff"]')
+                if await go_back_button.count() > 0:
+                    # Verify it's in a dialog context by checking parent
+                    parent_dialog = await go_back_button.first.evaluate("""
+(el) => {
+  let current = el.parentElement;
+  let depth = 0;
+  while (current && depth < 5) {
+    const role = current.getAttribute('role');
+    const ariaModal = current.getAttribute('aria-modal');
+    if (role === 'dialog' && ariaModal === 'true') {
+      const text = current.innerText || '';
+      if (text.includes('did not allow') || text.includes('no access')) {
+        return true;
+      }
+    }
+    current = current.parentElement;
+    depth++;
+  }
+  return false;
+}
+""")
+                    if parent_dialog:
+                        LOGGER.info("⚠️  'No access' dialog detected by jsname='K4efff' button for %s", credential.channel_name)
+                        has_dialog = True
+            except Exception:
+                pass
+        
+        # METHOD 3: Check for dialog text indicators (fallback)
+        if not has_dialog:
+            dialog_indicators = [
+                "You did not allow any access",
+                "did not allow any access",
+                "Do you want to continue without allowing",
+                "не предоставили доступ",
+                "не надали доступ",
             ]
             
-            for cancel_btn in cancel_buttons:
-                if await cancel_btn.count() > 0:
-                    # Check if it's in a dialog context
-                    try:
-                        # Try to find dialog container
-                        dialog_container = await page.evaluate("""
+            page_text = ""
+            try:
+                page_text = await page.evaluate("() => document.body.innerText")
+            except Exception:
+                pass
+            
+            # Check if dialog is present
+            has_dialog = any(indicator.lower() in page_text.lower() for indicator in dialog_indicators)
+            
+            if not has_dialog:
+                # Also check for dialog buttons
+                cancel_buttons = [
+                    surface.locator("text='Go back'"),
+                    surface.locator("text='Cancel'"),
+                    surface.locator("button:has-text('Go back')"),
+                    surface.locator("button:has-text('Cancel')"),
+                ]
+                
+                for cancel_btn in cancel_buttons:
+                    if await cancel_btn.count() > 0:
+                        # Check if it's in a dialog context
+                        try:
+                            # Try to find dialog container
+                            dialog_container = await page.evaluate("""
 () => {
   const dialogs = document.querySelectorAll('[role="dialog"], .dialog, [class*="dialog"]');
   for (let dialog of dialogs) {
@@ -816,11 +870,11 @@ async def _handle_no_access_dialog(
   return false;
 }
 """)
-                        if dialog_container:
-                            has_dialog = True
-                            break
-                    except Exception:
-                        pass
+                            if dialog_container:
+                                has_dialog = True
+                                break
+                        except Exception:
+                            pass
         
         if not has_dialog:
             LOGGER.debug("No 'no access' dialog found for %s", credential.channel_name)
@@ -828,21 +882,51 @@ async def _handle_no_access_dialog(
         
         LOGGER.info("⚠️  'No access' dialog detected for %s, clicking Cancel/Go back...", credential.channel_name)
         
-        # Try to find and click Cancel/Go back button
+        # METHOD 1: Try to find and click by jsname="K4efff" (Go back button in no-access dialog)
+        try:
+            go_back_by_jsname = surface.locator('button[jsname="K4efff"]')
+            if await go_back_by_jsname.count() > 0:
+                LOGGER.info("🖱️  Clicking 'Go back' button (jsname='K4efff') in no-access dialog for %s", credential.channel_name)
+                await go_back_by_jsname.first.click(timeout=5000)
+                await page.wait_for_timeout(1000)
+                LOGGER.info("✅ Successfully clicked 'Go back' (jsname='K4efff') in no-access dialog for %s", credential.channel_name)
+                return True
+        except Exception as exc:
+            LOGGER.debug("Failed to click by jsname='K4efff': %s", exc)
+        
+        # METHOD 2: Try to find and click Cancel/Go back button by text
         cancel_texts = ["Go back", "Cancel", "Назад", "Скасувати"]
         for cancel_text in cancel_texts:
             try:
                 cancel_button = surface.locator(f"text='{cancel_text}'").first
                 if await cancel_button.count() > 0:
-                    LOGGER.info("🖱️  Clicking '%s' button in no-access dialog for %s", cancel_text, credential.channel_name)
-                    await cancel_button.click(timeout=5000)
-                    await page.wait_for_timeout(800)
-                    LOGGER.info("✅ Successfully clicked '%s' in no-access dialog for %s", cancel_text, credential.channel_name)
-                    return True
+                    # Verify it's in the no-access dialog
+                    is_in_dialog = await cancel_button.first.evaluate("""
+(el) => {
+  let current = el.parentElement;
+  let depth = 0;
+  while (current && depth < 5) {
+    const role = current.getAttribute('role');
+    const text = current.innerText || '';
+    if (role === 'dialog' && (text.includes('did not allow') || text.includes('no access'))) {
+      return true;
+    }
+    current = current.parentElement;
+    depth++;
+  }
+  return false;
+}
+""")
+                    if is_in_dialog:
+                        LOGGER.info("🖱️  Clicking '%s' button in no-access dialog for %s", cancel_text, credential.channel_name)
+                        await cancel_button.click(timeout=5000)
+                        await page.wait_for_timeout(1000)
+                        LOGGER.info("✅ Successfully clicked '%s' in no-access dialog for %s", cancel_text, credential.channel_name)
+                        return True
             except Exception as exc:
                 LOGGER.debug("Failed to click '%s': %s", cancel_text, exc)
         
-        # Fallback: try to find by button role or common selectors
+        # METHOD 3: Fallback - try to find by button role or common selectors
         try:
             go_back_button = surface.locator("button:has-text('Go back')").first
             if await go_back_button.count() > 0:
@@ -865,17 +949,34 @@ async def _check_select_all_status(
     surface: FrameLike,
     credential: AutomationCredential,
 ) -> bool:
-    """Check if Select All checkbox (jsname='YPqjbf') is already checked."""
+    """Check if Select All checkbox (jsname='YPqjbf' or class='VfPpkd-muHVFf-bMcfAe') is already checked."""
     try:
+        # METHOD 1: Check by jsname='YPqjbf'
         select_all_checkbox = surface.locator('input[jsname="YPqjbf"]')
         if await select_all_checkbox.count() > 0:
             is_checked = await select_all_checkbox.first.is_checked()
             LOGGER.info("🔍 Select All checkbox (jsname='YPqjbf') status for %s: %s", 
                        credential.channel_name, "checked" if is_checked else "unchecked")
             return is_checked
-        else:
-            LOGGER.debug("Select All checkbox (jsname='YPqjbf') not found for %s", credential.channel_name)
-            return False
+        
+        # METHOD 2: Check by class='VfPpkd-muHVFf-bMcfAe'
+        select_all_by_class = surface.locator('input.VfPpkd-muHVFf-bMcfAe[type="checkbox"]')
+        if await select_all_by_class.count() > 0:
+            is_checked = await select_all_by_class.first.is_checked()
+            LOGGER.info("🔍 Select All checkbox (class='VfPpkd-muHVFf-bMcfAe') status for %s: %s", 
+                       credential.channel_name, "checked" if is_checked else "unchecked")
+            return is_checked
+        
+        # METHOD 3: Check by combination of jsname and class
+        select_all_combined = surface.locator('input[jsname="YPqjbf"].VfPpkd-muHVFf-bMcfAe[type="checkbox"]')
+        if await select_all_combined.count() > 0:
+            is_checked = await select_all_combined.first.is_checked()
+            LOGGER.info("🔍 Select All checkbox (jsname='YPqjbf' + class='VfPpkd-muHVFf-bMcfAe') status for %s: %s", 
+                       credential.channel_name, "checked" if is_checked else "unchecked")
+            return is_checked
+        
+        LOGGER.debug("Select All checkbox not found (tried jsname='YPqjbf' and class='VfPpkd-muHVFf-bMcfAe') for %s", credential.channel_name)
+        return False
     except Exception as exc:
         LOGGER.debug("Error checking Select All status: %s", exc)
         return False
@@ -907,41 +1008,69 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig, 
     """Select all scopes by clicking 'Select all' checkbox or individual checkboxes."""
     try:
         LOGGER.info("🔍 Looking for 'Select all' checkbox...")
+        
+        # FIRST: Check if Select All is already checked - if yes, skip everything
+        # This check should ALWAYS happen, even if credential is None (we'll use a dummy check)
+        select_all_checked = False
+        if credential:
+            select_all_checked = await _check_select_all_status(surface, credential)
+        else:
+            # Even without credential, try to check status to avoid double-clicking
+            try:
+                select_all_checkbox = surface.locator('input[jsname="YPqjbf"]')
+                if await select_all_checkbox.count() == 0:
+                    select_all_checkbox = surface.locator('input.VfPpkd-muHVFf-bMcfAe[type="checkbox"]')
+                if await select_all_checkbox.count() > 0:
+                    select_all_checked = await select_all_checkbox.first.is_checked()
+            except Exception:
+                pass  # If check fails, continue with selection
+        
+        if select_all_checked:
+            channel_name = credential.channel_name if credential else "unknown"
+            LOGGER.info("✅ Select All checkbox already checked for %s, skipping _select_all_scopes", channel_name)
+            return
+        
         # Pause before interacting with checkboxes (reduced)
         await asyncio.sleep(random.uniform(0.2, 0.4))
         
-        # METHOD 1: Try to find checkbox by jsname="YPqjbf" (the actual Select All checkbox)
+        # METHOD 1: Try to find checkbox by jsname="YPqjbf" or class="VfPpkd-muHVFf-bMcfAe" (the actual Select All checkbox)
         try:
-            LOGGER.info("🔍 Method 1: Searching for checkbox with jsname='YPqjbf' (Select All)...")
+            LOGGER.info("🔍 Method 1: Searching for checkbox with jsname='YPqjbf' or class='VfPpkd-muHVFf-bMcfAe' (Select All)...")
+            # Try jsname first
             select_all_checkbox = surface.locator('input[jsname="YPqjbf"]')
+            if await select_all_checkbox.count() == 0:
+                # Fallback to class
+                select_all_checkbox = surface.locator('input.VfPpkd-muHVFf-bMcfAe[type="checkbox"]')
+            if await select_all_checkbox.count() == 0:
+                # Try combination
+                select_all_checkbox = surface.locator('input[jsname="YPqjbf"].VfPpkd-muHVFf-bMcfAe[type="checkbox"]')
+            
             if await select_all_checkbox.count() > 0:
                 is_checked = await select_all_checkbox.first.is_checked()
                 channel_name = credential.channel_name if credential else "unknown"
-                LOGGER.info("✅ Found Select All checkbox (jsname='YPqjbf') for %s, currently checked: %s", channel_name, is_checked)
+                LOGGER.info("✅ Found Select All checkbox for %s, currently checked: %s", channel_name, is_checked)
                 if not is_checked:
-                    LOGGER.info("🖱️  Clicking Select All checkbox (jsname='YPqjbf')...")
-                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                    # CRITICAL: Double-check state right before clicking to avoid double-click
+                    # Sometimes state can change between checks
+                    await asyncio.sleep(random.uniform(0.1, 0.2))
+                    is_checked_before_click = await select_all_checkbox.first.is_checked()
+                    if is_checked_before_click:
+                        LOGGER.info("✅ Select All checkbox became checked before click, skipping click to avoid unchecking")
+                        if credential:
+                            await _verify_all_checkboxes_checked(surface, credential)
+                        return
+                    
+                    LOGGER.info("🖱️  Clicking Select All checkbox...")
+                    await asyncio.sleep(random.uniform(0.1, 0.2))
                     await select_all_checkbox.first.click()
-                    # Wait for checkboxes to update
-                    await _page_from_surface(surface).wait_for_timeout(
-                        random.randint(browser_config.human_delay_range_ms[0], browser_config.human_delay_range_ms[1])
-                    )
+                    # Minimal wait for DOM to update - just enough for checkbox state to change
+                    await _page_from_surface(surface).wait_for_timeout(300)
                     
-                    # Verify that Select All is now checked
+                    # Quick verification that checkbox is checked (non-blocking)
                     is_checked_after = await select_all_checkbox.first.is_checked()
-                    LOGGER.info("✅ Clicked Select All checkbox (jsname='YPqjbf'), now checked: %s", is_checked_after)
+                    LOGGER.info("✅ Clicked Select All checkbox, now checked: %s", is_checked_after)
                     
-                    if not is_checked_after:
-                        LOGGER.warning("⚠️  Select All checkbox was clicked but is still unchecked, retrying...")
-                        await asyncio.sleep(random.uniform(0.2, 0.4))
-                        await select_all_checkbox.first.click()
-                        await _page_from_surface(surface).wait_for_timeout(500)
-                        is_checked_final = await select_all_checkbox.first.is_checked()
-                        LOGGER.info("✅ After retry, Select All checkbox checked: %s", is_checked_final)
-                    
-                    # Verify all individual checkboxes are checked
-                    if credential:
-                        await _verify_all_checkboxes_checked(surface, credential)
+                    # Return immediately - Continue will be clicked right after, no delays
                     return
                 else:
                     channel_name = credential.channel_name if credential else "unknown"
@@ -951,9 +1080,16 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig, 
                         await _verify_all_checkboxes_checked(surface, credential)
                     return
         except Exception as jsname_exc:
-            LOGGER.debug("Method 1 (jsname) failed: %s", jsname_exc)
+            LOGGER.debug("Method 1 (jsname/class) failed: %s", jsname_exc)
         
         # METHOD 2: Try to find by text "Select all" and related labels
+        # BUT: First check if checkbox is already checked to avoid double-clicking
+        if credential:
+            select_all_checked = await _check_select_all_status(surface, credential)
+            if select_all_checked:
+                LOGGER.info("✅ Select All checkbox already checked for %s, skipping Method 2", credential.channel_name)
+                return
+        
         select_all_locators = [
             surface.locator("text='Select all'"),
             surface.locator("text='Вибрати все'"),
@@ -962,34 +1098,51 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig, 
         # Fix: Check counts first, then iterate
         counts = [await locator.count() for locator in select_all_locators]
         if any(counts):
+            # Double-check status before clicking (in case it changed)
+            if credential:
+                select_all_checked = await _check_select_all_status(surface, credential)
+                if select_all_checked:
+                    LOGGER.info("✅ Select All checkbox already checked for %s, skipping Method 2 click", credential.channel_name)
+                    return
+            
             LOGGER.info("🔍 Method 2: Found 'Select all' text, clicking...")
             for locator in select_all_locators:
                 if await locator.count():
-                    # Human-like pause before clicking
-                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                    # CRITICAL: Final check before clicking to avoid double-click
+                    if credential:
+                        select_all_checked_final = await _check_select_all_status(surface, credential)
+                        if select_all_checked_final:
+                            LOGGER.info("✅ Select All checkbox already checked for %s, skipping Method 2 click to avoid unchecking", credential.channel_name)
+                            return
+                    
+                    # Minimal pause before clicking
+                    await asyncio.sleep(random.uniform(0.1, 0.2))
                     LOGGER.info("🖱️  Clicking 'Select all' text element...")
                     await locator.first.click()
-                    # Longer pause after clicking (humans pause after actions)
-                    await _page_from_surface(surface).wait_for_timeout(
-                        random.randint(browser_config.human_delay_range_ms[0], browser_config.human_delay_range_ms[1])
-                    )
+                    # Minimal wait for DOM to update
+                    await _page_from_surface(surface).wait_for_timeout(300)
                     LOGGER.info("✅ Successfully clicked 'Select all' text element")
-                    # Wait and verify
-                    await _page_from_surface(surface).wait_for_timeout(1000)
-                    if credential:
-                        await _verify_all_checkboxes_checked(surface, credential)
+                    # Return immediately - Continue will be clicked right after
                     return
 
         # METHOD 3: Fallback - click all unchecked checkboxes individually
         # BUT: Only if Select All checkbox is not available or not working
         # First check if Select All checkbox exists and is checked
         try:
+            # Try jsname first
             select_all_checkbox = surface.locator('input[jsname="YPqjbf"]')
+            if await select_all_checkbox.count() == 0:
+                # Fallback to class
+                select_all_checkbox = surface.locator('input.VfPpkd-muHVFf-bMcfAe[type="checkbox"]')
+            if await select_all_checkbox.count() == 0:
+                # Try combination
+                select_all_checkbox = surface.locator('input[jsname="YPqjbf"].VfPpkd-muHVFf-bMcfAe[type="checkbox"]')
+            
             if await select_all_checkbox.count() > 0:
                 is_checked = await select_all_checkbox.first.is_checked()
                 if is_checked:
                     channel_name = credential.channel_name if credential else "unknown"
-                    LOGGER.info("✅ Select All checkbox (jsname='YPqjbf') is checked for %s, skipping individual checkbox clicks", channel_name)
+                    LOGGER.info("✅ Select All checkbox is checked for %s, skipping individual checkbox clicks", channel_name)
                     if credential:
                         await _verify_all_checkboxes_checked(surface, credential)
                     return
@@ -1001,14 +1154,15 @@ async def _select_all_scopes(surface: FrameLike, browser_config: BrowserConfig, 
         total = await checkboxes.count()
         LOGGER.info("   Found %d checkboxes total", total)
         
-        # Only click checkboxes that are NOT the Select All checkbox (jsname='YPqjbf')
+        # Only click checkboxes that are NOT the Select All checkbox (jsname='YPqjbf' or class='VfPpkd-muHVFf-bMcfAe')
         for idx in range(total):
             checkbox = checkboxes.nth(idx)
             try:
                 # Skip the Select All checkbox itself
                 jsname = await checkbox.get_attribute('jsname')
-                if jsname == 'YPqjbf':
-                    LOGGER.debug("Skipping Select All checkbox (jsname='YPqjbf') in individual click loop")
+                class_attr = await checkbox.get_attribute('class')
+                if jsname == 'YPqjbf' or (class_attr and 'VfPpkd-muHVFf-bMcfAe' in class_attr):
+                    LOGGER.debug("Skipping Select All checkbox in individual click loop")
                     continue
             except Exception:
                 pass
@@ -1112,10 +1266,8 @@ async def _click_consent_button(
         await page_obj.wait_for_timeout(random.randint(1000, 1500))
         LOGGER.info("✅ Successfully clicked Continue button via wait_for_selector for %s.", credential.channel_name)
         
-        # Check if "no access" dialog appeared after clicking Continue
-        if await _handle_no_access_dialog(page_obj, surface, browser_config, credential):
-            LOGGER.info("⚠️  'No access' dialog appeared after clicking Continue, will retry for %s", credential.channel_name)
-            return False  # Return False to trigger retry in _approve_consent_if_present
+        # Don't check for dialog here - let _approve_consent_if_present handle it
+        # Checking here causes issues and unnecessary delays
         
         return await _handle_consent_click_success(page_obj, credential, "Method 1 (wait_for_selector)")
     except Exception as wait_exc:
@@ -1178,11 +1330,7 @@ async def _click_consent_button(
                 await page_obj.wait_for_timeout(2000)
                 LOGGER.info("✅ Successfully clicked Continue button found by text for %s.", credential.channel_name)
                 
-                # Check if "no access" dialog appeared
-                if await _handle_no_access_dialog(page_obj, surface, browser_config, credential):
-                    LOGGER.info("⚠️  'No access' dialog appeared, will retry for %s", credential.channel_name)
-                    return False
-                
+                # Don't check for dialog here - let _approve_consent_if_present handle it
                 return await _handle_consent_click_success(page_obj, credential, "Method 2 (text search)")
     except Exception as text_exc:
         LOGGER.debug("Text-based search failed: %s", text_exc)
@@ -1947,7 +2095,6 @@ async def _wait_for_callback_redirect(
             )
             callback_url = page_obj.url
             LOGGER.info("Callback redirect detected via wait_for_url for %s: %s", credential.channel_name, callback_url[:100])
-            return True
         except Exception as nav_exc:
             # Fallback: poll URL periodically
             LOGGER.debug("wait_for_url failed, using polling fallback: %s", nav_exc)
