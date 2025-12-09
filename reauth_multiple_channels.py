@@ -170,7 +170,9 @@ def main():
     input("\nPress Enter to continue...")
     
     # Initialize OAuth manager
-    oauth_manager = OAuthManager(use_database=True)
+    # Use config/config.yaml path (relative to project root)
+    config_path = project_root / "config" / "config.yaml"
+    oauth_manager = OAuthManager(config_path=str(config_path), use_database=True)
     
     # Track results
     results = {
