@@ -83,6 +83,13 @@ class YouTubeClient(BaseAPIClient):
             client_id = account_info.get('client_id', self.client_id)
             client_secret = account_info.get('client_secret', self.client_secret)
             
+            # Log which credentials are being used (for debugging console selection)
+            account_name = account_info.get('name', 'Unknown')
+            if account_info.get('client_id'):
+                self.logger.info(f"Using client_id from account_info (console credentials) for account {account_name}")
+            else:
+                self.logger.warning(f"Using client_id from YouTubeClient instance (fallback) for account {account_name} - account_info.client_id not found!")
+            
             # Parse expiry time if available
             expiry = None
             if token_expires_at:

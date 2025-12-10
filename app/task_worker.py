@@ -217,7 +217,7 @@ class TaskWorker:
             True if successful, False otherwise
         """
         try:
-            # Get OAuth credentials from google_consoles table via console_name
+            # Get OAuth credentials from google_consoles table via console_name or console_id
             # Fallback to deprecated channel.client_id/client_secret
             credentials = self.db.get_console_credentials_for_channel(channel.name)
             
@@ -228,6 +228,18 @@ class TaskWorker:
             client_id = credentials['client_id']
             client_secret = credentials['client_secret']
             
+            # Log which console is being used
+            if channel.console_id:
+                console = self.db.get_console(channel.console_id)
+                if console:
+                    self.logger.info(f"Using credentials from console ID {channel.console_id} ('{console.name}') for channel '{channel.name}'")
+                else:
+                    self.logger.warning(f"Console ID {channel.console_id} not found for channel '{channel.name}', using fallback credentials")
+            elif channel.console_name:
+                self.logger.info(f"Using credentials from console '{channel.console_name}' for channel '{channel.name}'")
+            else:
+                self.logger.info(f"Using fallback credentials (from channel) for channel '{channel.name}'")
+            
             # Initialize YouTube client if not already set
             if not self.youtube_client:
                 self.youtube_client = YouTubeClient(
@@ -235,10 +247,10 @@ class TaskWorker:
                     client_secret=client_secret
                 )
             else:
-                # Update client credentials if channel uses different console
-                # (though account_info will override this in post_video)
-                self.youtube_client.client_id = channel.client_id
-                self.youtube_client.client_secret = channel.client_secret
+                # Update client credentials to use console credentials (not channel.client_id/client_secret)
+                # Note: account_info will override this in post_video, but it's good practice to keep them in sync
+                self.youtube_client.client_id = client_id
+                self.youtube_client.client_secret = client_secret
             
             # Prepare video metadata
             video_metadata = {
@@ -266,7 +278,11 @@ class TaskWorker:
                 'client_secret': client_secret
             }
             
-            self.logger.info(f"Uploading video to YouTube channel: {channel.name}")
+            self.logger.info(f"Uploading video to YouTube channel: {channel.name} (using client_id: {client_id[:20]}...)")
+            
+            # Verify that console credentials are being used (not channel.client_id)
+            if channel.client_id and channel.client_id != client_id:
+                self.logger.info(f"Using console credentials (different from channel.client_id) - this is correct for multi-console setup")
             
             # Upload video
             result = self.youtube_client.post_video(
