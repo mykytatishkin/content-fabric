@@ -319,7 +319,7 @@ class TaskWorker:
                 error_msg = result.error_message or "Unknown error during upload"
                 self.logger.error(f"Task #{task.id} failed: {error_msg}")
                 
-                # Check if this is a token revocation error and send notification
+                # Check if this is a token revocation error (DISABLED: auto reauth removed)
                 error_category = ErrorCategorizer.categorize(error_msg)
                 is_token_revoked = error_category == 'Auth' and ('invalid_grant' in error_msg.lower() or 
                                                                   'token revoked' in error_msg.lower() or 
@@ -327,12 +327,12 @@ class TaskWorker:
                                                                   're-authenticate' in error_msg.lower())
                 
                 if is_token_revoked:
-                    # Send notification and trigger automatic re-authentication
-                    self._handle_token_revocation(channel.name, error_msg)
+                    # DISABLED: Automatic re-authentication removed - just log and continue
+                    # self._handle_token_revocation(channel.name, error_msg)
                     
                     # Token revocation errors should NOT be retried - mark as failed immediately
                     self.db.mark_task_failed(task.id, error_msg)
-                    self.logger.error(f"Task #{task.id} marked as failed due to token revocation. Re-authentication required for account {channel.name}.")
+                    self.logger.error(f"Task #{task.id} marked as failed due to token revocation. Re-authentication required for account {channel.name}. (Auto reauth disabled - run manually)")
                     self.task_retries.pop(task.id, None)
                     return False
                 
