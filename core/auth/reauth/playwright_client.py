@@ -1244,12 +1244,37 @@ async def _click_consent_button(
     # Final pause before attempting to click (reduced)
     await asyncio.sleep(random.uniform(0.3, 0.6))
     
-    # METHOD 1: Try waiting for selector to appear (Playwright's built-in wait)
+    # METHOD 1: Try waiting for the SPECIFIC Continue button (not Cancel)
+    # Priority: id="submit_approve_access" > button with jsname="LgbsSe" inside submit_approve_access > button with jsname="V67aGc" inside submit_approve_access
     try:
-        LOGGER.info("🔍 Method 1: Waiting for element with jsname='V67aGc' to appear for %s...", credential.channel_name)
-        await surface.wait_for_selector("div[jsname='V67aGc']", state="visible", timeout=15000)
-        button = surface.locator("div[jsname='V67aGc']").first
-        LOGGER.info("✅ Found button with jsname='V67aGc' for %s", credential.channel_name)
+        LOGGER.info("🔍 Method 1: Looking for Continue button with id='submit_approve_access' for %s...", credential.channel_name)
+        
+        # First try: Look for button inside element with id="submit_approve_access" (most specific)
+        submit_approve = surface.locator("#submit_approve_access button[jsname='LgbsSe']")
+        if await submit_approve.count() > 0:
+            button = submit_approve.first
+            LOGGER.info("✅ Found Continue button via id='submit_approve_access' + button[jsname='LgbsSe'] for %s", credential.channel_name)
+        else:
+            # Second try: Look for span with jsname="V67aGc" inside submit_approve_access
+            submit_approve_span = surface.locator("#submit_approve_access span[jsname='V67aGc']")
+            if await submit_approve_span.count() > 0:
+                # Get the button parent
+                button = submit_approve_span.locator("xpath=ancestor::button").first
+                if await button.count() == 0:
+                    button = submit_approve_span.locator("xpath=ancestor::div[@role='button']").first
+                LOGGER.info("✅ Found Continue button via id='submit_approve_access' + span[jsname='V67aGc'] for %s", credential.channel_name)
+            else:
+                # Third try: Look for any button inside submit_approve_access
+                submit_approve_any = surface.locator("#submit_approve_access button")
+                if await submit_approve_any.count() > 0:
+                    button = submit_approve_any.first
+                    LOGGER.info("✅ Found Continue button via id='submit_approve_access' + button for %s", credential.channel_name)
+                else:
+                    # Fallback: Wait for the element with id to appear, then find button inside
+                    await surface.wait_for_selector("#submit_approve_access", state="visible", timeout=15000)
+                    button = surface.locator("#submit_approve_access button").first
+                    LOGGER.info("✅ Found Continue button via id='submit_approve_access' (fallback) for %s", credential.channel_name)
+        
         await button.scroll_into_view_if_needed()
         
         # Additional pause after scrolling to button (reduced)
@@ -1257,41 +1282,126 @@ async def _click_consent_button(
         
         # Use human-like click with mouse movement
         await _human_pause(browser_config)
-        LOGGER.info("🖱️  Attempting human-like click on V67aGc button for %s", credential.channel_name)
+        LOGGER.info("🖱️  Attempting human-like click on Continue button (submit_approve_access) for %s", credential.channel_name)
         if not await _human_like_click(button, page_obj, browser_config):
             # Fallback to regular click if human-like fails (but still with delay)
             LOGGER.info("🖱️  Human-like click failed, trying regular click for %s", credential.channel_name)
             await asyncio.sleep(random.uniform(0.1, 0.2))
             await button.click(timeout=5000, delay=random.randint(50, 100))
         await page_obj.wait_for_timeout(random.randint(1000, 1500))
-        LOGGER.info("✅ Successfully clicked Continue button via wait_for_selector for %s.", credential.channel_name)
+        LOGGER.info("✅ Successfully clicked Continue button via submit_approve_access for %s.", credential.channel_name)
         
         # Don't check for dialog here - let _approve_consent_if_present handle it
         # Checking here causes issues and unnecessary delays
         
-        return await _handle_consent_click_success(page_obj, credential, "Method 1 (wait_for_selector)")
+        return await _handle_consent_click_success(page_obj, credential, "Method 1 (submit_approve_access)")
     except Exception as wait_exc:
-        LOGGER.debug("wait_for_selector method failed: %s", wait_exc)
+        LOGGER.debug("Method 1 (submit_approve_access) failed: %s", wait_exc)
+        
+        # Fallback: Try the old method with jsname="V67aGc" but verify it's not Cancel
+        try:
+            LOGGER.info("🔍 Method 1 (fallback): Waiting for element with jsname='V67aGc' to appear for %s...", credential.channel_name)
+            await surface.wait_for_selector("div[jsname='V67aGc'], span[jsname='V67aGc']", state="visible", timeout=15000)
+            
+            # Find all elements with jsname="V67aGc" and filter to find Continue (not Cancel)
+            all_v67agc = surface.locator("[jsname='V67aGc']")
+            count = await all_v67agc.count()
+            LOGGER.info("Found %d elements with jsname='V67aGc' for %s", count, credential.channel_name)
+            
+            button = None
+            for i in range(count):
+                element = all_v67agc.nth(i)
+                # Check if this element is inside submit_approve_access or has Continue-like text
+                is_continue = await element.evaluate("""
+                (el) => {
+                    // Check if inside submit_approve_access
+                    let current = el;
+                    while (current && current !== document.body) {
+                        if (current.id === 'submit_approve_access') {
+                            return true;
+                        }
+                        current = current.parentElement;
+                    }
+                    // Check text content (Continue, Продовжити, etc.)
+                    const text = (el.textContent || '').trim().toLowerCase();
+                    const continueTexts = ['continue', 'продовжити', 'continuar', 'fortfahren', 'continuer'];
+                    return continueTexts.some(ct => text.includes(ct));
+                }
+                """)
+                
+                if is_continue:
+                    # Get the clickable parent (button or div with role="button")
+                    button = element.locator("xpath=ancestor::button | ancestor::div[@role='button']").first
+                    if await button.count() == 0:
+                        button = element
+                    LOGGER.info("✅ Found Continue button (filtered from %d candidates) for %s", count, credential.channel_name)
+                    break
+            
+            if button is None or await button.count() == 0:
+                # Last resort: use first one
+                button = all_v67agc.first
+                LOGGER.warning("⚠️  Using first V67aGc element as fallback for %s (may be Cancel button!)", credential.channel_name)
+            
+            await button.scroll_into_view_if_needed()
+            await asyncio.sleep(random.uniform(0.3, 0.5))
+            await _human_pause(browser_config)
+            LOGGER.info("🖱️  Attempting human-like click on V67aGc button (fallback) for %s", credential.channel_name)
+            if not await _human_like_click(button, page_obj, browser_config):
+                await asyncio.sleep(random.uniform(0.1, 0.2))
+                await button.click(timeout=5000, delay=random.randint(50, 100))
+            await page_obj.wait_for_timeout(random.randint(1000, 1500))
+            LOGGER.info("✅ Successfully clicked Continue button via V67aGc (fallback) for %s.", credential.channel_name)
+            return await _handle_consent_click_success(page_obj, credential, "Method 1 (V67aGc fallback)")
+        except Exception as fallback_exc:
+            LOGGER.debug("Method 1 fallback (V67aGc) also failed: %s", fallback_exc)
     
-    # METHOD 2: Search by text "Continue" and check jsname attribute
+    # METHOD 2: Search by text "Continue" and verify it's inside submit_approve_access
     try:
-        LOGGER.info("🔍 Method 2: Searching for Continue button by text and jsname for %s...", credential.channel_name)
+        LOGGER.info("🔍 Method 2: Searching for Continue button by text and submit_approve_access for %s...", credential.channel_name)
         button_info = await surface.evaluate("""
 () => {
-  // Find all elements with text containing "Continue"
+  // Find all elements with text containing "Continue" (in multiple languages)
+  const continueTexts = ['continue', 'продовжити', 'continuar', 'fortfahren', 'continuer', '続ける', '继续'];
   const allElements = Array.from(document.querySelectorAll('*'));
   for (let el of allElements) {
     const text = (el.textContent || '').trim().toLowerCase();
-    if (text === 'continue' || text.includes('continue')) {
-      // Check if this element or any parent has jsname="V67aGc"
+    const isContinueText = continueTexts.some(ct => text === ct || text.includes(ct));
+    
+    if (isContinueText) {
+      // Check if this element is inside submit_approve_access (most reliable)
       let current = el;
       while (current && current !== document.body) {
+        if (current.id === 'submit_approve_access') {
+          // Found it! Now find the clickable button/span
+          let clickable = el;
+          while (clickable && clickable !== document.body) {
+            const jsname = clickable.getAttribute('jsname');
+            if (jsname === 'V67aGc' || jsname === 'LgbsSe' || clickable.tagName === 'BUTTON') {
+              return {
+                element: clickable,
+                tagName: clickable.tagName,
+                text: text,
+                insideSubmitApprove: true
+              };
+            }
+            clickable = clickable.parentElement;
+          }
+          // If no specific jsname found, return the element itself
+          return {
+            element: el,
+            tagName: el.tagName,
+            text: text,
+            insideSubmitApprove: true
+          };
+        }
+        // Also check for jsname="V67aGc" as fallback
         const jsname = current.getAttribute('jsname');
         if (jsname === 'V67aGc') {
           return {
             element: current,
             tagName: current.tagName,
-            text: text
+            text: text,
+            insideSubmitApprove: false
           };
         }
         current = current.parentElement;
@@ -1301,13 +1411,49 @@ async def _click_consent_button(
   return null;
 }
 """)
-        if button_info:
+        if button_info and button_info.get('insideSubmitApprove'):
+            # Prefer elements inside submit_approve_access
             element_handle = await surface.evaluate_handle("""
 () => {
+  const continueTexts = ['continue', 'продовжити', 'continuar', 'fortfahren', 'continuer', '続ける', '继续'];
   const allElements = Array.from(document.querySelectorAll('*'));
   for (let el of allElements) {
     const text = (el.textContent || '').trim().toLowerCase();
-    if (text === 'continue' || text.includes('continue')) {
+    const isContinueText = continueTexts.some(ct => text === ct || text.includes(ct));
+    
+    if (isContinueText) {
+      let current = el;
+      while (current && current !== document.body) {
+        if (current.id === 'submit_approve_access') {
+          // Find the clickable element (button or span with jsname)
+          let clickable = el;
+          while (clickable && clickable !== document.body) {
+            const jsname = clickable.getAttribute('jsname');
+            if (jsname === 'V67aGc' || jsname === 'LgbsSe' || clickable.tagName === 'BUTTON') {
+              return clickable;
+            }
+            clickable = clickable.parentElement;
+          }
+          return el;
+        }
+        current = current.parentElement;
+      }
+    }
+  }
+  return null;
+}
+""")
+        elif button_info:
+            # Fallback: use old method but verify it's not Cancel
+            element_handle = await surface.evaluate_handle("""
+() => {
+  const continueTexts = ['continue', 'продовжити', 'continuar', 'fortfahren', 'continuer', '続ける', '继续'];
+  const allElements = Array.from(document.querySelectorAll('*'));
+  for (let el of allElements) {
+    const text = (el.textContent || '').trim().toLowerCase();
+    const isContinueText = continueTexts.some(ct => text === ct || text.includes(ct));
+    
+    if (isContinueText) {
       let current = el;
       while (current && current !== document.body) {
         if (current.getAttribute('jsname') === 'V67aGc') {
@@ -1620,11 +1766,55 @@ async def _click_consent_button(
                           debug_info.get('hasV67aGc', False),
                           debug_info.get('names', []))
             
-            # Try to find the element
+            # First priority: Try to find submit_approve_access
+            submit_approve = surface.locator("#submit_approve_access")
+            if await submit_approve.count() > 0:
+                button_inside = submit_approve.locator("button[jsname='LgbsSe'], button, span[jsname='V67aGc']").first
+                if await button_inside.count() > 0:
+                    button_handle = await button_inside.evaluate_handle("(el) => el")
+                    if button_handle:
+                        LOGGER.info("Found Continue button via submit_approve_access on attempt %d for %s", attempt + 1, credential.channel_name)
+                        clicked = await surface.evaluate("""
+(el) => {
+  try {
+    el.scrollIntoView({ behavior: 'instant', block: 'center' });
+    if (el.click) {
+      el.click();
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+""", button_handle)
+                        if clicked:
+                            await page_obj.wait_for_timeout(random.randint(1000, 1500))
+                            LOGGER.info("Successfully clicked Continue button (submit_approve_access) for %s.", credential.channel_name)
+                            return await _handle_consent_click_success(page_obj, credential, "Method 8 (submit_approve_access)")
+            
+            # Try to find the element (fallback to V67aGc but verify it's Continue)
             button_handle = await surface.evaluate_handle(
                 """
 () => {
-  // Try multiple selectors
+  // First try: Look for submit_approve_access
+  const submitApprove = document.getElementById('submit_approve_access');
+  if (submitApprove) {
+    const button = submitApprove.querySelector('button[jsname="LgbsSe"]') || 
+                   submitApprove.querySelector('button') ||
+                   submitApprove.querySelector('span[jsname="V67aGc"]');
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      return {
+        element: button,
+        visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+        rect: { width: rect.width, height: rect.height, top: rect.top, left: rect.left }
+      };
+    }
+  }
+  
+  // Fallback: Try multiple selectors for V67aGc but verify it's Continue
   let element = document.querySelector('div[jsname="V67aGc"]');
   if (!element) {
     element = document.querySelector('[jsname="V67aGc"]');
@@ -1640,15 +1830,35 @@ async def _click_consent_button(
     }
   }
   
+  // Verify it's Continue (not Cancel) - check if inside submit_approve_access or has Continue text
   if (element) {
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    return {
-      element: element,
-      visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
-      rect: { width: rect.width, height: rect.height, top: rect.top, left: rect.left }
-    };
+    let current = element;
+    let isInsideSubmitApprove = false;
+    while (current && current !== document.body) {
+      if (current.id === 'submit_approve_access') {
+        isInsideSubmitApprove = true;
+        break;
+      }
+      current = current.parentElement;
+    }
+    
+    // Check text content
+    const text = (element.textContent || '').trim().toLowerCase();
+    const continueTexts = ['continue', 'продовжити', 'continuar', 'fortfahren', 'continuer'];
+    const isContinueText = continueTexts.some(ct => text.includes(ct));
+    
+    // Only return if it's inside submit_approve_access or has Continue text
+    if (isInsideSubmitApprove || isContinueText) {
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return {
+        element: element,
+        visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+        rect: { width: rect.width, height: rect.height, top: rect.top, left: rect.left }
+      };
+    }
   }
+  
   return null;
 }
 """
@@ -1657,9 +1867,47 @@ async def _click_consent_button(
             if button_handle:
                 result = await surface.evaluate("(obj) => obj", button_handle)
                 if result and result.get('visible'):
-                    LOGGER.info("Found visible Continue button (jsname='V67aGc') on attempt %d for %s", attempt + 1, credential.channel_name)
-                    # Get the actual element handle
-                    element_handle = await surface.evaluate_handle("() => document.querySelector('div[jsname=\"V67aGc\"]') || document.querySelector('[jsname=\"V67aGc\"]')")
+                    LOGGER.info("Found visible Continue button on attempt %d for %s", attempt + 1, credential.channel_name)
+                    # Get the actual element handle - try submit_approve_access first
+                    element_handle = None
+                    try:
+                        # First try: get from submit_approve_access
+                        submit_approve = surface.locator("#submit_approve_access")
+                        if await submit_approve.count() > 0:
+                            button_inside = submit_approve.locator("button[jsname='LgbsSe'], button, span[jsname='V67aGc']").first
+                            if await button_inside.count() > 0:
+                                element_handle = await button_inside.evaluate_handle("(el) => el")
+                    except:
+                        pass
+                    
+                    # Fallback: get by V67aGc but verify it's Continue
+                    if not element_handle:
+                        element_handle = await surface.evaluate_handle("""
+() => {
+  // First try submit_approve_access
+  const submitApprove = document.getElementById('submit_approve_access');
+  if (submitApprove) {
+    const btn = submitApprove.querySelector('button[jsname="LgbsSe"]') || 
+                submitApprove.querySelector('button') ||
+                submitApprove.querySelector('span[jsname="V67aGc"]');
+    if (btn) return btn;
+  }
+  
+  // Fallback: V67aGc but verify it's Continue
+  let el = document.querySelector('[jsname="V67aGc"]');
+  if (el) {
+    let current = el;
+    while (current && current !== document.body) {
+      if (current.id === 'submit_approve_access') return el;
+      current = current.parentElement;
+    }
+    const text = (el.textContent || '').trim().toLowerCase();
+    const continueTexts = ['continue', 'продовжити', 'continuar', 'fortfahren', 'continuer'];
+    if (continueTexts.some(ct => text.includes(ct))) return el;
+  }
+  return null;
+}
+""")
                     
                     if element_handle:
                         # Click using JavaScript directly
