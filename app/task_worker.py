@@ -608,19 +608,14 @@ class TaskWorker:
                     access_token=row[6],
                     refresh_token=row[7],
                     token_expires_at=row[8],
-                    enabled=bool(row[9]),
-                    created_at=row[10],
-                    updated_at=row[11]
+                    console_id=row[9],
+                    enabled=bool(row[10]),
+                    created_at=row[11],
+                    updated_at=row[12]
                 )
                 
-                # If channel has a console, get credentials from console
-                if channel.console_id:
-                    console = self.db.get_console(channel.console_id)
-                    if console and console.enabled:
-                        # Override with console credentials
-                        channel.client_id = console.client_id
-                        channel.client_secret = console.client_secret
-                        self.logger.debug(f"Using console '{console.name}' credentials for channel '{channel.name}'")
+                # Note: Credentials are now handled by get_console_credentials_for_channel
+                # which checks both console_name and console_id automatically
                 
                 return channel
             return None
