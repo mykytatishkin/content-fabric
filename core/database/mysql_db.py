@@ -21,6 +21,8 @@ class GoogleConsole:
     client_id: str
     client_secret: str
     credentials_file: Optional[str] = None
+    project_id: Optional[str] = None
+    redirect_uris: Optional[List[str]] = None
     description: Optional[str] = None
     enabled: bool = True
     created_at: Optional[datetime] = None
@@ -475,24 +477,32 @@ class YouTubeMySQLDatabase:
     def get_google_console(self, name: str) -> Optional[GoogleConsole]:
         """Get Google Console by name."""
         query = """
-            SELECT id, name, client_id, client_secret, credentials_file, description,
-                   enabled, created_at, updated_at
+            SELECT id, name, project_id, client_id, client_secret, credentials_file,
+                   redirect_uris, description, enabled, created_at, updated_at
             FROM google_consoles WHERE name = %s
         """
         results = self._execute_query(query, (name,), fetch=True)
         
         if results:
             row = results[0]
+            redirect_uris = None
+            if row[6]:  # redirect_uris
+                try:
+                    redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
+                except (json.JSONDecodeError, TypeError):
+                    redirect_uris = None
             return GoogleConsole(
                 id=row[0],
                 name=row[1],
-                client_id=row[2],
-                client_secret=row[3],
-                credentials_file=row[4],
-                description=row[5],
-                enabled=bool(row[6]),
-                created_at=row[7],
-                updated_at=row[8]
+                project_id=row[2],
+                client_id=row[3],
+                client_secret=row[4],
+                credentials_file=row[5],
+                redirect_uris=redirect_uris,
+                description=row[7],
+                enabled=bool(row[8]),
+                created_at=row[9],
+                updated_at=row[10]
             )
         return None
     
@@ -500,14 +510,14 @@ class YouTubeMySQLDatabase:
         """Get all Google Console configurations."""
         if enabled_only:
             query = """
-                SELECT id, name, client_id, client_secret, credentials_file, description,
-                       enabled, created_at, updated_at
+                SELECT id, name, project_id, client_id, client_secret, credentials_file,
+                       redirect_uris, description, enabled, created_at, updated_at
                 FROM google_consoles WHERE enabled = 1
             """
         else:
             query = """
-                SELECT id, name, client_id, client_secret, credentials_file, description,
-                       enabled, created_at, updated_at
+                SELECT id, name, project_id, client_id, client_secret, credentials_file,
+                       redirect_uris, description, enabled, created_at, updated_at
                 FROM google_consoles
             """
         
@@ -515,16 +525,24 @@ class YouTubeMySQLDatabase:
         consoles = []
         
         for row in results:
+            redirect_uris = None
+            if row[6]:  # redirect_uris
+                try:
+                    redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
+                except (json.JSONDecodeError, TypeError):
+                    redirect_uris = None
             consoles.append(GoogleConsole(
                 id=row[0],
                 name=row[1],
-                client_id=row[2],
-                client_secret=row[3],
-                credentials_file=row[4],
-                description=row[5],
-                enabled=bool(row[6]),
-                created_at=row[7],
-                updated_at=row[8]
+                project_id=row[2],
+                client_id=row[3],
+                client_secret=row[4],
+                credentials_file=row[5],
+                redirect_uris=redirect_uris,
+                description=row[7],
+                enabled=bool(row[8]),
+                created_at=row[9],
+                updated_at=row[10]
             ))
         
         return consoles
