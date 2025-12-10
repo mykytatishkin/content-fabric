@@ -222,9 +222,10 @@ class YouTubeMySQLDatabase:
                 access_token=row[6],
                 refresh_token=row[7],
                 token_expires_at=row[8],
-                enabled=bool(row[9]),
-                created_at=row[10],
-                updated_at=row[11]
+                console_id=row[9],
+                enabled=bool(row[10]),
+                created_at=row[11],
+                updated_at=row[12]
             )
         return None
     
@@ -259,9 +260,10 @@ class YouTubeMySQLDatabase:
                 access_token=row[6],
                 refresh_token=row[7],
                 token_expires_at=row[8],
-                enabled=bool(row[9]),
-                created_at=row[10],
-                updated_at=row[11]
+                console_id=row[9],
+                enabled=bool(row[10]),
+                created_at=row[11],
+                updated_at=row[12]
             ))
         
         return channels
@@ -577,6 +579,11 @@ class YouTubeMySQLDatabase:
     def get_console_credentials_for_channel(self, channel_name: str) -> Optional[Dict[str, str]]:
         """Get OAuth credentials for a channel from its associated Google Console.
         
+        Priority:
+        1. console_name (if set) -> get from google_consoles by name
+        2. console_id (if set) -> get from google_consoles by id
+        3. Fallback to deprecated channel.client_id/client_secret
+        
         Returns:
             Dict with 'client_id', 'client_secret', and 'credentials_file' if found,
             None if channel or console not found
@@ -585,7 +592,7 @@ class YouTubeMySQLDatabase:
         if not channel:
             return None
         
-        # If channel has console_name, get credentials from google_consoles
+        # Priority 1: If channel has console_name, get credentials from google_consoles by name
         if channel.console_name:
             console = self.get_google_console(channel.console_name)
             if console and console.enabled:
@@ -595,7 +602,17 @@ class YouTubeMySQLDatabase:
                     'credentials_file': console.credentials_file or 'credentials.json'
                 }
         
-        # Fallback to deprecated channel.client_id/client_secret for backward compatibility
+        # Priority 2: If channel has console_id, get credentials from google_consoles by id
+        if channel.console_id:
+            console = self.get_console(channel.console_id)
+            if console and console.enabled:
+                return {
+                    'client_id': console.client_id,
+                    'client_secret': console.client_secret,
+                    'credentials_file': console.credentials_file or 'credentials.json'
+                }
+        
+        # Priority 3: Fallback to deprecated channel.client_id/client_secret for backward compatibility
         if channel.client_id and channel.client_secret:
             return {
                 'client_id': channel.client_id,
