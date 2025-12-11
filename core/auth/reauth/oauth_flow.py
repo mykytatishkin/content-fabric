@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import threading
 import time
 from dataclasses import dataclass
@@ -129,6 +130,24 @@ class OAuthFlow:
         self.config = config
         self._result: Optional[Dict[str, Optional[str]]] = None
         self._server: Optional[HTTPServer] = None
+        self._actual_port: Optional[int] = None  # Store the actual port used (may differ from config if port was busy)
+
+    def _is_port_available(self, port: int) -> bool:
+        """Check if a port is available for binding."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("localhost", port))
+                return True
+            except OSError:
+                return False
+
+    def _find_available_port(self, start_port: int, max_attempts: int = 10) -> Optional[int]:
+        """Find an available port starting from start_port."""
+        for i in range(max_attempts):
+            port = start_port + i
+            if self._is_port_available(port):
+                return port
+        return None
 
     def build_authorization_url(self, credential: AutomationCredential, state: str) -> str:
         """Construct the YouTube OAuth consent URL for the target channel."""
@@ -138,9 +157,12 @@ class OAuthFlow:
             "https://www.googleapis.com/auth/youtube.force-ssl",
         ]
 
+        # Use actual port if server was started, otherwise use configured port
+        port = self._actual_port if self._actual_port else self.config.redirect_port
+
         params = {
             "client_id": self.config.client_id,
-            "redirect_uri": f"http://localhost:{self.config.redirect_port}/callback",
+            "redirect_uri": f"http://localhost:{port}/callback",
             "scope": " ".join(scopes),
             "response_type": "code",
             "access_type": self.config.access_type,
@@ -156,19 +178,40 @@ class OAuthFlow:
 
     def _start_callback_server(self) -> None:
         """Launch the HTTP server in a background thread."""
+        # Try to use configured port first
+        port = self.config.redirect_port
+        
+        # If port is busy, try to find an available port
+        if not self._is_port_available(port):
+            LOGGER.warning(
+                "Configured port %s is already in use, attempting to find an available port",
+                port
+            )
+            available_port = self._find_available_port(port)
+            if available_port is None:
+                raise OSError(
+                    f"Could not find an available port starting from {port}. "
+                    "Please free up ports or check for other running instances."
+                )
+            port = available_port
+            LOGGER.info("Using alternative port %s (configured port %s was busy)", port, self.config.redirect_port)
+        
+        self._actual_port = port
         handler = lambda *args: _OAuthCallbackHandler(self._store_result, *args)  # noqa: E731
-        self._server = HTTPServer(("localhost", self.config.redirect_port), handler)
+        self._server = HTTPServer(("localhost", port), handler)
         thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         thread.start()
-        LOGGER.debug("Started OAuth callback server on port %s", self.config.redirect_port)
+        LOGGER.debug("Started OAuth callback server on port %s", port)
 
     def _shutdown_callback_server(self) -> None:
         """Tear down the callback server if running."""
         if self._server:
+            port = self._actual_port if self._actual_port else self.config.redirect_port
             self._server.shutdown()
             self._server.server_close()
-            LOGGER.debug("Shutdown OAuth callback server on port %s", self.config.redirect_port)
+            LOGGER.debug("Shutdown OAuth callback server on port %s", port)
         self._server = None
+        self._actual_port = None
 
     def _store_result(self, payload: Dict[str, Optional[str]]) -> None:
         """Store callback payload. Only store if we don't already have a result with a code."""
@@ -199,12 +242,14 @@ class OAuthFlow:
     def exchange_code_for_tokens(self, code: str) -> Dict[str, Optional[str]]:
         """Exchange authorization code for access and refresh tokens."""
         token_endpoint = "https://oauth2.googleapis.com/token"
+        # Use actual port if server was started, otherwise use configured port
+        port = self._actual_port if self._actual_port else self.config.redirect_port
         data = {
             "client_id": self.config.client_id,
             "client_secret": self.config.client_secret,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": f"http://localhost:{self.config.redirect_port}/callback",
+            "redirect_uri": f"http://localhost:{port}/callback",
         }
 
         response = requests.post(token_endpoint, data=data, timeout=30)
@@ -230,6 +275,7 @@ class OAuthFlow:
         """Execute the full flow and return the result."""
         try:
             self._result = None
+            self._actual_port = None
             self._start_callback_server()
 
             auth_url = self.build_authorization_url(credential, state)
