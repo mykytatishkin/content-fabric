@@ -177,62 +177,59 @@ class OAuthFlow:
         return url
 
     def _start_callback_server(self) -> None:
-        """Launch the HTTP server in a background thread."""
-        # Try to use configured port first, then try next ports if busy
+        """Launch the HTTP server in a background thread.
+        
+        Note: We MUST use the configured port because it must match the redirect_uri
+        registered in Google OAuth Console. If the port is busy, we raise an error
+        with instructions on how to free it.
+        """
         port = self.config.redirect_port
-        max_attempts = 10
-        initial_port = port
         
-        for attempt in range(max_attempts):
-            try:
-                self._actual_port = port
-                handler = lambda *args: _OAuthCallbackHandler(self._store_result, *args)  # noqa: E731
-                self._server = HTTPServer(("localhost", port), handler)
-                thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-                thread.start()
+        try:
+            self._actual_port = port
+            handler = lambda *args: _OAuthCallbackHandler(self._store_result, *args)  # noqa: E731
+            self._server = HTTPServer(("localhost", port), handler)
+            thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+            thread.start()
+            LOGGER.debug("Started OAuth callback server on port %s", port)
+            
+        except OSError as e:
+            # Check if it's "Address already in use" error
+            is_address_in_use = (
+                e.errno == 98 or  # Linux/macOS errno
+                e.errno == 48 or  # macOS alternative errno
+                "Address already in use" in str(e) or
+                "address already in use" in str(e).lower()
+            )
+            
+            if is_address_in_use:
+                # Clean up if server was partially created
+                if self._server:
+                    try:
+                        self._server.server_close()
+                    except Exception:
+                        pass
+                    self._server = None
+                self._actual_port = None
                 
-                if port != initial_port:
-                    LOGGER.info("Using alternative port %s (configured port %s was busy)", port, initial_port)
-                else:
-                    LOGGER.debug("Started OAuth callback server on port %s", port)
-                return  # Success!
-                
-            except OSError as e:
-                # Check if it's "Address already in use" error
-                is_address_in_use = (
-                    e.errno == 98 or  # Linux/macOS errno
-                    e.errno == 48 or  # macOS alternative errno
-                    "Address already in use" in str(e) or
-                    "address already in use" in str(e).lower()
+                # Provide helpful error message with instructions
+                error_msg = (
+                    f"Port {port} is already in use. This port must be available because "
+                    f"it must match the redirect_uri registered in Google OAuth Console "
+                    f"(http://localhost:{port}/callback).\n\n"
+                    f"To free the port, run:\n"
+                    f"  lsof -ti :{port} | xargs kill -9\n\n"
+                    f"Or find the process manually:\n"
+                    f"  lsof -i :{port}\n"
+                    f"  kill -9 <PID>\n\n"
+                    f"Then try the reauthorization again."
                 )
-                
-                if is_address_in_use:
-                    if attempt == 0:
-                        LOGGER.warning(
-                            "Port %s is already in use, trying to find an available port...",
-                            port
-                        )
-                    # Clean up if server was partially created
-                    if self._server:
-                        try:
-                            self._server.server_close()
-                        except Exception:
-                            pass
-                        self._server = None
-                    self._actual_port = None
-                    # Try next port
-                    port += 1
-                    continue
-                else:
-                    # Different error, re-raise
-                    LOGGER.error("Failed to start callback server on port %s: %s", port, e)
-                    raise
-        
-        # If we get here, all attempts failed
-        raise OSError(
-            f"Could not find an available port starting from {initial_port} "
-            f"after {max_attempts} attempts. Please free up ports or check for other running instances."
-        )
+                LOGGER.error(error_msg)
+                raise OSError(error_msg) from e
+            else:
+                # Different error, re-raise
+                LOGGER.error("Failed to start callback server on port %s: %s", port, e)
+                raise
 
     def _shutdown_callback_server(self) -> None:
         """Tear down the callback server if running."""
