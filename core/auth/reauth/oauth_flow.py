@@ -178,30 +178,61 @@ class OAuthFlow:
 
     def _start_callback_server(self) -> None:
         """Launch the HTTP server in a background thread."""
-        # Try to use configured port first
+        # Try to use configured port first, then try next ports if busy
         port = self.config.redirect_port
+        max_attempts = 10
+        initial_port = port
         
-        # If port is busy, try to find an available port
-        if not self._is_port_available(port):
-            LOGGER.warning(
-                "Configured port %s is already in use, attempting to find an available port",
-                port
-            )
-            available_port = self._find_available_port(port)
-            if available_port is None:
-                raise OSError(
-                    f"Could not find an available port starting from {port}. "
-                    "Please free up ports or check for other running instances."
+        for attempt in range(max_attempts):
+            try:
+                self._actual_port = port
+                handler = lambda *args: _OAuthCallbackHandler(self._store_result, *args)  # noqa: E731
+                self._server = HTTPServer(("localhost", port), handler)
+                thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+                thread.start()
+                
+                if port != initial_port:
+                    LOGGER.info("Using alternative port %s (configured port %s was busy)", port, initial_port)
+                else:
+                    LOGGER.debug("Started OAuth callback server on port %s", port)
+                return  # Success!
+                
+            except OSError as e:
+                # Check if it's "Address already in use" error
+                is_address_in_use = (
+                    e.errno == 98 or  # Linux/macOS errno
+                    e.errno == 48 or  # macOS alternative errno
+                    "Address already in use" in str(e) or
+                    "address already in use" in str(e).lower()
                 )
-            port = available_port
-            LOGGER.info("Using alternative port %s (configured port %s was busy)", port, self.config.redirect_port)
+                
+                if is_address_in_use:
+                    if attempt == 0:
+                        LOGGER.warning(
+                            "Port %s is already in use, trying to find an available port...",
+                            port
+                        )
+                    # Clean up if server was partially created
+                    if self._server:
+                        try:
+                            self._server.server_close()
+                        except Exception:
+                            pass
+                        self._server = None
+                    self._actual_port = None
+                    # Try next port
+                    port += 1
+                    continue
+                else:
+                    # Different error, re-raise
+                    LOGGER.error("Failed to start callback server on port %s: %s", port, e)
+                    raise
         
-        self._actual_port = port
-        handler = lambda *args: _OAuthCallbackHandler(self._store_result, *args)  # noqa: E731
-        self._server = HTTPServer(("localhost", port), handler)
-        thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        thread.start()
-        LOGGER.debug("Started OAuth callback server on port %s", port)
+        # If we get here, all attempts failed
+        raise OSError(
+            f"Could not find an available port starting from {initial_port} "
+            f"after {max_attempts} attempts. Please free up ports or check for other running instances."
+        )
 
     def _shutdown_callback_server(self) -> None:
         """Tear down the callback server if running."""
