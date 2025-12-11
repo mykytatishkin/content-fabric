@@ -86,9 +86,15 @@ class YouTubeClient(BaseAPIClient):
             # Log which credentials are being used (for debugging console selection)
             account_name = account_info.get('name', 'Unknown')
             if account_info.get('client_id'):
-                self.logger.info(f"Using client_id from account_info (console credentials) for account {account_name}")
+                self.logger.info(f"Using client_id from account_info (console credentials) for account {account_name}: {client_id[:20]}...")
             else:
-                self.logger.warning(f"Using client_id from YouTubeClient instance (fallback) for account {account_name} - account_info.client_id not found!")
+                self.logger.warning(f"Using client_id from YouTubeClient instance (fallback) for account {account_name}: {client_id[:20]}... - account_info.client_id not found!")
+            
+            # Log instance client_id for comparison
+            if self.client_id != client_id:
+                self.logger.info(f"Instance client_id ({self.client_id[:20]}...) differs from account_info client_id ({client_id[:20]}...) - using account_info (correct)")
+            else:
+                self.logger.debug(f"Instance client_id matches account_info client_id")
             
             # Parse expiry time if available
             expiry = None
@@ -112,6 +118,9 @@ class YouTubeClient(BaseAPIClient):
                 expiry=expiry
             )
             
+            # Log credentials being used for this request
+            self.logger.info(f"Creating YouTube service for {account_name} with client_id: {creds.client_id[:20] if creds.client_id else 'None'}...")
+            
             # Always try to refresh token if refresh_token is available
             # This ensures we have the freshest token and catches revoked tokens early
             if creds.refresh_token:
@@ -132,7 +141,13 @@ class YouTubeClient(BaseAPIClient):
                         self.logger.info(f"No expiry info for account {account_info.get('name', 'Unknown')}, refreshing token...")
                     
                     if needs_refresh:
+                        # Log before refresh which client_id will be used
+                        self.logger.info(f"Refreshing token for {account_name} using client_id: {creds.client_id[:20] if creds.client_id else 'None'}...")
                         creds.refresh(Request())
+                        
+                        # Verify that client_id didn't change after refresh
+                        if creds.client_id != client_id:
+                            self.logger.error(f"WARNING: client_id changed after refresh! Was {client_id[:20]}..., now {creds.client_id[:20] if creds.client_id else 'None'}...")
                         
                         # Update the account_info with new token
                         account_info['access_token'] = creds.token
@@ -142,7 +157,7 @@ class YouTubeClient(BaseAPIClient):
                         # Update database with new token
                         self._update_database_token(account_info, creds)
                         
-                        self.logger.info(f"Token refreshed successfully for account {account_info.get('name', 'Unknown')}")
+                        self.logger.info(f"Token refreshed successfully for account {account_name} using client_id: {creds.client_id[:20] if creds.client_id else 'None'}...")
                     else:
                         self.logger.info(f"Token is valid for account {account_info.get('name', 'Unknown')}")
                         # Update database with current token info
@@ -164,7 +179,11 @@ class YouTubeClient(BaseAPIClient):
                 self._update_database_token(account_info, creds)
             
             # Build YouTube service with account credentials
+            # Verify credentials before building service
+            final_client_id = creds.client_id if creds.client_id else 'None'
+            self.logger.info(f"Building YouTube API service for {account_name} with final client_id: {final_client_id[:20] if final_client_id != 'None' else 'None'}...")
             youtube_service = build('youtube', 'v3', credentials=creds)
+            self.logger.info(f"YouTube API service created successfully for {account_name}")
             return youtube_service
             
         except Exception as e:
