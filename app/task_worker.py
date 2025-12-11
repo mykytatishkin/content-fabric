@@ -229,16 +229,34 @@ class TaskWorker:
             client_secret = credentials['client_secret']
             
             # Log which console is being used
+            console_info = None
             if channel.console_id:
-                console = self.db.get_console(channel.console_id)
-                if console:
-                    self.logger.info(f"Using credentials from console ID {channel.console_id} ('{console.name}') for channel '{channel.name}'")
+                console_info = self.db.get_console(channel.console_id)
+                if console_info:
+                    self.logger.info(f"Using credentials from console ID {channel.console_id} ('{console_info.name}') for channel '{channel.name}'")
                 else:
                     self.logger.warning(f"Console ID {channel.console_id} not found for channel '{channel.name}', using fallback credentials")
             elif channel.console_name:
-                self.logger.info(f"Using credentials from console '{channel.console_name}' for channel '{channel.name}'")
+                console_info = self.db.get_google_console(channel.console_name)
+                if console_info:
+                    self.logger.info(f"Using credentials from console '{channel.console_name}' for channel '{channel.name}'")
+                else:
+                    self.logger.warning(f"Console '{channel.console_name}' not found for channel '{channel.name}'")
             else:
                 self.logger.info(f"Using fallback credentials (from channel) for channel '{channel.name}'")
+            
+            # CRITICAL: Check if tokens might be issued for a different console
+            # If channel has client_id different from console client_id, tokens might be from old console
+            if console_info and channel.client_id and channel.client_id != client_id:
+                self.logger.warning(
+                    f"⚠️ WARNING: Channel '{channel.name}' has tokens issued for client_id {channel.client_id[:20]}... "
+                    f"but console uses client_id {client_id[:20]}... "
+                    f"This might cause quota to be deducted from the OLD console!"
+                )
+                self.logger.warning(
+                    f"⚠️ SOLUTION: Re-authenticate channel '{channel.name}' with console '{console_info.name}' "
+                    f"to ensure tokens are issued for the correct console: python3 run_youtube_reauth.py \"{channel.name}\""
+                )
             
             # Initialize YouTube client if not already set
             if not self.youtube_client:
