@@ -771,16 +771,26 @@ class TaskWorker:
             if results and len(results) > 0:
                 result = results[0]
                 if result.status == ReauthStatus.SUCCESS:
-                    self.logger.info(f"✅ Successfully re-authenticated channel {channel_name}")
-                    
                     # Save tokens to database using the same function as run_youtube_reauth.py
+                    # This may update result.channel_name if tokens belong to a different channel
                     save_reauth_tokens_to_db(self.db, result)
+                    
+                    # Use the actual channel name from result (may have changed if tokens belonged to different channel)
+                    actual_channel_name = result.channel_name
+                    
+                    if actual_channel_name != channel_name:
+                        self.logger.warning(
+                            f"⚠️  Channel name changed during reauth: requested '{channel_name}', "
+                            f"but tokens belong to '{actual_channel_name}'. Tokens saved to correct channel."
+                        )
+                    
+                    self.logger.info(f"✅ Successfully re-authenticated channel {actual_channel_name}")
                     
                     # Send success notification
                     try:
                         success_message = f"""✅ **Переавторизація успішна**
 
-**Канал:** {channel_name}
+**Канал:** {actual_channel_name}
 **Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 🎉 Канал успішно переавторизовано. Токени збережено в БД.
