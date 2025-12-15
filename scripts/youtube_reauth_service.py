@@ -10,11 +10,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from datetime import datetime, timedelta
+from typing import Optional, Dict  # noqa: E402
 
 from core.auth.reauth.service import ServiceConfig, YouTubeReauthService  # noqa: E402
 from core.auth.reauth.models import ReauthResult  # noqa: E402
 from core.database.mysql_db import get_mysql_database  # noqa: E402
 from core.utils.logger import get_logger  # noqa: E402
+import requests  # noqa: E402
 
 LOGGER = get_logger("youtube_reauth_runner")
 
@@ -70,10 +72,64 @@ def resolve_channels(args: argparse.Namespace, db) -> list[str]:
     raise SystemExit("No channels provided. Pass channel names or use --all-expiring.")
 
 
+def verify_channel_from_token(access_token: str) -> Optional[Dict[str, str]]:
+    """
+    Verify which YouTube channel an access token belongs to.
+    
+    Args:
+        access_token: OAuth access token
+        
+    Returns:
+        Dict with 'channel_id' (UC...) and 'custom_url' (if available), or None if failed
+    """
+    try:
+        # Call YouTube API to get channel information
+        url = "https://www.googleapis.com/youtube/v3/channels"
+        params = {
+            "part": "id,snippet",
+            "mine": "true",
+            "access_token": access_token
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            items = data.get("items", [])
+            if items and len(items) > 0:
+                channel_info = items[0]
+                channel_id = channel_info.get("id")
+                
+                # Get custom URL if available
+                snippet = channel_info.get("snippet", {})
+                custom_url = snippet.get("customUrl")
+                
+                result = {"channel_id": channel_id}
+                if custom_url:
+                    result["custom_url"] = custom_url
+                    LOGGER.info(f"Token belongs to channel ID: {channel_id}, custom URL: {custom_url}")
+                else:
+                    LOGGER.info(f"Token belongs to channel ID: {channel_id} (no custom URL)")
+                
+                return result
+            else:
+                LOGGER.warning("YouTube API returned no channels for token")
+                return None
+        else:
+            LOGGER.error(f"Failed to verify channel from token: HTTP {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        LOGGER.error(f"Error verifying channel from token: {e}")
+        return None
+
+
 def save_reauth_tokens_to_db(db, result: ReauthResult) -> bool:
     """
     Save re-authentication tokens to database.
     This is the same logic used in main() function.
+    
+    IMPORTANT: Verifies that tokens belong to the expected channel.
+    If multiple channels share the same Google account, ensures tokens
+    are saved to the correct channel record.
     
     Args:
         db: YouTubeMySQLDatabase instance
@@ -85,6 +141,96 @@ def save_reauth_tokens_to_db(db, result: ReauthResult) -> bool:
     if not result.access_token:
         LOGGER.warning("No access_token in result for channel %s, skipping token save", result.channel_name)
         return False
+    
+    # Get expected channel from database
+    expected_channel = db.get_channel(result.channel_name)
+    if not expected_channel:
+        LOGGER.error("Channel '%s' not found in database", result.channel_name)
+        return False
+    
+    # Verify which channel the token actually belongs to
+    actual_channel_info = verify_channel_from_token(result.access_token)
+    if not actual_channel_info:
+        LOGGER.error(
+            "Failed to verify channel from token for %s. "
+            "Tokens will NOT be saved to prevent saving to wrong channel.",
+            result.channel_name
+        )
+        return False
+    
+    actual_channel_id = actual_channel_info.get("channel_id")
+    actual_custom_url = actual_channel_info.get("custom_url")
+    
+    # Check if the token belongs to the expected channel
+    expected_channel_id = expected_channel.channel_id
+    
+    # Normalize channel IDs for comparison (remove @ prefix if present)
+    def normalize_channel_identifier(identifier: str) -> str:
+        """Normalize channel ID or custom URL for comparison."""
+        if not identifier:
+            return ""
+        return identifier.lstrip('@').lower()
+    
+    expected_normalized = normalize_channel_identifier(expected_channel_id)
+    actual_id_normalized = normalize_channel_identifier(actual_channel_id)
+    actual_url_normalized = normalize_channel_identifier(actual_custom_url) if actual_custom_url else None
+    
+    # Check if token belongs to expected channel by ID or custom URL
+    matches_by_id = expected_normalized == actual_id_normalized
+    matches_by_url = actual_url_normalized and expected_normalized == actual_url_normalized
+    
+    if not (matches_by_id or matches_by_url):
+        # Token doesn't match expected channel - find the correct channel
+        correct_channel = None
+        
+        # First try by channel_id
+        if actual_channel_id:
+            correct_channel = db.get_channel_by_channel_id(actual_channel_id)
+        
+        # If not found by ID and we have custom URL, try to find by custom URL
+        if not correct_channel and actual_custom_url:
+            # Search all channels for matching custom URL
+            all_channels = db.get_all_channels()
+            for channel in all_channels:
+                channel_normalized = normalize_channel_identifier(channel.channel_id)
+                if channel_normalized == actual_url_normalized:
+                    correct_channel = channel
+                    break
+        
+        if correct_channel:
+            LOGGER.error(
+                "⚠️  CRITICAL: Token belongs to channel '%s' (ID: %s%s), but reauth was requested for '%s' (ID: %s). "
+                "This happens when multiple channels share the same Google account and wrong channel was selected during OAuth. "
+                "Tokens will be saved to the CORRECT channel '%s' instead.",
+                correct_channel.name,
+                actual_channel_id,
+                f", custom URL: {actual_custom_url}" if actual_custom_url else "",
+                result.channel_name,
+                expected_channel_id,
+                correct_channel.name
+            )
+            
+            # Save to the correct channel instead
+            result.channel_name = correct_channel.name
+        else:
+            LOGGER.error(
+                "⚠️  CRITICAL: Token belongs to channel ID '%s'%s, but no channel with this identifier found in database. "
+                "Expected channel '%s' has ID '%s'. "
+                "Tokens will NOT be saved to prevent data corruption.",
+                actual_channel_id,
+                f" (custom URL: {actual_custom_url})" if actual_custom_url else "",
+                result.channel_name,
+                expected_channel_id
+            )
+            return False
+    else:
+        match_type = "ID" if matches_by_id else "custom URL"
+        LOGGER.info(
+            "✅ Verified: Token belongs to expected channel '%s' (%s: %s)",
+            result.channel_name,
+            match_type,
+            actual_channel_id if matches_by_id else actual_custom_url
+        )
     
     # Check if refresh_token is present
     if not result.refresh_token:

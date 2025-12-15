@@ -231,6 +231,35 @@ class YouTubeMySQLDatabase:
             )
         return None
     
+    def get_channel_by_channel_id(self, channel_id: str) -> Optional[YouTubeChannel]:
+        """Get channel by YouTube channel_id."""
+        query = """
+            SELECT id, name, channel_id, console_name, client_id, client_secret,
+                   access_token, refresh_token, token_expires_at,
+                   console_id, enabled, created_at, updated_at
+            FROM youtube_channels WHERE channel_id = %s
+        """
+        results = self._execute_query(query, (channel_id,), fetch=True)
+        
+        if results:
+            row = results[0]
+            return YouTubeChannel(
+                id=row[0],
+                name=row[1],
+                channel_id=row[2],
+                console_name=row[3],
+                client_id=row[4],
+                client_secret=row[5],
+                access_token=row[6],
+                refresh_token=row[7],
+                token_expires_at=row[8],
+                console_id=row[9],
+                enabled=bool(row[10]),
+                created_at=row[11],
+                updated_at=row[12]
+            )
+        return None
+    
     def get_all_channels(self, enabled_only: bool = False) -> List[YouTubeChannel]:
         """Get all channels."""
         if enabled_only:
