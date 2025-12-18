@@ -71,6 +71,23 @@ class DailyReportManager:
         self.use_broadcast = use_broadcast
         self.logger = get_logger("daily_report")
     
+    @staticmethod
+    def _escape_markdown(text: str) -> str:
+        """
+        Escape Markdown special characters to prevent parsing errors.
+        
+        Args:
+            text: Text to escape
+            
+        Returns:
+            Escaped text safe for Markdown
+        """
+        # Escape special Markdown characters that can break parsing
+        special_chars = ['*', '_', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+        for char in special_chars:
+            text = text.replace(char, f'\\{char}')
+        return text
+    
     def generate_and_send_daily_report(self, date: Optional[datetime] = None) -> bool:
         """
         Generate and send daily report for specified date (default: yesterday).
@@ -301,7 +318,9 @@ class DailyReportManager:
             message += "\n🔕 **Inactive Channels (No tasks yesterday):**\n"
             for channel in inactive_channels:
                 channel_link = self._format_channel_link(channel['channel_id'], platform_report.platform)
-                message += f"#{channel['id']} {channel_link} - {channel['name']}\n"
+                # Escape channel name to prevent Markdown parsing errors
+                safe_name = self._escape_markdown(channel['name'])
+                message += f"#{channel['id']} {channel_link} - {safe_name}\n"
         
         # Add errors section with categorized error types
         accounts_with_errors = [acc for acc in platform_report.accounts if acc.error_types]
@@ -315,12 +334,15 @@ class DailyReportManager:
                     error_type_counts[error_type] = error_type_counts.get(error_type, 0) + 1
                 
                 # Format: "Auth, No file" or "Auth, No file (2x)" if multiple
+                # Escape error types to prevent Markdown parsing errors
                 error_display = []
                 for error_type, count in sorted(error_type_counts.items()):
+                    # Escape error type text
+                    safe_error_type = self._escape_markdown(error_type)
                     if count > 1:
-                        error_display.append(f"{error_type} ({count}x)")
+                        error_display.append(f"{safe_error_type} ({count}x)")
                     else:
-                        error_display.append(error_type)
+                        error_display.append(safe_error_type)
                 
                 error_str = ", ".join(error_display)
                 message += f"#{account.account_id} {channel_link} - {error_str}\n"
@@ -402,42 +424,46 @@ class DailyReportManager:
             platform: Platform name
             
         Returns:
-            Formatted link string
+            Formatted link string (Markdown format)
         """
-        # Ensure channel_id starts with @ if it doesn't
+        # Escape the display text to prevent Markdown parsing errors
+        # But keep the URL as-is (URLs are generally safe)
         if not channel_id.startswith('@'):
             display_id = f'@{channel_id}'
         else:
             display_id = channel_id
+        
+        # Escape special characters in display text
+        escaped_display = self._escape_markdown(display_id)
         
         # Create platform-specific links
         if platform.lower() == 'youtube':
             # YouTube link format
             if channel_id.startswith('@'):
                 # Handle format
-                link = f"[{display_id}](https://youtube.com/{channel_id})"
+                link = f"[{escaped_display}](https://youtube.com/{channel_id})"
             else:
                 # Assume it's a channel ID or handle without @
-                link = f"[{display_id}](https://youtube.com/@{channel_id})"
+                link = f"[{escaped_display}](https://youtube.com/@{channel_id})"
         
         elif platform.lower() == 'instagram':
             # Instagram link format
             clean_id = channel_id.lstrip('@')
-            link = f"[{display_id}](https://instagram.com/{clean_id})"
+            link = f"[{escaped_display}](https://instagram.com/{clean_id})"
         
         elif platform.lower() == 'tiktok':
             # TikTok link format
             clean_id = channel_id.lstrip('@')
-            link = f"[{display_id}](https://tiktok.com/@{clean_id})"
+            link = f"[{escaped_display}](https://tiktok.com/@{clean_id})"
         
         elif platform.lower() == 'vk':
             # VK link format
             clean_id = channel_id.lstrip('@')
-            link = f"[{display_id}](https://vk.com/{clean_id})"
+            link = f"[{escaped_display}](https://vk.com/{clean_id})"
         
         else:
-            # Generic format for unknown platforms
-            link = display_id
+            # Generic format for unknown platforms - escape the whole thing
+            link = escaped_display
         
         return link
     

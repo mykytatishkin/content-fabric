@@ -102,9 +102,27 @@ class TelegramBroadcast:
                     success_count += 1
                     self.logger.debug(f"Message sent to {chat_id}")
                 else:
-                    failed_count += 1
-                    failed_users.append(chat_id)
-                    self.logger.error(f"Failed to send to {chat_id}: {response.text}")
+                    # Check if it's a parse error - try sending without parse_mode as fallback
+                    error_text = response.text
+                    if 'parse entities' in error_text.lower() or 'can\'t parse' in error_text.lower():
+                        self.logger.warning(f"Markdown parse error for {chat_id}, retrying without parse_mode")
+                        # Retry without parse_mode
+                        payload_no_format = {
+                            'chat_id': chat_id,
+                            'text': message
+                        }
+                        retry_response = requests.post(url, json=payload_no_format, timeout=10)
+                        if retry_response.ok:
+                            success_count += 1
+                            self.logger.info(f"Message sent to {chat_id} without formatting")
+                        else:
+                            failed_count += 1
+                            failed_users.append(chat_id)
+                            self.logger.error(f"Failed to send to {chat_id} even without formatting: {retry_response.text}")
+                    else:
+                        failed_count += 1
+                        failed_users.append(chat_id)
+                        self.logger.error(f"Failed to send to {chat_id}: {error_text}")
                     
             except Exception as e:
                 failed_count += 1
