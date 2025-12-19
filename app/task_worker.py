@@ -327,7 +327,7 @@ class TaskWorker:
                         'thumbnail': task.cover
                     }
                 )
-                
+            
                 # If service creation failed, check if we should retry
                 if not result.success and hasattr(result, 'error_message'):
                     error_msg = result.error_message or ""
@@ -776,6 +776,13 @@ class TaskWorker:
             # Playwright uses C++ code that can cause "double free" errors when run in threads
             # Using subprocess isolates memory and prevents crashes
             try:
+                # Check if there are other reauth processes running - add delay to avoid port conflicts
+                active_reauths = sum(1 for p in self.reauth_threads.values() if p.poll() is None)
+                if active_reauths > 0:
+                    delay = active_reauths * 3  # 3 seconds per active reauth
+                    self.logger.info(f"Waiting {delay}s before starting reauth for {channel_name} (to avoid port conflicts, {active_reauths} active reauths)")
+                    time.sleep(delay)
+                
                 # Use existing reauth script in separate process
                 script_path = Path(__file__).parent.parent / "scripts" / "youtube_reauth_service.py"
                 if not script_path.exists():
