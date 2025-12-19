@@ -1095,6 +1095,47 @@ class YouTubeMySQLDatabase:
         results = self._execute_query(query, tuple(params) if params else None, fetch=True)
         return [self._row_to_task(row) for row in results]
     
+    def get_token_related_failed_tasks(self, account_id: int) -> List[Task]:
+        """
+        Get failed tasks with token-related errors for a specific channel.
+        
+        Args:
+            account_id: Channel account ID (youtube_channels.id)
+            
+        Returns:
+            List of failed tasks with token-related error messages
+        """
+        # Query to get failed tasks with error_message containing token-related errors
+        # Use COALESCE to handle NULL error_message values
+        query = """
+            SELECT id, account_id, media_type, status, date_add, att_file_path,
+                   cover, title, description, keywords, post_comment, add_info,
+                   date_post, date_done, upload_id, error_message
+            FROM tasks 
+            WHERE status = 2 
+            AND account_id = %s
+            AND error_message IS NOT NULL
+            AND (
+                error_message LIKE %s OR
+                error_message LIKE %s OR
+                error_message LIKE %s OR
+                error_message LIKE %s OR
+                error_message LIKE %s
+            )
+            ORDER BY date_post ASC
+        """
+        params = (
+            account_id,
+            '%invalid_grant%',
+            '%Token has been expired or revoked%',
+            '%refresh token%invalid%',
+            '%refresh token%revoked%',
+            '%token expired%'
+        )
+        
+        results = self._execute_query(query, params, fetch=True)
+        return [self._row_to_task(row) for row in results]
+    
     def update_task_status(self, task_id: int, status: int, 
                           error_message: Optional[str] = None,
                           date_done: Optional[datetime] = None) -> bool:

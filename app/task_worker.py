@@ -812,6 +812,8 @@ class TaskWorker:
                 return_code = process.returncode
                 if return_code == 0:
                     self.logger.info(f"✅ Re-authentication subprocess for {channel_name} completed successfully (PID: {process.pid})")
+                    # After successful reauth, retry failed tasks with token-related errors
+                    self._retry_failed_tasks_after_reauth(channel_name)
                 else:
                     # Read stderr and stdout for error details
                     stderr_output = ""
@@ -899,6 +901,61 @@ class TaskWorker:
                         self.reauth_queue.remove(channel_name)
                         self._start_reauth_subprocess(channel_name)
                         break
+    
+    def _retry_failed_tasks_after_reauth(self, channel_name: str):
+        """
+        Retry failed tasks with token-related errors after successful re-authentication.
+        
+        Args:
+            channel_name: Name of the channel that was successfully re-authenticated
+        """
+        try:
+            # Get channel to find account_id
+            channel = self.db.get_channel(channel_name)
+            if not channel:
+                self.logger.warning(f"Channel {channel_name} not found, cannot retry failed tasks")
+                return
+            
+            # Get failed tasks with token-related errors for this channel
+            failed_tasks = self.db.get_token_related_failed_tasks(channel.id)
+            
+            if not failed_tasks:
+                self.logger.info(f"No failed tasks with token-related errors found for channel {channel_name} after reauth")
+                return
+            
+            self.logger.info(f"Found {len(failed_tasks)} failed task(s) with token-related errors for channel {channel_name}. Retrying...")
+            
+            # Retry each failed task by resetting status to pending
+            retried_count = 0
+            for task in failed_tasks:
+                try:
+                    # Reset task to pending status so it will be processed again
+                    success = self.db.update_task_status(task.id, 0, error_message=None)  # status 0 = pending
+                    if success:
+                        # Clear from retry tracking if it exists
+                        self.task_retries.pop(task.id, None)
+                        retried_count += 1
+                        self.logger.info(f"✅ Reset task #{task.id} to pending after successful reauth for {channel_name}")
+                    else:
+                        self.logger.warning(f"Failed to reset task #{task.id} to pending for channel {channel_name}")
+                except Exception as e:
+                    self.logger.error(f"Error retrying task #{task.id} for channel {channel_name}: {e}", exc_info=True)
+            
+            if retried_count > 0:
+                self.logger.info(f"✅ Successfully reset {retried_count} task(s) to pending for channel {channel_name} after reauth")
+                # Send notification about retried tasks
+                try:
+                    message = f"""✅ **Переавторизація завершена: {channel_name}**
+
+🔄 Повторюю {retried_count} невдалу задачу/задач з помилками токенів.
+
+Задачі будуть оброблені з новими токенами найближчим часом."""
+                    self.telegram_broadcast.broadcast_message(message)
+                except Exception as e:
+                    self.logger.error(f"Failed to send Telegram notification about retried tasks: {e}")
+        except Exception as e:
+            # Catch-all to ensure main loop never crashes
+            self.logger.error(f"Error retrying failed tasks after reauth for {channel_name}: {e}", exc_info=True)
     
     def _start_reauth_subprocess(self, channel_name: str):
         """Start re-authentication subprocess for a channel."""
