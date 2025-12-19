@@ -879,6 +879,58 @@ class TaskWorker:
         for channel_name in completed_channels:
             self.reauth_threads.pop(channel_name, None)
             self.ongoing_reauths.discard(channel_name)
+            # Remove from queue if it was there
+            with self.reauth_queue_lock:
+                if channel_name in self.reauth_queue:
+                    self.reauth_queue.remove(channel_name)
+    
+    def _process_reauth_queue(self):
+        """Process reauth queue - start next reauth if we have available slots."""
+        with self.reauth_queue_lock:
+            # Count active reauths
+            active_reauths = sum(1 for p in self.reauth_threads.values() if p.poll() is None)
+            
+            # If we have available slots and items in queue, start next reauth
+            if active_reauths < self.max_concurrent_reauths and self.reauth_queue:
+                # Find first channel in queue that's not already running
+                for channel_name in self.reauth_queue:
+                    if channel_name not in self.reauth_threads or self.reauth_threads[channel_name].poll() is not None:
+                        # Remove from queue and start reauth
+                        self.reauth_queue.remove(channel_name)
+                        self._start_reauth_subprocess(channel_name)
+                        break
+    
+    def _start_reauth_subprocess(self, channel_name: str):
+        """Start re-authentication subprocess for a channel."""
+        try:
+            # Use existing reauth script in separate process
+            script_path = Path(__file__).parent.parent / "scripts" / "youtube_reauth_service.py"
+            if not script_path.exists():
+                self.logger.error(f"Reauth script not found: {script_path}")
+                return
+            
+            # Start subprocess (non-blocking)
+            # The oauth_flow will automatically wait for port 8080 to become available
+            # Capture output for error logging
+            process = subprocess.Popen(
+                [sys.executable, str(script_path), channel_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1  # Line buffered
+            )
+            
+            # Track subprocess instead of thread
+            self.reauth_threads[channel_name] = process
+            self.logger.info(f"Started re-authentication subprocess for channel {channel_name} (PID: {process.pid})")
+        except Exception as e:
+            self.logger.error(f"Failed to start re-authentication subprocess for {channel_name}: {e}", exc_info=True)
+            # Remove from ongoing reauths on error
+            self.ongoing_reauths.discard(channel_name)
+            # Remove from queue on error
+            with self.reauth_queue_lock:
+                if channel_name in self.reauth_queue:
+                    self.reauth_queue.remove(channel_name)
     
     def get_stats(self) -> Dict[str, Any]:
         """Get worker statistics."""
