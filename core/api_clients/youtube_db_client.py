@@ -52,8 +52,7 @@ class YouTubeDBClient(BaseAPIClient):
             return False
         
         try:
-            # Get OAuth credentials from google_consoles table via console_name
-            # Fallback to deprecated channel.client_id/client_secret
+            # Get OAuth credentials from google_consoles table via console_name or console_id
             credentials = self.db.get_console_credentials_for_channel(self._current_channel.name)
             
             if not credentials:

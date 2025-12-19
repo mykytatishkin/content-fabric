@@ -55,19 +55,31 @@ def check_channel(channel_name: str):
     print(f"   Updated: {channel.updated_at}")
     print()
     
-    # Check client credentials
-    print("Client Credentials:")
-    if channel.client_id:
-        client_id_preview = channel.client_id[:20] + "..." if len(channel.client_id) > 20 else channel.client_id
-        print(f"   ✅ client_id: {client_id_preview} (length: {len(channel.client_id)})")
+    # Check console assignment
+    print("Console Assignment:")
+    if channel.console_name:
+        print(f"   ✅ console_name: {channel.console_name}")
     else:
-        print(f"   ❌ client_id: MISSING or NULL")
+        print(f"   ⚠️  console_name: not set")
     
-    if channel.client_secret:
-        client_secret_preview = channel.client_secret[:20] + "..." if len(channel.client_secret) > 20 else channel.client_secret
-        print(f"   ✅ client_secret: {client_secret_preview} (length: {len(channel.client_secret)})")
+    if channel.console_id:
+        print(f"   ✅ console_id: {channel.console_id}")
     else:
-        print(f"   ❌ client_secret: MISSING or NULL")
+        print(f"   ⚠️  console_id: not set")
+    
+    # Check client credentials from console
+    print("\nClient Credentials (from console):")
+    credentials = db.get_console_credentials_for_channel(channel.name)
+    if credentials:
+        client_id = credentials['client_id']
+        client_secret = credentials['client_secret']
+        client_id_preview = client_id[:20] + "..." if len(client_id) > 20 else client_id
+        client_secret_preview = client_secret[:20] + "..." if len(client_secret) > 20 else client_secret
+        print(f"   ✅ client_id: {client_id_preview} (length: {len(client_id)})")
+        print(f"   ✅ client_secret: {client_secret_preview} (length: {len(client_secret)})")
+        print(f"   ✅ credentials_file: {credentials.get('credentials_file', 'credentials.json')}")
+    else:
+        print(f"   ❌ No console credentials found. Channel must have console_name or console_id set.")
     
     print()
     

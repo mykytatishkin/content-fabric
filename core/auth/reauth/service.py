@@ -73,8 +73,8 @@ class YouTubeReauthService:
             LOGGER.error("Channel configuration not found for %s", channel_name)
             return None
 
-        # Get client credentials from google_consoles table via console_name
-        # Fallback to deprecated channel.client_id/client_secret, then environment variables
+        # Get client credentials from google_consoles table via console_name or console_id
+        # Fallback to environment variables if no console assigned
         credentials = self.db.get_console_credentials_for_channel(channel_name)
         
         if credentials:

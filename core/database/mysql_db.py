@@ -36,8 +36,6 @@ class YouTubeChannel:
     name: str
     channel_id: str
     console_name: Optional[str] = None  # Reference to google_consoles.name
-    client_id: Optional[str] = None  # Deprecated: kept for backward compatibility
-    client_secret: Optional[str] = None  # Deprecated: kept for backward compatibility
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     token_expires_at: Optional[datetime] = None
@@ -177,25 +175,22 @@ class YouTubeMySQLDatabase:
             raise
     
     def add_channel(self, name: str, channel_id: str, console_name: Optional[str] = None,
-                   client_id: Optional[str] = None, client_secret: Optional[str] = None,
                    enabled: bool = True) -> bool:
         """Add a new YouTube channel.
         
         Args:
             name: Channel name
             channel_id: YouTube channel ID
-            console_name: Reference to google_consoles.name (preferred)
-            client_id: OAuth client ID (deprecated, use console_name instead)
-            client_secret: OAuth client secret (deprecated, use console_name instead)
+            console_name: Reference to google_consoles.name (required for OAuth)
             enabled: Whether channel is enabled
         """
         try:
             query = """
                 INSERT INTO youtube_channels 
-                (name, channel_id, console_name, client_id, client_secret, enabled)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (name, channel_id, console_name, enabled)
+                VALUES (%s, %s, %s, %s)
             """
-            self._execute_query(query, (name, channel_id, console_name, client_id, client_secret, enabled))
+            self._execute_query(query, (name, channel_id, console_name, enabled))
             return True
         except Error as e:
             if e.errno == 1062:  # Duplicate entry
@@ -205,7 +200,7 @@ class YouTubeMySQLDatabase:
     def get_channel(self, name: str) -> Optional[YouTubeChannel]:
         """Get channel by name."""
         query = """
-            SELECT id, name, channel_id, console_name, client_id, client_secret,
+            SELECT id, name, channel_id, console_name,
                    access_token, refresh_token, token_expires_at,
                    console_id, enabled, created_at, updated_at
             FROM youtube_channels WHERE name = %s
@@ -219,22 +214,20 @@ class YouTubeMySQLDatabase:
                 name=row[1],
                 channel_id=row[2],
                 console_name=row[3],
-                client_id=row[4],
-                client_secret=row[5],
-                access_token=row[6],
-                refresh_token=row[7],
-                token_expires_at=row[8],
-                console_id=row[9],
-                enabled=bool(row[10]),
-                created_at=row[11],
-                updated_at=row[12]
+                access_token=row[4],
+                refresh_token=row[5],
+                token_expires_at=row[6],
+                console_id=row[7],
+                enabled=bool(row[8]),
+                created_at=row[9],
+                updated_at=row[10]
             )
         return None
     
     def get_channel_by_channel_id(self, channel_id: str) -> Optional[YouTubeChannel]:
         """Get channel by YouTube channel_id."""
         query = """
-            SELECT id, name, channel_id, console_name, client_id, client_secret,
+            SELECT id, name, channel_id, console_name,
                    access_token, refresh_token, token_expires_at,
                    console_id, enabled, created_at, updated_at
             FROM youtube_channels WHERE channel_id = %s
@@ -248,15 +241,13 @@ class YouTubeMySQLDatabase:
                 name=row[1],
                 channel_id=row[2],
                 console_name=row[3],
-                client_id=row[4],
-                client_secret=row[5],
-                access_token=row[6],
-                refresh_token=row[7],
-                token_expires_at=row[8],
-                console_id=row[9],
-                enabled=bool(row[10]),
-                created_at=row[11],
-                updated_at=row[12]
+                access_token=row[4],
+                refresh_token=row[5],
+                token_expires_at=row[6],
+                console_id=row[7],
+                enabled=bool(row[8]),
+                created_at=row[9],
+                updated_at=row[10]
             )
         return None
     
@@ -264,14 +255,14 @@ class YouTubeMySQLDatabase:
         """Get all channels."""
         if enabled_only:
             query = """
-                SELECT id, name, channel_id, console_name, client_id, client_secret,
+                SELECT id, name, channel_id, console_name,
                        access_token, refresh_token, token_expires_at,
                        console_id, enabled, created_at, updated_at
                 FROM youtube_channels WHERE enabled = 1
             """
         else:
             query = """
-                SELECT id, name, channel_id, console_name, client_id, client_secret,
+                SELECT id, name, channel_id, console_name,
                        access_token, refresh_token, token_expires_at,
                        console_id, enabled, created_at, updated_at
                 FROM youtube_channels
@@ -286,15 +277,13 @@ class YouTubeMySQLDatabase:
                 name=row[1],
                 channel_id=row[2],
                 console_name=row[3],
-                client_id=row[4],
-                client_secret=row[5],
-                access_token=row[6],
-                refresh_token=row[7],
-                token_expires_at=row[8],
-                console_id=row[9],
-                enabled=bool(row[10]),
-                created_at=row[11],
-                updated_at=row[12]
+                access_token=row[4],
+                refresh_token=row[5],
+                token_expires_at=row[6],
+                console_id=row[7],
+                enabled=bool(row[8]),
+                created_at=row[9],
+                updated_at=row[10]
             ))
         
         return channels
@@ -433,7 +422,6 @@ class YouTubeMySQLDatabase:
         
         for channel in self.get_all_channels():
             # Get OAuth credentials from google_consoles table via console_name
-            # Fallback to deprecated channel.client_id/client_secret
             credentials = self.get_console_credentials_for_channel(channel.name)
             
             if credentials:
@@ -441,8 +429,9 @@ class YouTubeMySQLDatabase:
                 client_secret = credentials['client_secret']
                 credentials_file = credentials.get('credentials_file', 'credentials.json')
             else:
-                client_id = channel.client_id or ''
-                client_secret = channel.client_secret or ''
+                # No console assigned - skip or use empty values
+                client_id = ''
+                client_secret = ''
                 credentials_file = 'credentials.json'
             
             config['accounts']['youtube'].append({
@@ -466,8 +455,7 @@ class YouTubeMySQLDatabase:
             if self.add_channel(
                 name=account.get('name'),
                 channel_id=account.get('channel_id', ''),
-                client_id=account.get('client_id', ''),
-                client_secret=account.get('client_secret', ''),
+                console_name=account.get('console_name'),
                 enabled=account.get('enabled', True)
             ):
                 imported_count += 1
@@ -629,7 +617,6 @@ class YouTubeMySQLDatabase:
         Priority:
         1. console_name (if set) -> get from google_consoles by name
         2. console_id (if set) -> get from google_consoles by id
-        3. Fallback to deprecated channel.client_id/client_secret
         
         Returns:
             Dict with 'client_id', 'client_secret', and 'credentials_file' if found,
@@ -658,14 +645,6 @@ class YouTubeMySQLDatabase:
                     'client_secret': console.client_secret,
                     'credentials_file': console.credentials_file or 'credentials.json'
                 }
-        
-        # Priority 3: Fallback to deprecated channel.client_id/client_secret for backward compatibility
-        if channel.client_id and channel.client_secret:
-            return {
-                'client_id': channel.client_id,
-                'client_secret': channel.client_secret,
-                'credentials_file': 'credentials.json'
-            }
         
         return None
     

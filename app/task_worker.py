@@ -218,11 +218,10 @@ class TaskWorker:
         """
         try:
             # Get OAuth credentials from google_consoles table via console_name or console_id
-            # Fallback to deprecated channel.client_id/client_secret
             credentials = self.db.get_console_credentials_for_channel(channel.name)
             
             if not credentials:
-                self.logger.error(f"No OAuth credentials found for channel '{channel.name}'")
+                self.logger.error(f"No OAuth credentials found for channel '{channel.name}'. Channel must have console_name or console_id set.")
                 return False
             
             client_id = credentials['client_id']
@@ -235,28 +234,13 @@ class TaskWorker:
                 if console_info:
                     self.logger.info(f"Using credentials from console ID {channel.console_id} ('{console_info.name}') for channel '{channel.name}'")
                 else:
-                    self.logger.warning(f"Console ID {channel.console_id} not found for channel '{channel.name}', using fallback credentials")
+                    self.logger.warning(f"Console ID {channel.console_id} not found for channel '{channel.name}'")
             elif channel.console_name:
                 console_info = self.db.get_google_console(channel.console_name)
                 if console_info:
                     self.logger.info(f"Using credentials from console '{channel.console_name}' for channel '{channel.name}'")
                 else:
                     self.logger.warning(f"Console '{channel.console_name}' not found for channel '{channel.name}'")
-            else:
-                self.logger.info(f"Using fallback credentials (from channel) for channel '{channel.name}'")
-            
-            # CRITICAL: Check if tokens might be issued for a different console
-            # If channel has client_id different from console client_id, tokens might be from old console
-            if console_info and channel.client_id and channel.client_id != client_id:
-                self.logger.warning(
-                    f"⚠️ WARNING: Channel '{channel.name}' has tokens issued for client_id {channel.client_id[:20]}... "
-                    f"but console uses client_id {client_id[:20]}... "
-                    f"This might cause quota to be deducted from the OLD console!"
-                )
-                self.logger.warning(
-                    f"⚠️ SOLUTION: Re-authenticate channel '{channel.name}' with console '{console_info.name}' "
-                    f"to ensure tokens are issued for the correct console: python3 run_youtube_reauth.py \"{channel.name}\""
-                )
             
             # Initialize YouTube client if not already set
             if not self.youtube_client:
@@ -265,7 +249,7 @@ class TaskWorker:
                     client_secret=client_secret
                 )
             else:
-                # Update client credentials to use console credentials (not channel.client_id/client_secret)
+                # Update client credentials to use console credentials
                 # Note: account_info will override this in post_video, but it's good practice to keep them in sync
                 self.youtube_client.client_id = client_id
                 self.youtube_client.client_secret = client_secret
@@ -297,10 +281,6 @@ class TaskWorker:
             }
             
             self.logger.info(f"Uploading video to YouTube channel: {channel.name} (using client_id: {client_id[:20]}...)")
-            
-            # Verify that console credentials are being used (not channel.client_id)
-            if channel.client_id and channel.client_id != client_id:
-                self.logger.info(f"Using console credentials (different from channel.client_id) - this is correct for multi-console setup")
             
             # Upload video
             result = self.youtube_client.post_video(
@@ -619,7 +599,7 @@ class TaskWorker:
         try:
             # Get channel by ID (including console_id)
             query = """
-                SELECT id, name, channel_id, console_name, client_id, client_secret,
+                SELECT id, name, channel_id, console_name,
                        access_token, refresh_token, token_expires_at,
                        console_id, enabled, created_at, updated_at
                 FROM youtube_channels WHERE id = %s
@@ -637,15 +617,13 @@ class TaskWorker:
                     name=row[1],
                     channel_id=row[2],
                     console_name=row[3],
-                    client_id=row[4],
-                    client_secret=row[5],
-                    access_token=row[6],
-                    refresh_token=row[7],
-                    token_expires_at=row[8],
-                    console_id=row[9],
-                    enabled=bool(row[10]),
-                    created_at=row[11],
-                    updated_at=row[12]
+                    access_token=row[4],
+                    refresh_token=row[5],
+                    token_expires_at=row[6],
+                    console_id=row[7],
+                    enabled=bool(row[8]),
+                    created_at=row[9],
+                    updated_at=row[10]
                 )
                 
                 # Note: Credentials are now handled by get_console_credentials_for_channel

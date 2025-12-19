@@ -5,6 +5,10 @@ Script to check which Google Cloud Console is used for publishing for each chann
 
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file if present
+load_dotenv()
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -101,8 +105,8 @@ def main():
                         print("      ⚠️  Это означает, что у канала нет назначенной консоли")
                 else:
                     print("   ❌ ОШИБКА: Credentials НЕ найдены - публикация НЕВОЗМОЖНА!")
-                    if not channel.console_name and not (channel.client_id and channel.client_secret):
-                        print("      У канала нет ни console_name, ни client_id/client_secret")
+                    if not channel.console_name and not channel.console_id:
+                        print("      У канала нет ни console_name, ни console_id")
                 
                 print()
         
