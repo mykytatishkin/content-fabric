@@ -90,21 +90,30 @@ class TaskWorker:
             self.worker_thread.join(timeout=5)
         
         # Wait for reauth processes to complete (with timeout)
+        # Note: We give processes more time to complete naturally before killing them
         if self.reauth_threads:
             self.logger.info(f"Waiting for {len(self.reauth_threads)} reauth process(es) to complete...")
             for channel_name, process in self.reauth_threads.items():
                 if process.poll() is None:  # Process still running
                     self.logger.info(f"Waiting for reauth process for {channel_name} (PID: {process.pid}) to complete...")
                     try:
-                        process.wait(timeout=30)  # Wait up to 30 seconds
+                        # Give processes 60 seconds to complete (reauth can take time)
+                        process.wait(timeout=60)
+                        return_code = process.returncode
+                        if return_code == 0:
+                            self.logger.info(f"✅ Reauth process for {channel_name} (PID: {process.pid}) completed successfully during shutdown")
+                        else:
+                            self.logger.warning(f"⚠️ Reauth process for {channel_name} (PID: {process.pid}) completed with return code {return_code} during shutdown")
                     except subprocess.TimeoutExpired:
-                        self.logger.warning(f"Reauth process for {channel_name} (PID: {process.pid}) did not complete within timeout, terminating...")
+                        self.logger.warning(f"Reauth process for {channel_name} (PID: {process.pid}) did not complete within 60s timeout, sending SIGTERM...")
                         process.terminate()
                         try:
-                            process.wait(timeout=5)  # Give it 5 more seconds to terminate gracefully
+                            process.wait(timeout=10)  # Give it 10 more seconds to terminate gracefully
+                            self.logger.info(f"Reauth process for {channel_name} (PID: {process.pid}) terminated gracefully")
                         except subprocess.TimeoutExpired:
-                            self.logger.warning(f"Reauth process for {channel_name} (PID: {process.pid}) did not terminate, killing...")
+                            self.logger.warning(f"Reauth process for {channel_name} (PID: {process.pid}) did not respond to SIGTERM, sending SIGKILL...")
                             process.kill()
+                            # Note: This will result in return code -9, which is logged in _check_reauth_processes
         
         self.logger.info("Task worker stopped")
     
@@ -327,12 +336,12 @@ class TaskWorker:
                         'thumbnail': task.cover
                     }
                 )
-            
+                
                 # If service creation failed, check if we should retry
-                if not result.success and hasattr(result, 'error_message'):
-                    error_msg = result.error_message or ""
+                if result is not None and not result.success and hasattr(result, 'error_message'):
+                    error_msg: str = result.error_message or ""
                     # Check if this is a token refresh issue that can be retried
-                    is_token_refresh_issue = (
+                    is_token_refresh_issue: bool = (
                         'failed to create youtube service' in error_msg.lower() or
                         'failed to refresh token' in error_msg.lower()
                     ) and account_info.get('_refresh_token_invalid') is not True
@@ -775,14 +784,8 @@ class TaskWorker:
             # Start re-authentication in separate subprocess to prevent memory corruption
             # Playwright uses C++ code that can cause "double free" errors when run in threads
             # Using subprocess isolates memory and prevents crashes
+            # Note: Port 8080 conflicts are handled automatically in oauth_flow.py by waiting
             try:
-                # Check if there are other reauth processes running - add delay to avoid port conflicts
-                active_reauths = sum(1 for p in self.reauth_threads.values() if p.poll() is None)
-                if active_reauths > 0:
-                    delay = active_reauths * 3  # 3 seconds per active reauth
-                    self.logger.info(f"Waiting {delay}s before starting reauth for {channel_name} (to avoid port conflicts, {active_reauths} active reauths)")
-                    time.sleep(delay)
-                
                 # Use existing reauth script in separate process
                 script_path = Path(__file__).parent.parent / "scripts" / "youtube_reauth_service.py"
                 if not script_path.exists():
@@ -790,6 +793,7 @@ class TaskWorker:
                     return
                 
                 # Start subprocess (non-blocking)
+                # The oauth_flow will automatically wait for port 8080 to become available
                 process = subprocess.Popen(
                     [sys.executable, str(script_path), channel_name],
                     stdout=subprocess.PIPE,
@@ -816,7 +820,30 @@ class TaskWorker:
                 if return_code == 0:
                     self.logger.info(f"✅ Re-authentication subprocess for {channel_name} completed successfully (PID: {process.pid})")
                 else:
-                    self.logger.warning(f"⚠️ Re-authentication subprocess for {channel_name} completed with return code {return_code} (PID: {process.pid})")
+                    # Interpret return codes
+                    if return_code == -9:
+                        # SIGKILL - process was forcefully killed
+                        # This could be: OOM killer, manual kill, or timeout
+                        self.logger.warning(
+                            f"⚠️ Re-authentication subprocess for {channel_name} was killed (SIGKILL, return code -9, PID: {process.pid}). "
+                            f"This usually means the process was terminated by the system (OOM) or exceeded resource limits."
+                        )
+                    elif return_code == -15:
+                        # SIGTERM - process was terminated gracefully
+                        self.logger.warning(
+                            f"⚠️ Re-authentication subprocess for {channel_name} was terminated (SIGTERM, return code -15, PID: {process.pid}). "
+                            f"This usually means the process was stopped during worker shutdown."
+                        )
+                    elif return_code == 1:
+                        # General error
+                        self.logger.warning(
+                            f"⚠️ Re-authentication subprocess for {channel_name} failed (return code 1, PID: {process.pid}). "
+                            f"Check reauth logs for details."
+                        )
+                    else:
+                        self.logger.warning(
+                            f"⚠️ Re-authentication subprocess for {channel_name} completed with return code {return_code} (PID: {process.pid})"
+                        )
                 completed_channels.append(channel_name)
         
         # Clean up completed processes
