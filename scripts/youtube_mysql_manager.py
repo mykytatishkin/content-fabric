@@ -120,7 +120,12 @@ def cmd_show_channel(args):
     
     print(f"📺 Канал: {channel.name}")
     print(f"   ID: {channel.channel_id}")
-    print(f"   Client ID: {channel.client_id[:20]}...")
+    # Get client_id from console
+    credentials = db.get_console_credentials_for_channel(channel.name)
+    if credentials:
+        print(f"   Client ID: {credentials['client_id'][:20]}... (from console)")
+    else:
+        print(f"   Client ID: Not set (no console assigned)")
     print(f"   Статус: {'✅ Включен' if channel.enabled else '❌ Отключен'}")
     print(f"   Токен: {'🔑 Есть' if channel.access_token else '🔒 Нет'}")
     print(f"   Истекает: {channel.token_expires_at or 'Не установлено'}")

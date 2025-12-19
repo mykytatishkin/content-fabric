@@ -118,21 +118,35 @@ def check_token_limits():
     print(f"\n📊 Found {len(channels)} channel(s)\n")
     
     # Group by client_id to check for potential limit issues
+    # Get client_id from console credentials
     client_groups = {}
     
     for channel in channels:
-        client_id = channel.client_id
-        if client_id not in client_groups:
-            client_groups[client_id] = []
-        client_groups[client_id].append(channel)
+        credentials = db.get_console_credentials_for_channel(channel.name)
+        if credentials:
+            client_id = credentials['client_id']
+            if client_id not in client_groups:
+                client_groups[client_id] = []
+            client_groups[client_id].append(channel)
+        else:
+            # Channel without console - group separately
+            if 'NO_CONSOLE' not in client_groups:
+                client_groups['NO_CONSOLE'] = []
+            client_groups['NO_CONSOLE'].append(channel)
     
     print(f"📱 Unique OAuth Applications (Client IDs): {len(client_groups)}\n")
     
     for i, (client_id, channels_list) in enumerate(client_groups.items(), 1):
         print(f"{'─' * 70}")
-        print(f"App #{i}: {client_id[:30]}...")
-        print(f"{'─' * 70}")
-        print(f"Channels using this Client ID: {len(channels_list)}")
+        if client_id == 'NO_CONSOLE':
+            print(f"App #{i}: NO CONSOLE ASSIGNED")
+            print(f"{'─' * 70}")
+            print(f"Channels without console: {len(channels_list)}")
+            print("⚠️  WARNING: These channels cannot publish without console assignment!")
+        else:
+            print(f"App #{i}: {client_id[:30]}...")
+            print(f"{'─' * 70}")
+            print(f"Channels using this Client ID: {len(channels_list)}")
         
         if len(channels_list) >= 40:
             print("⚠️  WARNING: You have many channels with same Client ID!")

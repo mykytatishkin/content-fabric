@@ -59,7 +59,6 @@ class DatabaseConfigLoader:
             
             for channel in channels:
                 # Get OAuth credentials from google_consoles table via console_name
-                # Fallback to deprecated channel.client_id/client_secret, then environment variables
                 credentials = self.db.get_console_credentials_for_channel(channel.name)
                 
                 if credentials:
@@ -67,9 +66,9 @@ class DatabaseConfigLoader:
                     client_secret = credentials['client_secret']
                     credentials_file = credentials.get('credentials_file', 'credentials.json')
                 else:
-                    # Fallback to environment variables
-                    client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', channel.client_id or '')
-                    client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', channel.client_secret or '')
+                    # Fallback to environment variables only (no channel.client_id/client_secret)
+                    client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID', '')
+                    client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET', '')
                     credentials_file = 'credentials.json'
                 
                 config_channel = {

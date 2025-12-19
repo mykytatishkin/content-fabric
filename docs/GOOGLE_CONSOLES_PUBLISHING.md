@@ -10,9 +10,9 @@
 2. Получает канал по account_id
    ↓
 3. Вызывает get_console_credentials_for_channel(channel.name)
-   ├─ Если есть console_name → берет из google_consoles
-   ├─ Если нет console_name → fallback на channel.client_id/client_secret
-   └─ Возвращает: client_id, client_secret, credentials_file
+   ├─ Если есть console_name → берет из google_consoles по name
+   ├─ Если есть console_id → берет из google_consoles по id
+   └─ Возвращает: client_id, client_secret, credentials_file (или None если консоль не назначена)
    ↓
 4. Инициализирует YouTubeClient с этими credentials
    ↓

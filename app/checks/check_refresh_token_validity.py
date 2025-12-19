@@ -42,9 +42,13 @@ def load_mysql_config() -> dict:
     }
 
 
-def test_refresh_token(channel) -> tuple[bool, str]:
+def test_refresh_token(channel, db) -> tuple[bool, str]:
     """
     Test if refresh_token is valid by attempting to refresh access_token.
+    
+    Args:
+        channel: YouTubeChannel object
+        db: YouTubeMySQLDatabase instance
     
     Returns:
         (is_valid, error_message)
@@ -52,8 +56,13 @@ def test_refresh_token(channel) -> tuple[bool, str]:
     if not channel.refresh_token:
         return False, "No refresh_token in database"
     
-    if not channel.client_id or not channel.client_secret:
-        return False, "Missing client_id or client_secret"
+    # Get credentials from console
+    credentials = db.get_console_credentials_for_channel(channel.name)
+    if not credentials:
+        return False, "No console credentials found. Channel must have console_name or console_id set."
+    
+    client_id = credentials['client_id']
+    client_secret = credentials['client_secret']
     
     try:
         # Create credentials object with refresh_token
@@ -61,8 +70,8 @@ def test_refresh_token(channel) -> tuple[bool, str]:
             token=None,  # We don't have a valid access_token, so set to None
             refresh_token=channel.refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
-            client_id=channel.client_id,
-            client_secret=channel.client_secret
+            client_id=client_id,
+            client_secret=client_secret
         )
         
         # Try to refresh the token
@@ -142,7 +151,7 @@ def check_refresh_token_validity(channel_names: list[str] | None = None, enabled
             })
         else:
             # Test refresh_token validity
-            is_valid, error_msg = test_refresh_token(channel)
+            is_valid, error_msg = test_refresh_token(channel, db)
             
             if is_valid:
                 print(f"   ✅ Refresh Token: VALID")
