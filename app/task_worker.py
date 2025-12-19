@@ -333,22 +333,42 @@ class TaskWorker:
                 error_msg = result.error_message or "Unknown error during upload"
                 self.logger.error(f"Task #{task.id} failed: {error_msg}")
                 
-                # Check if this is a token revocation error (DISABLED: auto reauth removed)
+                # Check if this is a refresh_token revocation error
+                # IMPORTANT: Playwright reauth should ONLY be used when refresh_token is invalid/revoked
+                # If only access_token expired, it should be refreshed via refresh_token (handled in youtube_client.py)
                 error_category = ErrorCategorizer.categorize(error_msg)
-                is_token_revoked = error_category == 'Auth' and ('invalid_grant' in error_msg.lower() or 
-                                                                  'token revoked' in error_msg.lower() or 
-                                                                  'token expired' in error_msg.lower() or
-                                                                  're-authenticate' in error_msg.lower())
                 
-                if is_token_revoked:
-                    # DISABLED: Automatic re-authentication removed - just log and continue
-                    # self._handle_token_revocation(channel.name, error_msg)
+                # Check if error indicates refresh_token is invalid (requires Playwright reauth)
+                is_refresh_token_invalid = (
+                    error_category == 'Auth' and 
+                    ('invalid_grant' in error_msg.lower() or 
+                     'token has been expired or revoked' in error_msg.lower() or
+                     'refresh token' in error_msg.lower() and 'invalid' in error_msg.lower() or
+                     'refresh token' in error_msg.lower() and 'revoked' in error_msg.lower())
+                )
+                
+                # Also check if result has flag indicating refresh_token is invalid
+                if hasattr(result, 'error_message') and result.error_message:
+                    # Check if error came from token refresh attempt
+                    if '_refresh_token_invalid' in str(result.error_message) or 'failed to refresh token' in error_msg.lower():
+                        is_refresh_token_invalid = True
+                
+                if is_refresh_token_invalid:
+                    # Refresh token is invalid/revoked - requires full re-authentication via Playwright
+                    self.logger.warning(f"Refresh token is invalid for account {channel.name}. Starting Playwright re-authentication...")
+                    self._handle_token_revocation(channel.name, error_msg)
                     
                     # Token revocation errors should NOT be retried - mark as failed immediately
+                    # The reauth will update tokens in background, future tasks will use new tokens
                     self.db.mark_task_failed(task.id, error_msg)
-                    self.logger.error(f"Task #{task.id} marked as failed due to token revocation. Re-authentication required for account {channel.name}. (Auto reauth disabled - run manually)")
+                    self.logger.warning(f"Task #{task.id} marked as failed due to refresh_token revocation. Automatic re-authentication (Playwright) started for account {channel.name}.")
                     self.task_retries.pop(task.id, None)
                     return False
+                elif error_category == 'Auth' and ('token expired' in error_msg.lower() or 'access token' in error_msg.lower()):
+                    # Only access_token expired - should be handled by refresh_token in youtube_client.py
+                    # This shouldn't happen if refresh_token is valid, but log for debugging
+                    self.logger.warning(f"Access token expired for {channel.name}, but refresh should have been attempted. Error: {error_msg}")
+                    # Don't trigger Playwright - let retry mechanism handle it
                 
                 # Check if we should retry (відстежуємо в пам'яті)
                 current_retries = self.task_retries.get(task.id, 0)
@@ -369,16 +389,24 @@ class TaskWorker:
             error_msg = f"YouTube upload error: {str(e)}"
             self.logger.error(error_msg)
             
-            # Check if this is a token revocation error and send notification
+            # Check if this is a refresh_token revocation error
+            # IMPORTANT: Playwright reauth should ONLY be used when refresh_token is invalid/revoked
             error_category = ErrorCategorizer.categorize(error_msg)
-            is_token_revoked = error_category == 'Auth' and ('invalid_grant' in error_msg.lower() or 
-                                                              'token revoked' in error_msg.lower() or 
-                                                              'token expired' in error_msg.lower() or
-                                                              're-authenticate' in error_msg.lower())
             
-            if is_token_revoked:
+            # Check if error indicates refresh_token is invalid (requires Playwright reauth)
+            is_refresh_token_invalid = (
+                error_category == 'Auth' and 
+                ('invalid_grant' in error_msg.lower() or 
+                 'token has been expired or revoked' in error_msg.lower() or
+                 'refresh token' in error_msg.lower() and 'invalid' in error_msg.lower() or
+                 'refresh token' in error_msg.lower() and 'revoked' in error_msg.lower() or
+                 'failed to refresh token' in error_msg.lower())
+            )
+            
+            if is_refresh_token_invalid:
                 account_name = channel.name if channel else "Unknown"
-                # Send notification and trigger automatic re-authentication
+                # Refresh token is invalid/revoked - requires full re-authentication via Playwright
+                self.logger.warning(f"Refresh token is invalid for account {account_name}. Starting Playwright re-authentication...")
                 self._handle_token_revocation(account_name, error_msg)
                 
                 # Token revocation errors should NOT be retried - mark as failed immediately
