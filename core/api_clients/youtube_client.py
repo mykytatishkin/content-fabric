@@ -121,6 +121,9 @@ class YouTubeClient(BaseAPIClient):
             # Log credentials being used for this request
             self.logger.info(f"Creating YouTube service for {account_name} with client_id: {creds.client_id[:20] if creds.client_id else 'None'}...")
             
+            # IMPORTANT: Token refresh logic
+            # - If access_token expired but refresh_token is valid: refresh via refresh_token (no Playwright needed)
+            # - If refresh_token is invalid/revoked: refresh will fail with invalid_grant (Playwright reauth required)
             # Always try to refresh token if refresh_token is available
             # This ensures we have the freshest token and catches revoked tokens early
             if creds.refresh_token:
@@ -166,10 +169,21 @@ class YouTubeClient(BaseAPIClient):
                 except Exception as e:
                     error_str = str(e)
                     self.logger.error(f"Failed to refresh token for account {account_info.get('name', 'Unknown')}: {error_str}")
-                    # If refresh fails, token might be revoked - user needs to re-authenticate
-                    self.logger.error("Token may be revoked. Please re-authenticate this account.")
-                    # Store error in account_info for later use
-                    account_info['_token_error'] = error_str
+                    
+                    # Check if this is a refresh_token error (invalid_grant means refresh_token is invalid/revoked)
+                    is_refresh_token_invalid = 'invalid_grant' in error_str.lower() or 'access token has been expired or revoked' in error_str.lower()
+                    
+                    if is_refresh_token_invalid:
+                        # Refresh token is invalid/revoked - requires full re-authentication via Playwright
+                        self.logger.error("Refresh token is invalid or revoked. Full re-authentication required (Playwright).")
+                        account_info['_token_error'] = error_str
+                        account_info['_refresh_token_invalid'] = True  # Flag to indicate refresh_token is invalid
+                    else:
+                        # Temporary error - might be network issue, retry later
+                        self.logger.warning("Token refresh failed with non-critical error. May retry later.")
+                        account_info['_token_error'] = error_str
+                        account_info['_refresh_token_invalid'] = False
+                    
                     return None
             elif not creds.valid:
                 self.logger.error(f"No valid credentials and no refresh token for account {account_info.get('name', 'Unknown')}")
