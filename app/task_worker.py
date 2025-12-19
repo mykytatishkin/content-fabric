@@ -4,6 +4,8 @@ Task Worker for processing scheduled tasks from MySQL database.
 
 import time
 import threading
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from typing import Optional, Callable, Dict, Any
 from pathlib import Path
@@ -59,8 +61,8 @@ class TaskWorker:
         # Track channels currently being re-authenticated to avoid duplicate reauths
         self.ongoing_reauths = set()
         
-        # Track reauth threads for proper cleanup
-        self.reauth_threads: Dict[str, threading.Thread] = {}
+        # Track reauth processes for proper cleanup (using subprocess instead of threads to prevent memory corruption)
+        self.reauth_threads: Dict[str, subprocess.Popen] = {}
     
     def set_youtube_client(self, client: YouTubeClient):
         """Set YouTube API client."""
@@ -87,15 +89,22 @@ class TaskWorker:
         if self.worker_thread:
             self.worker_thread.join(timeout=5)
         
-        # Wait for reauth threads to complete (with timeout)
+        # Wait for reauth processes to complete (with timeout)
         if self.reauth_threads:
-            self.logger.info(f"Waiting for {len(self.reauth_threads)} reauth thread(s) to complete...")
-            for channel_name, thread in self.reauth_threads.items():
-                if thread.is_alive():
-                    self.logger.info(f"Waiting for reauth thread for {channel_name} to complete...")
-                    thread.join(timeout=30)  # Give reauth threads time to clean up
-                    if thread.is_alive():
-                        self.logger.warning(f"Reauth thread for {channel_name} did not complete within timeout")
+            self.logger.info(f"Waiting for {len(self.reauth_threads)} reauth process(es) to complete...")
+            for channel_name, process in self.reauth_threads.items():
+                if process.poll() is None:  # Process still running
+                    self.logger.info(f"Waiting for reauth process for {channel_name} (PID: {process.pid}) to complete...")
+                    try:
+                        process.wait(timeout=30)  # Wait up to 30 seconds
+                    except subprocess.TimeoutExpired:
+                        self.logger.warning(f"Reauth process for {channel_name} (PID: {process.pid}) did not complete within timeout, terminating...")
+                        process.terminate()
+                        try:
+                            process.wait(timeout=5)  # Give it 5 more seconds to terminate gracefully
+                        except subprocess.TimeoutExpired:
+                            self.logger.warning(f"Reauth process for {channel_name} (PID: {process.pid}) did not terminate, killing...")
+                            process.kill()
         
         self.logger.info("Task worker stopped")
     
@@ -103,6 +112,9 @@ class TaskWorker:
         """Main worker loop."""
         while self.running:
             try:
+                # Check status of reauth subprocesses
+                self._check_reauth_processes()
+                
                 # Get pending tasks from database
                 pending_tasks = self.db.get_pending_tasks()
                 
@@ -282,22 +294,60 @@ class TaskWorker:
             
             self.logger.info(f"Uploading video to YouTube channel: {channel.name} (using client_id: {client_id[:20]}...)")
             
-            # Upload video
-            result = self.youtube_client.post_video(
-                account_info=account_info,
-                video_path=task.att_file_path,
-                caption=task.description or '',
-                metadata={
-                    'title': task.title,
-                    'description': task.description,
-                    'tags': video_metadata['tags'],
-                    'category': video_metadata['categoryId'],
-                    'privacy': video_metadata['privacyStatus'],
-                    'thumbnail': task.cover
-                }
-            )
+            # Upload video (with retry logic for token refresh)
+            max_upload_attempts = 2  # Allow one retry after token refresh
+            upload_attempt = 0
+            result = None
             
-            if result.success:
+            while upload_attempt < max_upload_attempts:
+                upload_attempt += 1
+                
+                # Before each attempt, refresh account_info from database to get latest tokens
+                # This is important if token was refreshed in previous attempt
+                if upload_attempt > 1:
+                    self.logger.info(f"Retrying upload for task #{task.id} (attempt {upload_attempt}/{max_upload_attempts})")
+                    # Reload channel from database to get updated tokens
+                    updated_channel = self.db.get_channel(channel.name)
+                    if updated_channel:
+                        account_info['access_token'] = updated_channel.access_token
+                        account_info['refresh_token'] = updated_channel.refresh_token
+                        account_info['token_expires_at'] = updated_channel.token_expires_at.isoformat() if updated_channel.token_expires_at else None
+                        self.logger.info(f"Reloaded tokens from database for {channel.name}")
+                
+                result = self.youtube_client.post_video(
+                    account_info=account_info,
+                    video_path=task.att_file_path,
+                    caption=task.description or '',
+                    metadata={
+                        'title': task.title,
+                        'description': task.description,
+                        'tags': video_metadata['tags'],
+                        'category': video_metadata['categoryId'],
+                        'privacy': video_metadata['privacyStatus'],
+                        'thumbnail': task.cover
+                    }
+                )
+                
+                # If service creation failed, check if we should retry
+                if not result.success and hasattr(result, 'error_message'):
+                    error_msg = result.error_message or ""
+                    # Check if this is a token refresh issue that can be retried
+                    is_token_refresh_issue = (
+                        'failed to create youtube service' in error_msg.lower() or
+                        'failed to refresh token' in error_msg.lower()
+                    ) and account_info.get('_refresh_token_invalid') is not True
+                    
+                    # If it's a token refresh issue and refresh_token is still valid, retry once
+                    if is_token_refresh_issue and upload_attempt < max_upload_attempts:
+                        self.logger.info(f"Token refresh issue detected, will retry after reloading tokens from DB (attempt {upload_attempt}/{max_upload_attempts})")
+                        # Small delay before retry
+                        time.sleep(2)
+                        continue
+                
+                # If we got here, either success or non-retryable error - break loop
+                break
+            
+            if result and result.success:
                 self.logger.info(f"Task #{task.id} completed successfully. Video ID: {result.post_id}")
                 # Mark task as completed and save upload_id
                 self.db.mark_task_completed(task.id, upload_id=result.post_id)
@@ -330,7 +380,7 @@ class TaskWorker:
                 
                 return True
             else:
-                error_msg = result.error_message or "Unknown error during upload"
+                error_msg = result.error_message if result else "Unknown error during upload"
                 self.logger.error(f"Task #{task.id} failed: {error_msg}")
                 
                 # Check if this is a refresh_token revocation error
@@ -339,19 +389,18 @@ class TaskWorker:
                 error_category = ErrorCategorizer.categorize(error_msg)
                 
                 # Check if error indicates refresh_token is invalid (requires Playwright reauth)
-                is_refresh_token_invalid = (
-                    error_category == 'Auth' and 
-                    ('invalid_grant' in error_msg.lower() or 
-                     'token has been expired or revoked' in error_msg.lower() or
-                     'refresh token' in error_msg.lower() and 'invalid' in error_msg.lower() or
-                     'refresh token' in error_msg.lower() and 'revoked' in error_msg.lower())
-                )
+                # Check account_info for flag set by youtube_client
+                is_refresh_token_invalid = account_info.get('_refresh_token_invalid', False)
                 
-                # Also check if result has flag indicating refresh_token is invalid
-                if hasattr(result, 'error_message') and result.error_message:
-                    # Check if error came from token refresh attempt
-                    if '_refresh_token_invalid' in str(result.error_message) or 'failed to refresh token' in error_msg.lower():
-                        is_refresh_token_invalid = True
+                # Also check error message for refresh_token issues
+                if not is_refresh_token_invalid:
+                    is_refresh_token_invalid = (
+                        error_category == 'Auth' and 
+                        ('invalid_grant' in error_msg.lower() or 
+                         'token has been expired or revoked' in error_msg.lower() or
+                         'refresh token' in error_msg.lower() and 'invalid' in error_msg.lower() or
+                         'refresh token' in error_msg.lower() and 'revoked' in error_msg.lower())
+                    )
                 
                 if is_refresh_token_invalid:
                     # Refresh token is invalid/revoked - requires full re-authentication via Playwright
@@ -366,9 +415,9 @@ class TaskWorker:
                     return False
                 elif error_category == 'Auth' and ('token expired' in error_msg.lower() or 'access token' in error_msg.lower()):
                     # Only access_token expired - should be handled by refresh_token in youtube_client.py
-                    # This shouldn't happen if refresh_token is valid, but log for debugging
-                    self.logger.warning(f"Access token expired for {channel.name}, but refresh should have been attempted. Error: {error_msg}")
-                    # Don't trigger Playwright - let retry mechanism handle it
+                    # If we got here after retry, it means refresh didn't work - might be temporary issue
+                    self.logger.warning(f"Access token expired for {channel.name} after retry. Error: {error_msg}")
+                    # Don't trigger Playwright - let retry mechanism handle it (might be temporary network issue)
                 
                 # Check if we should retry (відстежуємо в пам'яті)
                 current_retries = self.task_retries.get(task.id, 0)
@@ -723,151 +772,50 @@ class TaskWorker:
             except Exception as e:
                 self.logger.error(f"Failed to send Telegram reauth notification: {e}")
             
-            # Start re-authentication in background thread
-            # NOTE: NOT using daemon=True to prevent memory corruption when process exits
-            # Playwright needs proper cleanup, so we use regular thread
-            # Wrap in try-except to prevent any exception from crashing the main loop
+            # Start re-authentication in separate subprocess to prevent memory corruption
+            # Playwright uses C++ code that can cause "double free" errors when run in threads
+            # Using subprocess isolates memory and prevents crashes
             try:
-                reauth_thread = threading.Thread(
-                    target=self._run_reauth_in_background,
-                    args=(channel_name,),
-                    daemon=False,  # Changed from True to prevent memory corruption
-                    name=f"Reauth-{channel_name}"
+                # Use existing reauth script in separate process
+                script_path = Path(__file__).parent.parent / "scripts" / "youtube_reauth_service.py"
+                if not script_path.exists():
+                    self.logger.error(f"Reauth script not found: {script_path}")
+                    return
+                
+                # Start subprocess (non-blocking)
+                process = subprocess.Popen(
+                    [sys.executable, str(script_path), channel_name],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
                 )
-                self.reauth_threads[channel_name] = reauth_thread
-                reauth_thread.start()
-                self.logger.info(f"Started re-authentication thread for channel {channel_name}")
+                
+                # Track subprocess instead of thread
+                self.reauth_threads[channel_name] = process
+                self.logger.info(f"Started re-authentication subprocess for channel {channel_name} (PID: {process.pid})")
             except Exception as e:
-                self.logger.error(f"Failed to start re-authentication thread for {channel_name}: {e}", exc_info=True)
+                self.logger.error(f"Failed to start re-authentication subprocess for {channel_name}: {e}", exc_info=True)
                 # Don't raise - allow main loop to continue
         except Exception as e:
             # Catch-all to ensure main loop never crashes due to reauth handling
             self.logger.error(f"Unexpected error in _handle_token_revocation for {channel_name}: {e}", exc_info=True)
     
-    def _run_reauth_in_background(self, channel_name: str):
-        """
-        Run re-authentication for a channel in background thread.
-        Uses the same mechanism as run_youtube_reauth.py
-        
-        Args:
-            channel_name: Name of the channel to re-authenticate
-        """
-        self.ongoing_reauths.add(channel_name)
-        reauth_service = None
-        try:
-            self.logger.info(f"Starting re-authentication for channel {channel_name}")
-            
-            # Create reauth service configuration (same as run_youtube_reauth.py)
-            service_config = ServiceConfig()
-            service_config.browser.headless = True  # Run in headless mode
-            service_config.oauth_settings.redirect_port = 8080
-            service_config.oauth_settings.timeout_seconds = 300
-            
-            # Initialize reauth service (same as run_youtube_reauth.py)
-            reauth_service = YouTubeReauthService(
-                db=self.db,
-                service_config=service_config,
-                use_broadcast=True
-            )
-            
-            # Run re-authentication (same as run_youtube_reauth.py)
-            # Wrap in try-except to ensure proper cleanup even on errors
-            results = reauth_service.run_sync([channel_name])
-            
-            if results and len(results) > 0:
-                result = results[0]
-                if result.status == ReauthStatus.SUCCESS:
-                    # Save tokens to database using the same function as run_youtube_reauth.py
-                    # This may update result.channel_name if tokens belong to a different channel
-                    save_reauth_tokens_to_db(self.db, result)
-                    
-                    # Use the actual channel name from result (may have changed if tokens belonged to different channel)
-                    actual_channel_name = result.channel_name
-                    
-                    if actual_channel_name != channel_name:
-                        self.logger.warning(
-                            f"⚠️  Channel name changed during reauth: requested '{channel_name}', "
-                            f"but tokens belong to '{actual_channel_name}'. Tokens saved to correct channel."
-                        )
-                    
-                    self.logger.info(f"✅ Successfully re-authenticated channel {actual_channel_name}")
-                    
-                    # Send success notification
-                    try:
-                        success_message = f"""✅ **Переавторизація успішна**
-
-**Канал:** {actual_channel_name}
-**Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-🎉 Канал успішно переавторизовано. Токени збережено в БД.
-Тепер можна продовжувати публікацію."""
-                        broadcast_result = self.telegram_broadcast.broadcast_message(success_message)
-                        if broadcast_result['success'] == 0:
-                            # Fallback to single chat
-                            self.notification_manager._send_telegram_message(success_message)
-                    except Exception as e:
-                        self.logger.error(f"Failed to send success notification: {e}")
+    def _check_reauth_processes(self):
+        """Check status of reauth subprocesses and clean up completed ones."""
+        completed_channels = []
+        for channel_name, process in self.reauth_threads.items():
+            if process.poll() is not None:  # Process has finished
+                return_code = process.returncode
+                if return_code == 0:
+                    self.logger.info(f"✅ Re-authentication subprocess for {channel_name} completed successfully (PID: {process.pid})")
                 else:
-                    self.logger.error(f"❌ Re-authentication failed for channel {channel_name}: {result.error}")
-                    
-                    # Send failure notification
-                    try:
-                        error_msg = result.error or "Unknown error"
-                        failure_message = f"""❌ **Помилка переавторизації**
-
-**Канал:** {channel_name}
-**Помилка:** {error_msg}
-**Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-⚠️ Не вдалося автоматично переавторизувати канал. Потрібна ручна переавторизація.
-Запустіть: python3 run_youtube_reauth.py \"{channel_name}\" """
-                        broadcast_result = self.telegram_broadcast.broadcast_message(failure_message)
-                        if broadcast_result['success'] == 0:
-                            # Fallback to single chat
-                            self.notification_manager._send_telegram_message(failure_message)
-                    except Exception as e:
-                        self.logger.error(f"Failed to send failure notification: {e}")
-            else:
-                self.logger.error(f"❌ No results returned from re-authentication for channel {channel_name}")
-                
-        except KeyboardInterrupt:
-            # Handle graceful shutdown
-            self.logger.warning(f"Re-authentication interrupted for channel {channel_name}")
-            raise  # Re-raise to allow proper shutdown
-        except Exception as e:
-            self.logger.error(f"Error during re-authentication for channel {channel_name}: {str(e)}", exc_info=True)
-            
-            # Send error notification
-            try:
-                error_message = f"""❌ **Помилка під час переавторизації**
-
-**Канал:** {channel_name}
-**Помилка:** {str(e)}
-**Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-⚠️ Виникла помилка під час автоматичної переавторизації. Потрібна ручна переавторизація.
-Запустіть: python3 run_youtube_reauth.py \"{channel_name}\" """
-                broadcast_result = self.telegram_broadcast.broadcast_message(error_message)
-                if broadcast_result['success'] == 0:
-                    # Fallback to single chat
-                    self.notification_manager._send_telegram_message(error_message)
-            except Exception as notif_e:
-                self.logger.error(f"Failed to send error notification: {notif_e}")
-        finally:
-            # Ensure Playwright resources are cleaned up
-            # The reauth_service should handle cleanup via context managers,
-            # but we log here to track completion
-            try:
-                # Force garbage collection to help release Playwright resources
-                import gc
-                gc.collect()
-            except Exception as gc_e:
-                self.logger.warning(f"Error during cleanup: {gc_e}")
-            
-            # Remove from ongoing reauths set and thread tracking
-            self.ongoing_reauths.discard(channel_name)
+                    self.logger.warning(f"⚠️ Re-authentication subprocess for {channel_name} completed with return code {return_code} (PID: {process.pid})")
+                completed_channels.append(channel_name)
+        
+        # Clean up completed processes
+        for channel_name in completed_channels:
             self.reauth_threads.pop(channel_name, None)
-            self.logger.info(f"Completed re-authentication process for channel {channel_name}")
+            self.ongoing_reauths.discard(channel_name)
     
     def get_stats(self) -> Dict[str, Any]:
         """Get worker statistics."""
