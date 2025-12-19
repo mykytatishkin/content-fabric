@@ -105,6 +105,7 @@ class YouTubeReauthService:
             profile_path=record.profile_path or "",
             client_id=client_id,
             client_secret=client_secret,
+            channel_id=channel.channel_id,  # Add channel_id for YouTube channel selection
             totp_secret=record.totp_secret,
             backup_codes=record.backup_codes,
             proxy=proxy,

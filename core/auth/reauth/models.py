@@ -34,6 +34,7 @@ class AutomationCredential:
     profile_path: str
     client_id: str
     client_secret: str
+    channel_id: Optional[str] = None  # YouTube channel ID (UC...) for channel selection
     totp_secret: Optional[str] = None
     backup_codes: Optional[Sequence[str]] = None
     proxy: Optional[ProxyConfig] = None

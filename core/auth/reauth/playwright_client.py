@@ -451,6 +451,195 @@ async def _handle_account_chooser_if_present(page: "Page", credential: Automatio
     return False
 
 
+async def _handle_youtube_channel_chooser_if_present(
+    page: "Page",
+    credential: AutomationCredential,
+    browser_config: BrowserConfig,
+) -> bool:
+    """Handle YouTube channel/brand account selection screen if shown.
+    
+    This screen appears when a Google account has multiple YouTube channels.
+    The function automatically selects the correct channel based on channel_id or channel_name.
+    
+    Returns:
+        True if channel chooser was detected and handled, False otherwise
+    """
+    if not credential.channel_id:
+        LOGGER.debug("No channel_id in credential for %s, skipping YouTube channel chooser", credential.channel_name)
+        return False
+    
+    LOGGER.info("🔍 Checking for YouTube channel chooser screen for %s (channel_id: %s)", 
+                credential.channel_name, credential.channel_id)
+    
+    try:
+        # Wait a bit for the page to load
+        await page.wait_for_timeout(1000)
+        
+        # Check URL for channel selection indicators
+        page_url = page.url.lower()
+        url_indicators = ['channel', 'brand', 'account', 'select', 'choose']
+        is_channel_selection_page = any(indicator in page_url for indicator in url_indicators)
+        
+        if not is_channel_selection_page:
+            # Also check page title and text for channel selection hints
+            try:
+                page_title = (await page.title() or "").lower()
+                page_text = (await page.locator('body').inner_text() or "").lower()
+                is_channel_selection_page = (
+                    'channel' in page_title or 
+                    'channel' in page_text[:500] or
+                    'канал' in page_text[:500] or
+                    'select' in page_title or
+                    'choose' in page_title
+                )
+            except Exception:
+                pass
+        
+        # Check if we're on a channel selection page
+        # Google shows channel selection in various formats:
+        # 1. List of channel tiles/cards
+        # 2. Radio buttons or selectable items
+        # 3. Dropdown or selection menu
+        
+        # Method 1: Look for channel tiles/cards (common pattern)
+        # These usually have channel names or channel IDs in data attributes or text
+        channel_selectors = [
+            # Common selectors for channel selection
+            'div[role="option"]',  # Generic option selector
+            'div[data-channel-id]',  # Channel ID in data attribute
+            'div[data-value]',  # Value in data attribute
+            'li[role="option"]',  # List item option
+            'div[jsname]',  # Google's jsname pattern
+            'div[aria-label*="channel" i]',  # Aria label with channel
+            'div[aria-label*="канал" i]',  # Ukrainian/Russian
+        ]
+        
+        found_channels = False
+        selected_channel = False
+        
+        for selector in channel_selectors:
+            try:
+                elements = page.locator(selector)
+                count = await elements.count()
+                
+                if count > 0:
+                    LOGGER.info("🔍 Found %d potential channel elements with selector '%s' for %s", 
+                               count, selector, credential.channel_name)
+                    found_channels = True
+                    
+                    # Try to find the correct channel
+                    for idx in range(count):
+                        element = elements.nth(idx)
+                        
+                        # Get text content and attributes
+                        text = (await element.inner_text() or "").lower()
+                        data_channel_id = await element.get_attribute("data-channel-id")
+                        data_value = await element.get_attribute("data-value")
+                        aria_label = await element.get_attribute("aria-label") or ""
+                        
+                        # Normalize channel_id for comparison (remove @ prefix, lowercase)
+                        def normalize_id(ch_id: str) -> str:
+                            if not ch_id:
+                                return ""
+                            return ch_id.lstrip('@').lower()
+                        
+                        target_channel_id = normalize_id(credential.channel_id)
+                        target_channel_name = credential.channel_name.lower()
+                        
+                        # Check if this element matches our channel
+                        matches = False
+                        match_reason = ""
+                        
+                        # Match by channel_id in data attribute
+                        if data_channel_id and normalize_id(data_channel_id) == target_channel_id:
+                            matches = True
+                            match_reason = f"channel_id in data-channel-id: {data_channel_id}"
+                        
+                        # Match by channel_id in data-value
+                        elif data_value and normalize_id(data_value) == target_channel_id:
+                            matches = True
+                            match_reason = f"channel_id in data-value: {data_value}"
+                        
+                        # Match by channel name in text
+                        elif target_channel_name in text:
+                            matches = True
+                            match_reason = f"channel_name in text: {text[:50]}"
+                        
+                        # Match by channel_id in text (sometimes shown as UC...)
+                        elif target_channel_id in text:
+                            matches = True
+                            match_reason = f"channel_id in text: {text[:50]}"
+                        
+                        # Match by channel name in aria-label
+                        elif target_channel_name in aria_label.lower():
+                            matches = True
+                            match_reason = f"channel_name in aria-label: {aria_label[:50]}"
+                        
+                        if matches:
+                            LOGGER.info("✅ Found matching channel element %d for %s: %s", 
+                                       idx + 1, credential.channel_name, match_reason)
+                            try:
+                                # Scroll element into view if needed
+                                await element.scroll_into_view_if_needed()
+                                await page.wait_for_timeout(300)
+                                
+                                # Click the channel
+                                await element.click(timeout=browser_config.navigation_timeout_ms)
+                                LOGGER.info("✅ Clicked channel element %d for %s", idx + 1, credential.channel_name)
+                                
+                                # Wait for navigation/update
+                                await page.wait_for_timeout(1500)
+                                selected_channel = True
+                                break
+                            except Exception as click_exc:
+                                LOGGER.warning("Failed to click channel element %d: %s", idx + 1, click_exc)
+                                # Try alternative click methods
+                                try:
+                                    await element.click(force=True)
+                                    await page.wait_for_timeout(1500)
+                                    selected_channel = True
+                                    break
+                                except Exception:
+                                    pass
+                    
+                    if selected_channel:
+                        break
+                        
+            except Exception as selector_exc:
+                LOGGER.debug("Error with selector '%s': %s", selector, selector_exc)
+                continue
+        
+        # Method 2: Look for "Continue" or "Next" button if channel selection is implicit
+        # Sometimes Google auto-selects a channel but shows a confirmation
+        if not selected_channel and found_channels:
+            LOGGER.info("⚠️  Found channel elements but couldn't match for %s, trying fallback", credential.channel_name)
+            # If we found channel elements but couldn't match, try clicking first one as fallback
+            # This is better than failing completely
+            try:
+                first_element = page.locator('div[role="option"]').first
+                if await first_element.count() > 0:
+                    LOGGER.warning("⚠️  Using fallback: clicking first channel option for %s", credential.channel_name)
+                    await first_element.click()
+                    await page.wait_for_timeout(1500)
+                    selected_channel = True
+            except Exception:
+                pass
+        
+        if selected_channel:
+            LOGGER.info("✅ Successfully handled YouTube channel chooser for %s", credential.channel_name)
+            return True
+        elif found_channels:
+            LOGGER.warning("⚠️  Found channel chooser but couldn't select correct channel for %s", credential.channel_name)
+            return False
+        else:
+            LOGGER.debug("No YouTube channel chooser found for %s", credential.channel_name)
+            return False
+            
+    except Exception as exc:
+        LOGGER.debug("Error checking for YouTube channel chooser for %s: %s", credential.channel_name, exc)
+        return False
+
+
 async def _handle_mfa_if_needed(
     page: "Page",
     credential: AutomationCredential,
@@ -2733,6 +2922,12 @@ async def _complete_login_flow(
             await _handle_mfa_if_needed(page, credential, browser_config)
             await _handle_account_data_prompt(page, credential, browser_config)
             await _log_page_state(page, "after MFA/account data", credential)
+            
+            # Handle YouTube channel chooser if multiple channels exist on the account
+            if await _handle_youtube_channel_chooser_if_present(page, credential, browser_config):
+                LOGGER.info("✅ Handled YouTube channel chooser for %s", credential.channel_name)
+                await _log_page_state(page, "after YouTube channel chooser", credential)
+                continue
             
             # Handle "Google hasn't verified this app" screen
             if await _handle_unverified_app_screen(page, browser_config, credential):
