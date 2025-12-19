@@ -794,11 +794,13 @@ class TaskWorker:
                 
                 # Start subprocess (non-blocking)
                 # The oauth_flow will automatically wait for port 8080 to become available
+                # Capture output for error logging
                 process = subprocess.Popen(
                     [sys.executable, str(script_path), channel_name],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True
+                    text=True,
+                    bufsize=1  # Line buffered
                 )
                 
                 # Track subprocess instead of thread
@@ -820,6 +822,17 @@ class TaskWorker:
                 if return_code == 0:
                     self.logger.info(f"✅ Re-authentication subprocess for {channel_name} completed successfully (PID: {process.pid})")
                 else:
+                    # Read stderr and stdout for error details
+                    stderr_output = ""
+                    stdout_output = ""
+                    try:
+                        if process.stderr:
+                            stderr_output = process.stderr.read()
+                        if process.stdout:
+                            stdout_output = process.stdout.read()
+                    except Exception as e:
+                        self.logger.debug(f"Could not read subprocess output for {channel_name}: {e}")
+                    
                     # Interpret return codes
                     if return_code == -9:
                         # SIGKILL - process was forcefully killed
@@ -835,15 +848,40 @@ class TaskWorker:
                             f"This usually means the process was stopped during worker shutdown."
                         )
                     elif return_code == 1:
-                        # General error
-                        self.logger.warning(
-                            f"⚠️ Re-authentication subprocess for {channel_name} failed (return code 1, PID: {process.pid}). "
-                            f"Check reauth logs for details."
-                        )
+                        # General error - log details
+                        error_details = ""
+                        if stderr_output:
+                            # Get last few lines of stderr (most relevant)
+                            stderr_lines = stderr_output.strip().split('\n')
+                            error_details = "\n".join(stderr_lines[-10:])  # Last 10 lines
+                        elif stdout_output:
+                            # Fallback to stdout if no stderr
+                            stdout_lines = stdout_output.strip().split('\n')
+                            error_details = "\n".join(stdout_lines[-10:])
+                        
+                        if error_details:
+                            self.logger.error(
+                                f"❌ Re-authentication subprocess for {channel_name} failed (return code 1, PID: {process.pid}):\n{error_details}"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"⚠️ Re-authentication subprocess for {channel_name} failed (return code 1, PID: {process.pid}). "
+                                f"No error output available."
+                            )
                     else:
-                        self.logger.warning(
-                            f"⚠️ Re-authentication subprocess for {channel_name} completed with return code {return_code} (PID: {process.pid})"
-                        )
+                        error_details = ""
+                        if stderr_output:
+                            stderr_lines = stderr_output.strip().split('\n')
+                            error_details = "\n".join(stderr_lines[-5:])
+                        
+                        if error_details:
+                            self.logger.warning(
+                                f"⚠️ Re-authentication subprocess for {channel_name} completed with return code {return_code} (PID: {process.pid}):\n{error_details}"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"⚠️ Re-authentication subprocess for {channel_name} completed with return code {return_code} (PID: {process.pid})"
+                            )
                 completed_channels.append(channel_name)
         
         # Clean up completed processes
