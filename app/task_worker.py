@@ -63,6 +63,11 @@ class TaskWorker:
         
         # Track reauth processes for proper cleanup (using subprocess instead of threads to prevent memory corruption)
         self.reauth_threads: Dict[str, subprocess.Popen] = {}
+        
+        # Queue for reauth requests to process them sequentially (avoid port conflicts)
+        self.reauth_queue = []
+        self.reauth_queue_lock = threading.Lock()
+        self.max_concurrent_reauths = 1  # Only one reauth at a time to avoid port conflicts
     
     def set_youtube_client(self, client: YouTubeClient):
         """Set YouTube API client."""
@@ -123,6 +128,9 @@ class TaskWorker:
             try:
                 # Check status of reauth subprocesses
                 self._check_reauth_processes()
+                
+                # Process reauth queue (start next reauth if slot available)
+                self._process_reauth_queue()
                 
                 # Get pending tasks from database
                 pending_tasks = self.db.get_pending_tasks()
@@ -781,34 +789,17 @@ class TaskWorker:
             except Exception as e:
                 self.logger.error(f"Failed to send Telegram reauth notification: {e}")
             
-            # Start re-authentication in separate subprocess to prevent memory corruption
-            # Playwright uses C++ code that can cause "double free" errors when run in threads
-            # Using subprocess isolates memory and prevents crashes
-            # Note: Port 8080 conflicts are handled automatically in oauth_flow.py by waiting
-            try:
-                # Use existing reauth script in separate process
-                script_path = Path(__file__).parent.parent / "scripts" / "youtube_reauth_service.py"
-                if not script_path.exists():
-                    self.logger.error(f"Reauth script not found: {script_path}")
+            # Add to reauth queue to process sequentially (avoid port 8080 conflicts)
+            # Only one reauth can run at a time since they all need port 8080
+            with self.reauth_queue_lock:
+                if channel_name in self.reauth_queue:
+                    self.logger.info(f"Reauth request for {channel_name} already in queue, skipping duplicate")
                     return
-                
-                # Start subprocess (non-blocking)
-                # The oauth_flow will automatically wait for port 8080 to become available
-                # Capture output for error logging
-                process = subprocess.Popen(
-                    [sys.executable, str(script_path), channel_name],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1  # Line buffered
-                )
-                
-                # Track subprocess instead of thread
-                self.reauth_threads[channel_name] = process
-                self.logger.info(f"Started re-authentication subprocess for channel {channel_name} (PID: {process.pid})")
-            except Exception as e:
-                self.logger.error(f"Failed to start re-authentication subprocess for {channel_name}: {e}", exc_info=True)
-                # Don't raise - allow main loop to continue
+                self.reauth_queue.append(channel_name)
+                self.logger.info(f"Added {channel_name} to reauth queue (queue size: {len(self.reauth_queue)})")
+            
+            # Try to start reauth if we're not at max concurrent limit
+            self._process_reauth_queue()
         except Exception as e:
             # Catch-all to ensure main loop never crashes due to reauth handling
             self.logger.error(f"Unexpected error in _handle_token_revocation for {channel_name}: {e}", exc_info=True)
