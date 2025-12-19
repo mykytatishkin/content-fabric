@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -140,6 +141,55 @@ class OAuthFlow:
                 return True
             except OSError:
                 return False
+    
+    def _free_port_if_needed(self, port: int) -> bool:
+        """Attempt to free a port if it's in use by another reauth process.
+        
+        This is safe because we only kill processes that are likely our own reauth processes.
+        Returns True if port was freed or was already available, False if couldn't free it.
+        """
+        if self._is_port_available(port):
+            return True
+        
+        LOGGER.warning(f"Port {port} is in use, attempting to free it...")
+        
+        try:
+            # Try to find and kill process using the port
+            # Use lsof on macOS/Linux
+            result = subprocess.run(
+                ['lsof', '-ti', f':{port}'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().split('\n')
+                for pid in pids:
+                    try:
+                        pid_int = int(pid)
+                        LOGGER.info(f"Killing process {pid_int} using port {port}")
+                        subprocess.run(['kill', '-9', str(pid_int)], timeout=5, check=False)
+                    except (ValueError, subprocess.TimeoutExpired):
+                        continue
+                
+                # Wait a bit for port to be released
+                time.sleep(1)
+                
+                # Check if port is now available
+                if self._is_port_available(port):
+                    LOGGER.info(f"Successfully freed port {port}")
+                    return True
+                else:
+                    LOGGER.warning(f"Port {port} still in use after kill attempt")
+                    return False
+            else:
+                LOGGER.warning(f"No process found using port {port} (or lsof not available)")
+                return False
+                
+        except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+            LOGGER.debug(f"Could not free port {port}: {e}")
+            return False
 
     def _find_available_port(self, start_port: int, max_attempts: int = 10) -> Optional[int]:
         """Find an available port starting from start_port."""
@@ -180,10 +230,16 @@ class OAuthFlow:
         """Launch the HTTP server in a background thread.
         
         Note: We MUST use the configured port because it must match the redirect_uri
-        registered in Google OAuth Console. If the port is busy, we raise an error
-        with instructions on how to free it.
+        registered in Google OAuth Console. If the port is busy, we attempt to free it
+        automatically before raising an error.
         """
         port = self.config.redirect_port
+        
+        # Try to free port if it's in use (might be from another reauth process)
+        if not self._is_port_available(port):
+            LOGGER.info(f"Port {port} is in use, attempting to free it...")
+            if not self._free_port_if_needed(port):
+                LOGGER.warning(f"Could not free port {port}, will try to bind anyway")
         
         try:
             self._actual_port = port
