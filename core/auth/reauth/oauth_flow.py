@@ -142,54 +142,46 @@ class OAuthFlow:
             except OSError:
                 return False
     
-    def _free_port_if_needed(self, port: int) -> bool:
-        """Attempt to free a port if it's in use by another reauth process.
+    def _wait_for_port_available(self, port: int, max_wait_seconds: int = 60) -> bool:
+        """Wait for a port to become available.
         
-        This is safe because we only kill processes that are likely our own reauth processes.
-        Returns True if port was freed or was already available, False if couldn't free it.
+        Instead of killing the process, we wait for it to finish naturally.
+        This is safer and prevents interrupting ongoing reauth operations.
+        
+        Args:
+            port: Port number to wait for
+            max_wait_seconds: Maximum time to wait in seconds (default: 60)
+            
+        Returns:
+            True if port became available, False if timeout exceeded
         """
         if self._is_port_available(port):
             return True
         
-        LOGGER.warning(f"Port {port} is in use, attempting to free it...")
+        LOGGER.info(f"Port {port} is in use, waiting for it to become available (max {max_wait_seconds}s)...")
         
-        try:
-            # Try to find and kill process using the port
-            # Use lsof on macOS/Linux
-            result = subprocess.run(
-                ['lsof', '-ti', f':{port}'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+        start_time = time.time()
+        check_interval = 2  # Check every 2 seconds
+        
+        while (time.time() - start_time) < max_wait_seconds:
+            if self._is_port_available(port):
+                elapsed = int(time.time() - start_time)
+                LOGGER.info(f"Port {port} became available after {elapsed}s")
+                return True
             
-            if result.returncode == 0 and result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
-                for pid in pids:
-                    try:
-                        pid_int = int(pid)
-                        LOGGER.info(f"Killing process {pid_int} using port {port}")
-                        subprocess.run(['kill', '-9', str(pid_int)], timeout=5, check=False)
-                    except (ValueError, subprocess.TimeoutExpired):
-                        continue
-                
-                # Wait a bit for port to be released
-                time.sleep(1)
-                
-                # Check if port is now available
-                if self._is_port_available(port):
-                    LOGGER.info(f"Successfully freed port {port}")
-                    return True
-                else:
-                    LOGGER.warning(f"Port {port} still in use after kill attempt")
-                    return False
-            else:
-                LOGGER.warning(f"No process found using port {port} (or lsof not available)")
-                return False
-                
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
-            LOGGER.debug(f"Could not free port {port}: {e}")
-            return False
+            # Wait before next check
+            time.sleep(check_interval)
+            
+            # Log progress every 10 seconds
+            elapsed = int(time.time() - start_time)
+            if elapsed % 10 == 0:
+                remaining = max_wait_seconds - elapsed
+                LOGGER.info(f"Still waiting for port {port} to become available... ({remaining}s remaining)")
+        
+        # Timeout exceeded
+        elapsed = int(time.time() - start_time)
+        LOGGER.warning(f"Port {port} did not become available within {elapsed}s timeout")
+        return False
 
     def _find_available_port(self, start_port: int, max_attempts: int = 10) -> Optional[int]:
         """Find an available port starting from start_port."""
@@ -235,11 +227,11 @@ class OAuthFlow:
         """
         port = self.config.redirect_port
         
-        # Try to free port if it's in use (might be from another reauth process)
+        # Wait for port to become available if it's in use (might be from another reauth process)
         if not self._is_port_available(port):
-            LOGGER.info(f"Port {port} is in use, attempting to free it...")
-            if not self._free_port_if_needed(port):
-                LOGGER.warning(f"Could not free port {port}, will try to bind anyway")
+            LOGGER.info(f"Port {port} is in use, waiting for it to become available...")
+            if not self._wait_for_port_available(port, max_wait_seconds=60):
+                LOGGER.warning(f"Port {port} did not become available within timeout, will try to bind anyway")
         
         try:
             self._actual_port = port
