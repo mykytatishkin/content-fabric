@@ -189,6 +189,8 @@ class TaskWorker:
                     error_msg = f"Channel with ID {task.account_id} not found"
                     self.logger.error(error_msg)
                     self.db.mark_task_failed(task.id, error_msg)
+                    # Channel not found is final failure - count immediately
+                    self.stats['total_processed'] += 1
                     self.stats['failed'] += 1
                     return
                 
@@ -197,6 +199,8 @@ class TaskWorker:
                     error_msg = f"Channel {channel.name} is disabled"
                     self.logger.error(error_msg)
                     self.db.mark_task_failed(task.id, error_msg)
+                    # Disabled channel is final failure - count immediately
+                    self.stats['total_processed'] += 1
                     self.stats['failed'] += 1
                     return
             
@@ -206,6 +210,8 @@ class TaskWorker:
                 error_msg = f"Video file not found: {task.att_file_path}"
                 self.logger.error(error_msg)
                 self.db.mark_task_failed(task.id, error_msg)
+                # Missing file is final failure - count immediately
+                self.stats['total_processed'] += 1
                 self.stats['failed'] += 1
                 return
             
@@ -218,20 +224,43 @@ class TaskWorker:
                 error_msg = f"Unsupported media type: {task.media_type}"
                 self.logger.error(error_msg)
                 self.db.mark_task_failed(task.id, error_msg)
+                # Unsupported media type is final failure - count immediately
+                self.stats['total_processed'] += 1
                 self.stats['failed'] += 1
                 return
             
-            # Update statistics
-            self.stats['total_processed'] += 1
-            if success:
-                self.stats['successful'] += 1
+            # Update statistics only for final results (not for retries)
+            # Check task status in DB to determine if it's final or will be retried
+            updated_task = self.db.get_task(task.id)
+            if updated_task:
+                task_status = updated_task.status
+                
+                # Only count statistics for final results:
+                # - status = 1 (completed) -> successful
+                # - status = 2 (failed) -> failed (after all retries)
+                # - status = 0 (pending) -> will be retried, don't count yet
+                if task_status == 1:  # Completed
+                    self.stats['total_processed'] += 1
+                    self.stats['successful'] += 1
+                elif task_status == 2:  # Failed (final, after all retries)
+                    self.stats['total_processed'] += 1
+                    self.stats['failed'] += 1
+                # If status is 0 (pending), task will be retried - don't count statistics yet
             else:
-                self.stats['failed'] += 1
+                # Fallback: if we can't get task status, use old logic
+                # This shouldn't happen, but just in case
+                self.stats['total_processed'] += 1
+                if success:
+                    self.stats['successful'] += 1
+                else:
+                    self.stats['failed'] += 1
             
         except Exception as e:
             error_msg = f"Error processing task #{task.id}: {str(e)}"
             self.logger.error(error_msg)
             self.db.mark_task_failed(task.id, error_msg)
+            # Exception is final failure - count immediately
+            self.stats['total_processed'] += 1
             self.stats['failed'] += 1
     
     def _process_youtube_task(self, task: Task, channel) -> bool:
@@ -731,7 +760,10 @@ class TaskWorker:
     
     def _handle_token_revocation(self, channel_name: str, error_message: str):
         """
-        Handle token revocation by sending notification and starting re-authentication.
+        Handle token revocation by starting re-authentication.
+        
+        Note: Telegram notifications are disabled in main loop to reduce spam.
+        Only critical errors from reauth service will trigger notifications.
         
         Args:
             channel_name: Name of the channel that needs re-authentication
@@ -743,51 +775,55 @@ class TaskWorker:
                 self.logger.info(f"Re-authentication already in progress for channel {channel_name}, skipping duplicate request")
                 return
             
-            # Send notification about token revocation
-            try:
-                self.notification_manager.send_token_revocation_alert(
-                    platform="YouTube",
-                    account=channel_name,
-                    error_message=error_message
-                )
-                self.logger.info(f"Sent token revocation alert for account {channel_name}")
-            except Exception as e:
-                self.logger.error(f"Failed to send token revocation notification: {e}")
+            # Telegram notifications disabled in main loop to reduce spam
+            # Only log the event for debugging
+            self.logger.info(f"Token revocation detected for channel {channel_name}, starting re-authentication (notifications disabled)")
             
-            # Send Telegram message about starting re-authentication
-            try:
-                message = f"""🔐 **Автоматична переавторизація YouTube каналу**
-
-**Канал:** {channel_name}
-**Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-⚠️ Токен було відкликано або він застарів.
-🔄 Запускаю автоматичну переавторизацію...
-
-Очікуйте повідомлення про результат."""
-                
-                # Ensure we have subscribers (add TELEGRAM_CHAT_ID if no subscribers)
-                subscribers = self.telegram_broadcast.get_subscribers()
-                if not subscribers:
-                    telegram_chat_id = self.notification_manager.notification_config.telegram_chat_id
-                    if telegram_chat_id:
-                        try:
-                            chat_id_int = int(telegram_chat_id)
-                            self.telegram_broadcast.add_subscriber(chat_id_int)
-                            self.logger.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber for reauth notifications")
-                        except (ValueError, TypeError):
-                            self.logger.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
-                
-                # Try to send via broadcast (to group)
-                result = self.telegram_broadcast.broadcast_message(message)
-                if result['success'] > 0:
-                    self.logger.info(f"Sent reauth notification to Telegram group: {result['success']}/{result['total']} subscribers")
-                else:
-                    # Fallback to single chat if broadcast fails
-                    self.notification_manager._send_telegram_message(message)
-                    self.logger.info("Sent reauth notification via fallback method")
-            except Exception as e:
-                self.logger.error(f"Failed to send Telegram reauth notification: {e}")
+            # Send notification about token revocation - DISABLED
+            # try:
+            #     self.notification_manager.send_token_revocation_alert(
+            #         platform="YouTube",
+            #         account=channel_name,
+            #         error_message=error_message
+            #     )
+            #     self.logger.info(f"Sent token revocation alert for account {channel_name}")
+            # except Exception as e:
+            #     self.logger.error(f"Failed to send token revocation notification: {e}")
+            
+            # Send Telegram message about starting re-authentication - DISABLED
+            # try:
+            #     message = f"""🔐 **Автоматична переавторизація YouTube каналу**
+            #
+            # **Канал:** {channel_name}
+            # **Час:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            #
+            # ⚠️ Токен було відкликано або він застарів.
+            # 🔄 Запускаю автоматичну переавторизацію...
+            #
+            # Очікуйте повідомлення про результат."""
+            #     
+            #     # Ensure we have subscribers (add TELEGRAM_CHAT_ID if no subscribers)
+            #     subscribers = self.telegram_broadcast.get_subscribers()
+            #     if not subscribers:
+            #         telegram_chat_id = self.notification_manager.notification_config.telegram_chat_id
+            #         if telegram_chat_id:
+            #             try:
+            #                 chat_id_int = int(telegram_chat_id)
+            #                 self.telegram_broadcast.add_subscriber(chat_id_int)
+            #                 self.logger.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber for reauth notifications")
+            #             except (ValueError, TypeError):
+            #                 self.logger.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
+            #     
+            #     # Try to send via broadcast (to group)
+            #     result = self.telegram_broadcast.broadcast_message(message)
+            #     if result['success'] > 0:
+            #         self.logger.info(f"Sent reauth notification to Telegram group: {result['success']}/{result['total']} subscribers")
+            #     else:
+            #         # Fallback to single chat if broadcast fails
+            #         self.notification_manager._send_telegram_message(message)
+            #         self.logger.info("Sent reauth notification via fallback method")
+            # except Exception as e:
+            #     self.logger.error(f"Failed to send Telegram reauth notification: {e}")
             
             # Add to reauth queue to process sequentially (avoid port 8080 conflicts)
             # Only one reauth can run at a time since they all need port 8080
