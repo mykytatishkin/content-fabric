@@ -180,7 +180,8 @@ def save_reauth_tokens_to_db(db, result: ReauthResult) -> bool:
     matches_by_url = actual_url_normalized and expected_normalized == actual_url_normalized
     
     if not (matches_by_id or matches_by_url):
-        # Token doesn't match expected channel - find the correct channel
+        # Token doesn't match expected channel - this means wrong channel was selected during OAuth
+        # Find which channel the token actually belongs to for diagnostic purposes
         correct_channel = None
         
         # First try by channel_id
@@ -199,30 +200,37 @@ def save_reauth_tokens_to_db(db, result: ReauthResult) -> bool:
         
         if correct_channel:
             LOGGER.error(
-                "⚠️  CRITICAL: Token belongs to channel '%s' (ID: %s%s), but reauth was requested for '%s' (ID: %s). "
-                "This happens when multiple channels share the same Google account and wrong channel was selected during OAuth. "
-                "Tokens will be saved to the CORRECT channel '%s' instead.",
+                "❌ CRITICAL ERROR: Token belongs to channel '%s' (ID: %s%s), but reauth was requested for '%s' (ID: %s). "
+                "This means the WRONG channel was selected during OAuth flow.\n"
+                "💡 SOLUTION:\n"
+                "   1. Check that channel_id for '%s' is correct in database: %s\n"
+                "   2. If channels share the same Google account, the YouTube channel chooser must select the correct channel\n"
+                "   3. Re-run reauth and ensure the correct channel is selected during OAuth\n"
+                "⚠️  Tokens will NOT be saved to prevent saving to wrong channel.",
                 correct_channel.name,
                 actual_channel_id,
                 f", custom URL: {actual_custom_url}" if actual_custom_url else "",
                 result.channel_name,
                 expected_channel_id,
-                correct_channel.name
+                result.channel_name,
+                expected_channel_id
             )
-            
-            # Save to the correct channel instead
-            result.channel_name = correct_channel.name
         else:
             LOGGER.error(
-                "⚠️  CRITICAL: Token belongs to channel ID '%s'%s, but no channel with this identifier found in database. "
+                "❌ CRITICAL ERROR: Token belongs to channel ID '%s'%s, but no channel with this identifier found in database. "
                 "Expected channel '%s' has ID '%s'. "
-                "Tokens will NOT be saved to prevent data corruption.",
+                "This means either:\n"
+                "   1. Wrong channel was selected during OAuth, OR\n"
+                "   2. Channel ID in database is incorrect\n"
+                "⚠️  Tokens will NOT be saved to prevent data corruption.",
                 actual_channel_id,
                 f" (custom URL: {actual_custom_url})" if actual_custom_url else "",
                 result.channel_name,
                 expected_channel_id
             )
-            return False
+        
+        # DO NOT save tokens - fail the operation
+        return False
     else:
         match_type = "ID" if matches_by_id else "custom URL"
         LOGGER.info(

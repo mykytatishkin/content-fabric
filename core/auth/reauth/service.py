@@ -118,6 +118,10 @@ class YouTubeReauthService:
     async def _run_channel(self, credential: AutomationCredential) -> ReauthResult:
         """Execute the automation flow for a single channel."""
         LOGGER.info("Starting OAuth reauth for channel %s", credential.channel_name)
+        if credential.channel_id:
+            LOGGER.info("📋 Channel ID for matching: %s (will be used to select correct channel during OAuth)", credential.channel_id)
+        else:
+            LOGGER.warning("⚠️  No channel_id provided for %s - channel selection during OAuth may fail", credential.channel_name)
         audit_id = self.db.create_reauth_audit(
             credential.channel_name,
             status=ReauthStatus.SKIPPED.value,
