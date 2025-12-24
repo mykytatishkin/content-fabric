@@ -1,159 +1,131 @@
-# Social Media Auto-Poster
+# Content Fabric
 
-A comprehensive Python tool for automatically posting content to Instagram, TikTok, and YouTube Shorts with support for scheduling, content optimization, and multi-account management.
+> Комплексная платформа автоматизации публикации контента в социальных сетях с продвинутой обработкой голоса
 
-## 🆕 Enhanced Multi-Account Features
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)]()
 
-- ✅ **Unlimited Accounts** - Support for unlimited accounts per platform
-- ✅ **Automated OAuth** - Automatic token generation and refresh
-- ✅ **Smart Validation** - Real-time account and token validation
-- ✅ **CLI Management** - Powerful command-line tools for account management
-- ✅ **Secure Storage** - Protected token storage with automatic encryption
-- ✅ **YouTube Shorts Support** - Full automation for YouTube Shorts posting
-- ✅ **Channel Management** - Easy addition and management of YouTube channels
-- ✅ **Database Integration** - MySQL database for managing multiple YouTube channels
-- ✅ **Single OAuth Setup** - One credentials.json file for all channels
-- ✅ **Token Management** - Automatic token refresh and expiration handling
+**Content Fabric** — это мощная Python-платформа для автоматической публикации контента в Instagram, TikTok и YouTube Shorts с поддержкой изменения голоса, управления задачами через MySQL и работы с множественными аккаунтами.
 
-## 🎯 Task Management System (NEW!)
+---
 
-**Автоматична система обробки задач з бази даних MySQL**
+## 📋 Содержание
 
-- 📋 **Database-Driven Tasks** - Задачі зберігаються в MySQL і автоматично виконуються
-- ⏰ **Scheduled Posting** - Публікація за розкладом (дата і час)
-- 🔄 **Auto-Retry** - Автоматичні повтори при помилках
-- 🛠️ **CLI Management** - Повний CLI для управління задачами
-- 📊 **Status Tracking** - Відстеження статусу кожної задачі
-- 🎬 **Video Publishing** - Публікація відео з назвою, описом, хештегами
-- 💬 **Post Comments** - Автоматичне додавання коментарів після публікації
-- 📈 **Statistics** - Детальна статистика виконання
+- [Основные возможности](#-основные-возможности)
+- [Быстрый старт](#-быстрый-старт)
+- [Установка](#-установка)
+- [Конфигурация](#-конфигурация)
+- [Использование](#-использование)
+- [Документация](#-документация)
+- [Архитектура](#-архитектура)
+- [Безопасность](#-безопасность)
+- [Поддержка](#-поддержка)
 
-### Quick Start
+---
+
+## 🎯 Основные возможности
+
+### 🎬 Автоматическая публикация
+- ✅ **Мультиплатформенность**: Instagram Reels, TikTok, YouTube Shorts
+- ✅ **Множественные аккаунты**: Неограниченное количество аккаунтов на каждой платформе
+- ✅ **Планирование**: Гибкая система расписания с поддержкой случайных интервалов
+- ✅ **Автоматические повторы**: Встроенная логика повторных попыток при ошибках
+- ✅ **Обработка контента**: Автоматическая оптимизация видео под требования платформ
+
+### 🎙️ Voice Processing System
+- ✅ **Изменение голоса**: Silero TTS, RVC, SoVITS
+- ✅ **Text-to-Speech**: Синтез речи из текста на русском языке
+- ✅ **Сохранение фона**: Автоматическое сохранение фоновой музыки
+- ✅ **Параллельная обработка**: Ускорение в 2-4 раза для длинных аудио
+- ✅ **Правильное ударение**: Нормативное и орфоэпическое ударение в русском языке
+
+### 📋 Task Management System
+- ✅ **База данных**: MySQL для управления задачами
+- ✅ **Автоматическое выполнение**: Task Worker обрабатывает задачи по расписанию
+- ✅ **CLI управление**: Полнофункциональный интерфейс командной строки
+- ✅ **Отслеживание статуса**: Детальная статистика выполнения задач
+- ✅ **Автоматическая очистка**: Удаление файлов после успешной публикации
+
+### 📊 Мониторинг и отчеты
+- ✅ **Telegram отчеты**: Ежедневные автоматические отчеты о выполнении задач
+- ✅ **Уведомления**: Telegram и Email уведомления о результатах
+- ✅ **Статистика**: Детальная статистика по каналам и задачам
+- ✅ **Логирование**: Подробное логирование всех операций
+
+### 🔐 Безопасность и управление
+- ✅ **OAuth 2.0**: Автоматическая авторизация и обновление токенов
+- ✅ **Защищенное хранение**: Шифрование токенов и учетных данных
+- ✅ **Автоматическая переавторизация**: RPA-авторизация при истечении токенов
+- ✅ **Валидация**: Проверка аккаунтов и токенов в реальном времени
+
+---
+
+## 🚀 Быстрый старт
+
+### 1. Клонирование репозитория
 
 ```bash
-# Створити задачу
-python3 run_task_manager.py create \
-    --account "Channel Name" \
+git clone <repository-url>
+cd content-fabric
+```
+
+### 2. Установка зависимостей
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Базовая настройка
+
+```bash
+# Скопируйте шаблон конфигурации
+cp config/env_template.txt .env
+
+# Отредактируйте .env файл
+nano .env
+```
+
+### 4. Настройка базы данных
+
+```bash
+# Установка MySQL (через Docker)
+cd docker
+docker-compose up -d
+
+# Или следуйте инструкциям в docs/setup/MYSQL_SETUP_GUIDE.md
+```
+
+### 5. Первый запуск
+
+   ```bash
+# Проверка статуса системы
+python app/main.py status
+
+# Создание первой задачи
+python run_task_manager.py create \
+    --account "MyChannel" \
     --video "/path/to/video.mp4" \
-    --title "Video Title" \
+    --title "My First Video" \
     --description "Description" \
-    --keywords "tag1,tag2,tag3" \
     --schedule "2024-12-25 18:00:00"
-
-# Переглянути задачі
-python3 run_task_manager.py list --status pending
-
-# Статистика
-python3 run_task_manager.py stats
 ```
 
-📖 **Документація**: [Task Management Guide](docs/guides/TASK_MANAGEMENT.md)  
-⚡ **Quick Start**: [Task Quick Start](docs/guides/TASK_QUICK_START.md)
+📖 **Подробнее**: [docs/setup/QUICK_START.md](docs/setup/QUICK_START.md)
 
-## 📊 Daily Telegram Reports (NEW!)
+---
 
-**Автоматичні щоденні звіти про виконання завдань через Telegram**
+## 📦 Установка
 
-- 📱 **Telegram Integration** - Оповіщення через Telegram Bot
-- ⏰ **Daily Schedule** - Автоматичні звіти о 12:00 щодня
-- 📊 **Platform Grouping** - Окремі повідомлення для YouTube, Instagram, VK
-- 🔗 **Clickable Links** - Посилання на канали в звітах
-- 📈 **Statistics** - Success rate, помилки, виконання
-- 🎯 **Account Details** - Детальна інформація по кожному аккаунту
+### Требования
 
-### Приклад звіту:
+- **Python**: 3.10 или выше
+- **MySQL**: 5.7+ или 8.0+ (для Task Management)
+- **FFmpeg**: Для обработки видео и аудио
+- **Google Cloud Console**: Для YouTube API
 
-```
-📊 **Daily Report - YOUTUBE**
-📅 Date: 2024-01-15
-━━━━━━━━━━━━━━━━━━━━
+### Установка FFmpeg
 
-#5 @audiokniga-one - (0) 5/5
-#12 @another-channel - (1) 4/5
-
-━━━━━━━━━━━━━━━━━━━━
-**Summary:**
-✅ Completed: 9/10
-❌ Failed: 1
-📈 Success Rate: 90.0%
-```
-
-### Quick Start
-
-```bash
-# Тестовий звіт
-python3 run_daily_report.py test
-
-# Автоматичний планувальник (12:00 щодня)
-python3 scripts/daily_report_scheduler.py
-
-# Cron Job
-0 12 * * * cd /path/to/content-fabric && python3 run_daily_report.py
-```
-
-📖 **Документація**: [Daily Report Guide](docs/reports/COMPLETE_GUIDE.md)  
-🚀 **Quick Start**: [TELEGRAM_DAILY_REPORT.md](TELEGRAM_DAILY_REPORT.md)
-
-## 🎙️ Voice Changer (NEW!)
-
-**Механізм зміни голосу у відео та аудіо файлах**
-
-- 🎯 **Повна зміна голосу** - Чоловічий ↔ Жіночий, Дорослий → Дитячий
-- 🎬 **Відео та аудіо** - Підтримка MP4, AVI, MOV, WAV, MP3 та інших
-- 🔊 **Висока якість** - Використання Praat для професійної обробки
-- 📦 **Пакетна обробка** - Обробка множини файлів одночасно
-- ⚙️ **Гнучкі налаштування** - Власні параметри pitch і formant
-- 🔌 **Інтеграція** - Працює standalone або через task system
-
-### Quick Start
-
-```bash
-# Конвертувати чоловічий голос на жіночий
-python3 run_voice_changer.py input.mp4 output.mp4 --type male_to_female
-
-# Пакетна обробка
-python3 run_voice_changer.py --batch videos/ output/ --type female_to_male
-
-# Список пресетів
-python3 run_voice_changer.py --list-presets
-```
-
-### Доступні пресети
-- `male_to_female` - Чоловічий → Жіночий
-- `female_to_male` - Жіночий → Чоловічий
-- `male_to_child` - Чоловічий → Дитячий
-- `female_to_child` - Жіночий → Дитячий
-
-📖 **Документація**: [Voice Changer Guide](docs/VOICE_CHANGER.md)  
-🧪 **Тестування**: `python3 tests/test_voice_changer.py`  
-💡 **Приклади**: `python3 examples/voice_changer_example.py`
-
-## Features
-
-- **Multi-Platform Support**: Post to Instagram Reels, TikTok, and YouTube Shorts
-- **Content Optimization**: Automatic video processing for each platform's requirements
-- **Smart Scheduling**: Support for specific times and random posting schedules
-- **Multi-Account Management**: Manage 10+ accounts per platform
-- **Comprehensive Logging**: Detailed logging with colored console output
-- **Notification System**: Telegram and email notifications for success/failure
-- **CLI Interface**: Easy-to-use command-line interface
-- **Retry Logic**: Automatic retry for failed posts
-- **Rate Limiting**: Built-in rate limit handling
-
-## Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd content-fabric
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Install FFmpeg** (required for Voice Changer):
    ```bash
    # macOS
    brew install ffmpeg
@@ -162,426 +134,407 @@ python3 run_voice_changer.py --list-presets
    sudo apt-get install ffmpeg
    
    # Windows
-   # Download from https://ffmpeg.org/download.html
+# Скачайте с https://ffmpeg.org/download.html
    ```
 
-4. **Setup configuration**:
+### Установка зависимостей Python
+
    ```bash
-   python main.py setup
-   ```
+pip install -r requirements.txt
+```
 
-5. **Configure your accounts**:
-   - Copy `config.env.example` to `.env` and fill in your API credentials
-   - Edit `config.yaml` to configure your accounts and posting schedule
-
-## Configuration
-
-### API Credentials Setup
-
-#### Instagram
-1. Create a Facebook Developer account
-2. Create a new app and get your App ID and App Secret
-3. Set up Instagram Basic Display API
-4. Generate access tokens for your accounts
-
-#### TikTok
-1. Apply for TikTok for Developers access
-2. Create an app and get your Client Key and Client Secret
-3. Generate access tokens for your accounts
+### Настройка платформ
 
 #### YouTube
-1. Create a Google Cloud Console project
-2. Enable YouTube Data API v3
-3. Set up OAuth consent screen with required scopes:
-   - `https://www.googleapis.com/auth/youtube.upload`
-   - `https://www.googleapis.com/auth/youtube`
-4. Create OAuth 2.0 Desktop application credentials
-5. Download the credentials JSON file as `credentials.json`
-6. Add your Google account to Test Users
+1. Создайте проект в [Google Cloud Console](https://console.cloud.google.com/)
+2. Включите YouTube Data API v3
+3. Создайте OAuth 2.0 Desktop Application credentials
+4. Скачайте `credentials.json` в корень проекта
+5. Добавьте тестовых пользователей в OAuth consent screen
 
-### Configuration Files
+📖 **Подробнее**: [docs/setup/GOOGLE_CLOUD_CONSOLE_SETUP.md](docs/setup/GOOGLE_CLOUD_CONSOLE_SETUP.md)
 
-#### config.yaml
-Main configuration file with:
-- Platform settings and requirements
-- Account information
-- Posting schedules (specific times and random ranges)
-- Content processing settings
-- Notification preferences
+#### Instagram
+1. Создайте Facebook Developer аккаунт
+2. Создайте приложение и получите App ID и App Secret
+3. Настройте Instagram Basic Display API
+4. Сгенерируйте access tokens для ваших аккаунтов
 
-#### .env
-Environment variables for API credentials:
-- Instagram API keys
-- TikTok API keys
-- YouTube API keys
-- Notification settings (Telegram, Email)
+#### TikTok
+1. Подайте заявку на [TikTok for Developers](https://developers.tiktok.com/)
+2. Создайте приложение и получите Client Key и Client Secret
+3. Сгенерируйте access tokens
 
-## Usage
+📖 **Подробнее**: [docs/setup/PLATFORM_SETUP_GUIDE.md](docs/setup/PLATFORM_SETUP_GUIDE.md)
 
-### Basic Commands
+---
 
-#### Post Immediately
+## ⚙️ Конфигурация
+
+### Файлы конфигурации
+
+#### `.env` - Переменные окружения
 ```bash
-python main.py post --content video.mp4 --caption "Check this out!" --platforms "instagram,tiktok,youtube"
+# YouTube
+YOUTUBE_MAIN_CLIENT_ID=your_client_id
+YOUTUBE_MAIN_CLIENT_SECRET=your_client_secret
+
+# Instagram
+INSTAGRAM_APP_ID=your_app_id
+INSTAGRAM_APP_SECRET=your_app_secret
+
+# TikTok
+TIKTOK_CLIENT_KEY=your_client_key
+TIKTOK_CLIENT_SECRET=your_client_secret
+
+# Telegram (для уведомлений)
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+
+# MySQL
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=content_fabric_user
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=content_fabric
 ```
 
-#### Schedule Posts
-```bash
-# Schedule with random timing
-python main.py schedule --content video.mp4 --caption "Coming soon!" --platforms "instagram,tiktok"
-
-# Schedule for specific time
-python main.py schedule --content video.mp4 --caption "Live now!" --platforms "instagram,tiktok,youtube" --time "2024-01-15T18:00:00"
-```
-
-#### Start Scheduler Daemon
-```bash
-python main.py start-scheduler
-```
-
-#### List Scheduled Posts
-```bash
-python main.py list-scheduled
-```
-
-#### Cancel a Post
-```bash
-python main.py cancel --post-id "instagram_account1_1705123456"
-```
-
-### Management Commands
-
-#### Validate Accounts
-```bash
-python main.py validate-accounts
-```
-
-#### Test Notifications
-```bash
-python main.py test-notifications
-```
-
-#### Check System Status
-```bash
-python main.py status
-```
-
-#### View Statistics
-```bash
-python main.py stats
-```
-
-## 🆕 Multi-Account Management
-
-### Account Manager CLI
-
-The new `account_manager.py` provides powerful tools for managing multiple accounts:
-
-#### Check Account Status
-```bash
-# Check all accounts
-python account_manager.py status
-
-# Check specific platform
-python account_manager.py status --platform instagram
-
-# JSON output
-python account_manager.py status --json
-```
-
-#### Authorize Accounts
-```bash
-# Authorize all accounts automatically
-python account_manager.py authorize --all
-
-# Authorize specific platform
-python account_manager.py authorize --platform instagram --all
-
-# Authorize specific account
-python account_manager.py authorize --platform instagram --account main_account
-
-# Manual authorization (no auto-browser)
-python account_manager.py authorize --platform instagram --account main_account --no-browser
-```
-
-#### Token Management
-```bash
-# Refresh all tokens
-python account_manager.py refresh
-
-# Refresh specific platform
-python account_manager.py refresh --platform youtube
-
-# Get authorization URL for manual setup
-python account_manager.py auth-url instagram main_account
-
-# Add token manually
-python account_manager.py add-token instagram main_account "your_access_token" --refresh-token "refresh_token" --expires-in 3600
-
-# Remove token
-python account_manager.py remove-token instagram main_account
-
-# Get token info
-python account_manager.py token-info instagram main_account
-```
-
-#### Account Validation
-```bash
-# Validate all accounts
-python account_manager.py validate
-
-# Validate specific platform
-python account_manager.py validate --platform tiktok --json
-```
-
-### Interactive Management
-```bash
-# Launch interactive multi-account manager
-python example_multiple_accounts.py
-```
-
-This provides a user-friendly interface for:
-- 📊 Account status monitoring
-- 🔐 Account authorization
-- 📤 Content publishing
-- ⏰ Post scheduling
-- 🛠️ Token management
-
-## 🆕 YouTube Database Integration
-
-### 🗄️ Database-Powered Channel Management
-The new YouTube Database Integration provides a powerful, scalable solution for managing multiple YouTube channels:
-
-```bash
-# Migrate existing channels to database
-python migrate_to_db.py
-
-# Manage channels through database
-python youtube_db_manager.py list
-python youtube_db_manager.py add "ChannelName" --channel-id "UC123456789" --client-id "ID" --client-secret "SECRET"
-
-# Check token status
-python youtube_db_manager.py check-tokens
-
-# Publish to multiple channels simultaneously
-python main.py post --platforms youtube --accounts "Teasera,Andrew Garle"
-```
-
-### 🎯 Key Benefits
-- ✅ **Single OAuth Setup** - One `credentials.json` file for all channels
-- ✅ **Database Storage** - Tokens stored securely in MySQL database
-- ✅ **Automatic Token Refresh** - No manual token management needed
-- ✅ **Scalable Architecture** - Easy to add unlimited channels
-- ✅ **CLI Management** - Powerful command-line tools
-- ✅ **Migration Support** - Easy migration from config.yaml
-
-### 📋 Quick Setup
-1. **Create OAuth Client** in Google Cloud Console (Desktop application)
-2. **Download credentials.json** to project root
-3. **Migrate channels**: `python migrate_to_db.py`
-4. **Update .env** with client credentials
-5. **Test**: `python youtube_db_manager.py list`
-
-### YouTube Shorts Features
-- ✅ **Automatic Shorts Detection** - Detects 9:16 aspect ratio videos
-- ✅ **Optimized Metadata** - Auto-adds #Shorts hashtag and category
-- ✅ **Resumable Upload** - Handles large video files with retry logic
-- ✅ **Quota Management** - Tracks YouTube API quota usage
-- ✅ **Multiple Channels** - Support for unlimited YouTube channels
-- ✅ **Database Integration** - Centralized channel and token management
-
-## Content Requirements
-
-### Video Specifications
-- **Format**: MP4, MOV
-- **Aspect Ratio**: 9:16 (vertical)
-- **Duration**: 
-  - Instagram Reels: 15-90 seconds
-  - TikTok: 15-180 seconds
-  - YouTube Shorts: 15-60 seconds
-- **Resolution**: 1080x1920 (recommended)
-
-### Content Processing
-The system automatically:
-- Optimizes video duration for each platform
-- Adjusts aspect ratio to 9:16
-- Resizes to recommended resolution
-- Adds captions (optional)
-- Adds watermarks (optional)
-
-## Scheduling
-
-### Specific Times
-Configure specific posting times in `config.yaml`:
+#### `config/config.yaml` - Основная конфигурация
 ```yaml
+platforms:
+  youtube:
+    enabled: true
+    requirements:
+      max_duration: 60
+      aspect_ratio: "9:16"
+  instagram:
+    enabled: true
+  tiktok:
+    enabled: true
+
 schedule:
   specific_times:
     - "09:00"
     - "12:00"
-    - "15:00"
     - "18:00"
-    - "21:00"
-```
-
-### Random Time Ranges
-Configure random posting windows:
-```yaml
-schedule:
   random_ranges:
     - start: "08:00"
       end: "10:00"
-    - start: "14:00"
-      end: "16:00"
-    - start: "19:00"
-      end: "21:00"
 ```
 
-### Posting Days
-Specify which days to post:
-```yaml
-schedule:
-  posting_days: [0, 1, 2, 3, 4, 5, 6]  # 0=Monday, 6=Sunday
+### Настройка базы данных
+
+```bash
+# Создание схемы
+mysql -u content_fabric_user -p content_fabric < config/mysql_schema.sql
+
+# Или через скрипт
+python run_setup_database.py
 ```
 
-## Notifications
+📖 **Подробнее**: [docs/setup/MYSQL_SETUP_GUIDE.md](docs/setup/MYSQL_SETUP_GUIDE.md)
 
-### Telegram
-1. Create a bot with @BotFather
-2. Get your bot token
-3. Get your chat ID
-4. Configure in `.env`:
-   ```
-   TELEGRAM_BOT_TOKEN=your_bot_token
-   TELEGRAM_CHAT_ID=your_chat_id
-   ```
+---
 
-### Email
-Configure SMTP settings in `.env`:
-```
-EMAIL_SMTP_SERVER=smtp.gmail.com
-EMAIL_SMTP_PORT=587
-EMAIL_USERNAME=your_email@gmail.com
-EMAIL_PASSWORD=your_app_password
-```
+## 💻 Использование
 
-## File Structure
+### Основные команды
 
-```
-content-fabric/
-├── src/
-│   ├── __init__.py
-│   ├── auto_poster.py          # Main coordinator
-│   ├── logger.py               # Logging system
-│   ├── content_processor.py    # Content optimization
-│   ├── scheduler.py            # Posting scheduler
-│   ├── notifications.py        # Notification system
-│   └── api_clients/
-│       ├── __init__.py
-│       ├── base_client.py      # Base API client
-│       ├── instagram_client.py # Instagram API
-│       ├── tiktok_client.py    # TikTok API
-│       └── youtube_client.py   # YouTube API
-├── content/
-│   ├── videos/                 # Input videos
-│   ├── descriptions/           # Caption files
-│   ├── thumbnails/            # Thumbnail images
-│   └── processed/             # Processed videos
-├── logs/                      # Log files
-├── config.yaml               # Main configuration
-├── config.env.example        # Environment variables template
-├── credentials.json          # YouTube OAuth credentials
-├── youtube_token.json        # YouTube access tokens
-├── requirements.txt          # Python dependencies
-├── main.py                   # CLI interface
-├── account_manager.py        # Multi-account management
-├── add_youtube_channel.py    # YouTube channel management
-└── README.md                 # This file
+#### Публикация контента
+
+```bash
+# Немедленная публикация
+python app/main.py post \
+    --content video.mp4 \
+    --caption "Check this out!" \
+    --platforms "instagram,tiktok,youtube"
+
+# Планирование публикации
+python app/main.py schedule \
+    --content video.mp4 \
+    --caption "Coming soon!" \
+    --platforms "youtube" \
+    --time "2024-01-15T18:00:00"
 ```
 
-## API Rate Limits
+#### Управление задачами
 
-### Instagram
-- ~200 API calls per hour
-- Built-in rate limit handling
+```bash
+# Создание задачи
+python run_task_manager.py create \
+    --account "MyChannel" \
+    --video "/path/to/video.mp4" \
+    --title "Video Title" \
+    --description "Description" \
+    --keywords "tag1,tag2,tag3" \
+    --schedule "2024-12-25 18:00:00"
 
-### TikTok
-- Varies by endpoint
-- Automatic retry with exponential backoff
+# Список задач
+python run_task_manager.py list --status pending
 
-### YouTube
-- 10,000 quota units per day (free tier)
-- Video upload costs 1,600 units (~6 uploads per day)
-- Automatic quota tracking and management
-- Built-in retry logic for quota exceeded errors
+# Детали задачи
+python run_task_manager.py show 123
 
-## Error Handling
+# Статистика
+python run_task_manager.py stats
+```
 
-The system includes comprehensive error handling:
-- Automatic retry for failed posts
-- Rate limit detection and handling
-- Detailed error logging
-- Notification alerts for failures
+#### Управление YouTube каналами
 
-## Security Considerations
+```bash
+# Список каналов
+python run_youtube_manager.py list
 
-- Store API credentials in environment variables
-- Use app-specific passwords for email
-- Regularly rotate access tokens
-- Monitor API usage and quotas
+# Добавление канала
+python run_youtube_manager.py add "ChannelName" --channel-id "UC..."
 
-## Troubleshooting
+# Проверка токенов
+python run_youtube_manager.py check-tokens
 
-### Common Issues
+# Переавторизация
+python reauth_multiple_channels.py --expired
+```
 
-1. **API Authentication Errors**
-   - Verify API credentials in `.env`
-   - Check token expiration
-   - Ensure proper API permissions
+#### Voice Changer
 
-2. **Content Processing Failures**
-   - Verify video file format and size
-   - Check available disk space
-   - Ensure proper file permissions
+```bash
+# Изменение голоса
+python run_voice_changer.py \
+    --method silero \
+    --voice-model kseniya \
+    --no-preserve-quality \
+    input.mp4 output.mp4
 
-3. **Scheduling Issues**
-   - Verify timezone configuration
-   - Check posting day settings
-   - Ensure scheduler is running
+# Text-to-Speech
+python run_voice_changer.py output.wav \
+    --text "Привет! Это тест синтеза речи." \
+    --voice-model kseniya
 
-4. **Notification Problems**
-   - Test notification channels
-   - Verify credentials
-   - Check network connectivity
+# С сохранением фона
+python run_voice_changer.py \
+    --method silero \
+    --voice-model kseniya \
+    --preserve-background \
+    music_video.mp4 output.mp4
+```
 
-### Logs
-Check log files in the `logs/` directory for detailed error information.
+#### Ежедневные отчеты
 
-## Contributing
+```bash
+# Тестовый отчет
+python run_daily_report.py test
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+# Отправка отчета
+python run_daily_report.py
 
-## License
+# Автоматический планировщик (12:00 ежедневно)
+python scripts/daily_report_scheduler.py
+```
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+### Запуск Task Worker
 
-## Support
+```bash
+# Запуск воркера для автоматической обработки задач
+python run_task_worker.py
 
-For support and questions:
-- Check the troubleshooting section
-- Review log files for error details
-- Create an issue on GitHub
+# Или через main.py
+python app/main.py start-scheduler
+```
 
-## Disclaimer
+📖 **Полная документация по командам**: [CLI_USAGE.md](CLI_USAGE.md)
 
-This tool is for educational and legitimate business purposes only. Users are responsible for:
-- Complying with platform terms of service
-- Respecting API rate limits
-- Following content guidelines
-- Managing account security
+---
 
-Always review and comply with each platform's terms of service and API usage policies.
+## 📚 Документация
 
+### Основные разделы
+
+- **[DOCS_INDEX.md](DOCS_INDEX.md)** - Полный индекс документации
+- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Структура проекта
+
+### Быстрые ссылки
+
+| Раздел | Описание | Документация |
+|--------|----------|--------------|
+| 🚀 **Установка** | Быстрый старт и настройка | [docs/setup/QUICK_START.md](docs/setup/QUICK_START.md) |
+| 📋 **Task Management** | Управление задачами | [docs/guides/TASK_MANAGEMENT.md](docs/guides/TASK_MANAGEMENT.md) |
+| 🎙️ **Voice Changer** | Изменение голоса | [docs/voice/VOICE_CHANGER.md](docs/voice/VOICE_CHANGER.md) |
+| 📺 **YouTube** | YouTube интеграция | [docs/youtube/README.md](docs/youtube/README.md) |
+| 📊 **Отчеты** | Telegram отчеты | [docs/reports/COMPLETE_GUIDE.md](docs/reports/COMPLETE_GUIDE.md) |
+| 🔐 **Безопасность** | OAuth и токены | [docs/reauth/REAUTH_README.md](docs/reauth/REAUTH_README.md) |
+| 🔧 **Техническое** | Архитектура и API | [docs/technical/TECHNICAL_DOCS.md](docs/technical/TECHNICAL_DOCS.md) |
+
+### Детальные гайды
+
+#### Установка и настройка
+- [Быстрый старт](docs/setup/QUICK_START.md)
+- [Настройка платформ](docs/setup/PLATFORM_SETUP_GUIDE.md)
+- [Google Cloud Console](docs/setup/GOOGLE_CLOUD_CONSOLE_SETUP.md)
+- [MySQL Setup](docs/setup/MYSQL_SETUP_GUIDE.md)
+- [Docker MySQL](docs/DOCKER_MYSQL_SETUP.md)
+
+#### Функциональность
+- [Task Management](docs/guides/TASK_MANAGEMENT.md) - Полное руководство
+- [Voice Changer](docs/voice/VOICE_CHANGER.md) - Изменение голоса
+- [Text-to-Speech](docs/voice/TEXT_TO_SPEECH.md) - Синтез речи
+- [YouTube Setup](docs/youtube/01-SETUP.md) - Настройка YouTube
+- [YouTube CLI](docs/youtube/02-CLI-GUIDE.md) - Команды YouTube
+- [Daily Reports](docs/reports/COMPLETE_GUIDE.md) - Telegram отчеты
+
+#### Безопасность
+- [OAuth Reauth](docs/reauth/REAUTH_README.md) - Переавторизация
+- [Token Management](docs/youtube/05-TOKEN-REAUTH-GUIDE.md) - Управление токенами
+- [Security Policy](SECURITY.md) - Политика безопасности
+
+#### Техническая документация
+- [Архитектура](docs/youtube/03-ARCHITECTURE.md) - Архитектура системы
+- [Technical Docs](docs/technical/TECHNICAL_DOCS.md) - Техническая документация
+- [Troubleshooting](docs/youtube/04-TROUBLESHOOTING.md) - Решение проблем
+
+---
+
+## 🏗️ Архитектура
+
+### Трехслойная архитектура
+
+```
+┌─────────────────────────────────────────┐
+│      Application Layer (app/)           │
+│  ├─ main.py          (CLI entry)        │
+│  ├─ auto_poster.py   (coordinator)       │
+│  ├─ scheduler.py     (scheduling)         │
+│  └─ task_worker.py   (background tasks)   │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│         Core Layer (core/)               │
+│  ├─ api_clients/   (platform APIs)      │
+│  ├─ auth/          (OAuth & tokens)     │
+│  ├─ database/      (data persistence)   │
+│  ├─ voice/         (voice processing)   │
+│  └─ utils/         (utilities)          │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│    Infrastructure Layer (scripts/)      │
+│  ├─ task_manager.py    (CLI tasks)       │
+│  ├─ youtube_manager.py (CLI YouTube)     │
+│  └─ daily_report_scheduler.py            │
+└─────────────────────────────────────────┘
+```
+
+### Ключевые компоненты
+
+| Компонент | Путь | Назначение |
+|-----------|------|------------|
+| **VoiceChanger** | `core/voice/voice_changer.py` | Изменение голоса |
+| **ParallelVoiceProcessor** | `core/voice/parallel.py` | Параллельная обработка |
+| **TaskWorker** | `app/task_worker.py` | Обработка задач из БД |
+| **YouTubeClient** | `core/api_clients/youtube_client.py` | YouTube API |
+| **OAuthManager** | `core/auth/oauth_manager.py` | OAuth flow |
+| **MySQLDatabase** | `core/database/mysql_db.py` | Управление задачами |
+
+📖 **Подробнее**: [docs/youtube/03-ARCHITECTURE.md](docs/youtube/03-ARCHITECTURE.md)
+
+---
+
+## 🔒 Безопасность
+
+### Рекомендации
+
+1. **Хранение секретов**: Используйте `.env` файл (не коммитьте в Git)
+2. **Токены**: Регулярно обновляйте access tokens
+3. **Права доступа**: Ограничьте доступ к базе данных
+4. **Логирование**: Не логируйте чувствительные данные
+5. **Обновления**: Регулярно обновляйте зависимости
+
+### Политика безопасности
+
+📖 **Подробнее**: [SECURITY.md](SECURITY.md)
+
+---
+
+## 📊 API Rate Limits
+
+| Платформа | Лимит | Обработка |
+|-----------|-------|-----------|
+| **YouTube** | 10,000 quota/day | Автоматическое отслеживание |
+| **Instagram** | ~200 calls/hour | Встроенная обработка |
+| **TikTok** | Зависит от endpoint | Автоматический retry |
+
+---
+
+## 🐛 Troubleshooting
+
+### Частые проблемы
+
+1. **Ошибки авторизации**
+   - Проверьте токены: `python run_youtube_manager.py check-tokens`
+   - Переавторизуйтесь: `python reauth_multiple_channels.py --expired`
+
+2. **Задачи не выполняются**
+   - Проверьте Task Worker: `python run_task_worker.py`
+   - Проверьте статус задач: `python run_task_manager.py list --status pending`
+
+3. **Ошибки обработки голоса**
+   - Убедитесь, что FFmpeg установлен: `ffmpeg -version`
+   - Проверьте пути к файлам (должны быть абсолютными)
+
+4. **Проблемы с базой данных**
+   - Проверьте подключение: `python run_setup_database.py`
+   - Проверьте логи: `tail -f data/logs/auto_posting.log`
+
+📖 **Подробнее**: [docs/youtube/04-TROUBLESHOOTING.md](docs/youtube/04-TROUBLESHOOTING.md)
+
+---
+
+## 🤝 Поддержка
+
+### Получение помощи
+
+1. **Документация**: Проверьте [DOCS_INDEX.md](DOCS_INDEX.md)
+2. **Логи**: Изучите файлы в `data/logs/`
+3. **Issues**: Создайте issue на GitHub
+4. **Telegram**: Свяжитесь с автором [@mykytatishkin](https://t.me/mykytatishkin)
+
+### Сообщение об уязвимостях
+
+Если вы обнаружили уязвимость, пожалуйста, сообщите об этом через:
+- **Telegram**: [@mykytatishkin](https://t.me/mykytatishkin)
+- **Email**: (см. SECURITY.md)
+
+📖 **Подробнее**: [SECURITY.md](SECURITY.md)
+
+---
+
+## 📄 Лицензия
+
+Этот проект лицензирован под MIT License - см. файл [LICENSE](LICENSE) для деталей.
+
+---
+
+## ⚠️ Disclaimer
+
+Этот инструмент предназначен только для образовательных и законных бизнес-целей. Пользователи несут ответственность за:
+- Соблюдение условий использования платформ
+- Соблюдение лимитов API
+- Следование правилам контента
+- Управление безопасностью аккаунтов
+
+Всегда проверяйте и соблюдайте условия использования и политики API каждой платформы.
+
+---
+
+## 📈 Roadmap
+
+- [ ] Поддержка дополнительных платформ (VK, Telegram)
+- [ ] Улучшенная обработка видео (автоматические субтитры)
+- [ ] Веб-интерфейс для управления задачами
+- [ ] Расширенная аналитика и метрики
+- [ ] Поддержка нескольких языков для TTS
+
+---
+
+**Последнее обновление**: 2025-01-16  
+**Версия**: 2.0  
+**Статус**: ✅ Production Ready
