@@ -1,55 +1,47 @@
 # Локальная разработка (dev-test-env)
 
-Инструкция по настройке локальной базы данных для разработки.
+Полностью локальная среда для разработки. Не нужен доступ к продакшн серверу.
 
-## Что нужно установить
+## Что нужно
 
 - Docker Desktop (скачать: https://www.docker.com/products/docker-desktop)
-- Python 3.10 или новее
-- SSH доступ к продакшн серверу (для копирования данных)
+- Python 3.10+
+- Дамп базы данных (файл `production_dump.sql`)
 
 ---
 
-## Быстрый старт (4 шага)
+## Быстрый старт (3 шага)
 
 ### Шаг 1. Запустить Docker
-
-Открыть терминал и выполнить:
 
 ```bash
 cd content-fabric/docker
 docker-compose up -d
 ```
 
-После этого запустятся:
-- **MySQL** - база данных на `localhost:3306`
-- **phpMyAdmin** - веб-интерфейс на `http://localhost:8080`
+Запустятся:
+- **MySQL** на `localhost:3306`
+- **phpMyAdmin** на `http://localhost:8080`
 
 Подождать 30 секунд пока MySQL загрузится.
 
-### Шаг 2. Скопировать данные с продакшна
+### Шаг 2. Загрузить данные
+
+Положить файл `production_dump.sql` в папку `docker/init/`, затем:
 
 ```bash
-python scripts/migrate_prod_to_local.py
+python scripts/migrate_prod_to_local.py --restore-only
 ```
 
-Скрипт автоматически:
-1. Подключится к продакшн серверу по SSH
-2. Сделает дамп базы данных
-3. Загрузит дамп в локальный Docker MySQL
-4. Проверит что все данные на месте
+Это загрузит дамп в локальную базу.
 
 ### Шаг 3. Настроить приложение
 
 ```bash
-# Сохранить продакшн настройки (на всякий случай)
-cp .env .env.prod.backup
-
-# Использовать локальные настройки
 cp .env.local .env
 ```
 
-Или вручную отредактировать файл `.env`:
+Или вручную в `.env`:
 ```
 DB_TYPE=mysql
 MYSQL_HOST=localhost
@@ -59,13 +51,15 @@ MYSQL_USER=dev_user
 MYSQL_PASSWORD=dev_pass
 ```
 
-### Шаг 4. Запустить приложение
+---
+
+## Готово! Запускаем
 
 ```bash
-# Запустить воркер задач
+# Воркер задач
 python run_task_worker.py
 
-# Или посмотреть статистику
+# Статистика
 python run_task_manager.py stats
 ```
 
@@ -83,53 +77,33 @@ python run_task_manager.py stats
 ## Команды Docker
 
 ```bash
-# Запустить контейнеры
+# Запустить
 cd docker && docker-compose up -d
 
-# Остановить контейнеры
+# Остановить
 docker-compose down
 
-# Посмотреть логи MySQL
+# Логи MySQL
 docker-compose logs -f mysql
 
-# Проверить статус
+# Статус
 docker-compose ps
 
-# Полный сброс (удалить все данные и начать заново)
+# Полный сброс (удалить все данные)
 docker-compose down -v
 docker-compose up -d
 ```
 
 ---
 
-## Варианты миграции
+## Варианты загрузки данных
 
 ```bash
-# Полная миграция (скачать + загрузить)
-python scripts/migrate_prod_to_local.py
-
-# Только скачать дамп (без загрузки)
-python scripts/migrate_prod_to_local.py --backup-only
-
-# Только загрузить (из существующего дампа)
+# Загрузить из существующего дампа
 python scripts/migrate_prod_to_local.py --restore-only
 
-# Только проверить данные
+# Проверить данные
 python scripts/migrate_prod_to_local.py --verify-only
-```
-
----
-
-## Переключение между окружениями
-
-**Работать локально:**
-```bash
-cp .env.local .env
-```
-
-**Работать с продакшном:**
-```bash
-cp .env.prod.backup .env
 ```
 
 ---
@@ -139,10 +113,7 @@ cp .env.prod.backup .env
 ### Docker не запускается
 
 ```bash
-# Посмотреть что пошло не так
 docker-compose logs mysql
-
-# Сбросить и запустить заново
 docker-compose down -v
 docker-compose up -d
 ```
@@ -150,26 +121,11 @@ docker-compose up -d
 ### Не могу подключиться к MySQL
 
 ```bash
-# Проверить что контейнер работает
+# Проверить статус (должен быть "healthy")
 docker-compose ps
 
-# Должен быть статус "healthy"
-# Если нет - подождать 30 секунд
-
-# Проверить подключение
+# Тест подключения
 docker exec dev-test-env-mysql mysql -u dev_user -pdev_pass -e "SELECT 1"
-```
-
-### Миграция не работает
-
-```bash
-# Проверить SSH подключение
-ssh root@46.21.250.43 "echo OK"
-
-# Если ошибка - проверить SSH ключи
-
-# Проверить что дамп скачался
-ls -la docker/init/production_dump.sql
 ```
 
 ---
@@ -179,16 +135,13 @@ ls -la docker/init/production_dump.sql
 ```
 content-fabric/
 ├── docker/
-│   ├── docker-compose.yml       # Настройки Docker
+│   ├── docker-compose.yml       # Docker настройки
 │   ├── .env                     # Локальные пароли (не в git)
-│   ├── .env.example             # Шаблон для .env
 │   └── init/
 │       └── production_dump.sql  # Дамп базы (не в git)
 │
 ├── scripts/
-│   └── migrate_prod_to_local.py # Скрипт миграции
+│   └── migrate_prod_to_local.py # Скрипт загрузки данных
 │
-├── .env                         # Активные настройки
-├── .env.local                   # Шаблон для локальной работы
-└── .env.prod.backup             # Бэкап продакшн настроек
+└── .env                         # Настройки приложения
 ```
