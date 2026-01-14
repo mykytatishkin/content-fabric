@@ -771,9 +771,17 @@ class TaskWorker:
         """
         try:
             # Check if reauth is already in progress for this channel
+            # Check both ongoing_reauths set and active subprocesses
             if channel_name in self.ongoing_reauths:
                 self.logger.info(f"Re-authentication already in progress for channel {channel_name}, skipping duplicate request")
                 return
+            
+            # Also check if there's an active subprocess for this channel
+            if channel_name in self.reauth_threads:
+                process = self.reauth_threads[channel_name]
+                if process.poll() is None:  # Process is still running
+                    self.logger.info(f"Re-authentication subprocess already running for channel {channel_name} (PID: {process.pid}), skipping duplicate request")
+                    return
             
             # Telegram notifications disabled in main loop to reduce spam
             # Only log the event for debugging
@@ -925,14 +933,28 @@ class TaskWorker:
     def _process_reauth_queue(self):
         """Process reauth queue - start next reauth if we have available slots."""
         with self.reauth_queue_lock:
-            # Count active reauths
+            # Count active reauths (processes that are still running)
             active_reauths = sum(1 for p in self.reauth_threads.values() if p.poll() is None)
             
             # If we have available slots and items in queue, start next reauth
             if active_reauths < self.max_concurrent_reauths and self.reauth_queue:
                 # Find first channel in queue that's not already running
-                for channel_name in self.reauth_queue:
-                    if channel_name not in self.reauth_threads or self.reauth_threads[channel_name].poll() is not None:
+                for channel_name in list(self.reauth_queue):  # Use list() to avoid modification during iteration
+                    # Check if channel is already being processed
+                    is_already_running = False
+                    
+                    # Check if there's an active subprocess
+                    if channel_name in self.reauth_threads:
+                        process = self.reauth_threads[channel_name]
+                        if process.poll() is None:  # Process is still running
+                            is_already_running = True
+                    
+                    # Also check ongoing_reauths set
+                    if channel_name in self.ongoing_reauths and not is_already_running:
+                        # Process finished but not cleaned up yet - skip
+                        is_already_running = True
+                    
+                    if not is_already_running:
                         # Remove from queue and start reauth
                         self.reauth_queue.remove(channel_name)
                         self._start_reauth_subprocess(channel_name)
@@ -1000,6 +1022,12 @@ class TaskWorker:
             script_path = Path(__file__).parent.parent / "scripts" / "youtube_reauth_service.py"
             if not script_path.exists():
                 self.logger.error(f"Reauth script not found: {script_path}")
+                # Remove from ongoing reauths on error
+                self.ongoing_reauths.discard(channel_name)
+                # Remove from queue on error
+                with self.reauth_queue_lock:
+                    if channel_name in self.reauth_queue:
+                        self.reauth_queue.remove(channel_name)
                 return
             
             # Start subprocess (non-blocking)
@@ -1015,6 +1043,8 @@ class TaskWorker:
             
             # Track subprocess instead of thread
             self.reauth_threads[channel_name] = process
+            # Mark as ongoing to prevent duplicate requests
+            self.ongoing_reauths.add(channel_name)
             self.logger.info(f"Started re-authentication subprocess for channel {channel_name} (PID: {process.pid})")
         except Exception as e:
             self.logger.error(f"Failed to start re-authentication subprocess for {channel_name}: {e}", exc_info=True)
