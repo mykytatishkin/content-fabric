@@ -135,12 +135,32 @@ async def playwright_context(
     storage_state_path: Optional[str] = None
     if credential.profile_path and not use_persistent_context:
         profile_path = Path(credential.profile_path)
-        if profile_path.is_dir():
-            profile_path.mkdir(parents=True, exist_ok=True)
-            storage_state_path = str(profile_path / "state.json")
-        else:
-            profile_path.parent.mkdir(parents=True, exist_ok=True)
-            storage_state_path = str(profile_path)
+        try:
+            if profile_path.is_dir():
+                profile_path.mkdir(parents=True, exist_ok=True)
+                storage_state_path = str(profile_path / "state.json")
+            else:
+                profile_path.parent.mkdir(parents=True, exist_ok=True)
+                storage_state_path = str(profile_path)
+        except PermissionError as e:
+            # Fallback to project-relative path if absolute path fails
+            LOGGER.warning(
+                "Failed to create profile directory at %s: %s. Using fallback path.",
+                credential.profile_path, e
+            )
+            # Use project-relative path as fallback
+            project_root = Path(__file__).parent.parent.parent
+            fallback_path = project_root / "data" / "profiles" / credential.channel_name
+            try:
+                fallback_path.mkdir(parents=True, exist_ok=True)
+                storage_state_path = str(fallback_path / "state.json")
+                LOGGER.info("Using fallback profile path: %s", storage_state_path)
+            except Exception as fallback_error:
+                LOGGER.warning(
+                    "Failed to create fallback profile directory: %s. Continuing without storage state.",
+                    fallback_error
+                )
+                storage_state_path = None
 
     # Enhanced stealth script to hide automation
     stealth_script = """
@@ -459,7 +479,8 @@ async def _handle_youtube_channel_chooser_if_present(
     """Handle YouTube channel/brand account selection screen if shown.
     
     This screen appears when a Google account has multiple YouTube channels.
-    The function automatically selects the correct channel based on channel_id or channel_name.
+    The function automatically selects the correct channel based on channel name (youtube_channels.name)
+    first, then falls back to channel_id if name matching fails.
     
     Returns:
         True if channel chooser was detected and handled, False otherwise
@@ -546,15 +567,38 @@ async def _handle_youtube_channel_chooser_if_present(
                         LOGGER.info("   Channel %d: text='%s', data-channel-id='%s', data-value='%s', aria-label='%s'",
                                    idx + 1, text[:50], data_channel_id, data_value, aria_label[:50])
                     
+                    # Log what we're looking for (for debugging)
+                    LOGGER.info("🔍 Looking for channel: name='%s' (normalized: '%s'), channel_id='%s'", 
+                               credential.channel_name, credential.channel_name.lower(), credential.channel_id)
+                    
                     # Try to find the correct channel
                     for idx in range(count):
                         element = elements.nth(idx)
                         
-                        # Get text content and attributes
-                        text = (await element.inner_text() or "").lower()
+                        # Get text content and attributes (keep original for logging)
+                        text_original = (await element.inner_text() or "").strip()
+                        text = text_original.lower()
                         data_channel_id = await element.get_attribute("data-channel-id")
                         data_value = await element.get_attribute("data-value")
-                        aria_label = await element.get_attribute("aria-label") or ""
+                        aria_label_original = await element.get_attribute("aria-label") or ""
+                        aria_label = aria_label_original.lower()
+                        
+                        # Also check textContent and other text attributes
+                        text_content_original = (await element.evaluate("el => el.textContent") or "").strip()
+                        text_content = text_content_original.lower()
+                        
+                        # Get all text-like attributes for comprehensive matching
+                        title_attr = (await element.get_attribute("title") or "").strip().lower()
+                        alt_attr = (await element.get_attribute("alt") or "").strip().lower()
+                        
+                        # Combine all text sources for matching
+                        all_text_sources = [
+                            ("inner_text", text),
+                            ("text_content", text_content),
+                            ("aria_label", aria_label),
+                            ("title", title_attr),
+                            ("alt", alt_attr)
+                        ]
                         
                         # Normalize channel_id for comparison (remove @ prefix, lowercase)
                         def normalize_id(ch_id: str) -> str:
@@ -565,26 +609,98 @@ async def _handle_youtube_channel_chooser_if_present(
                         target_channel_id = normalize_id(credential.channel_id)
                         target_channel_name = credential.channel_name.lower()
                         
+                        # Log each element being checked (for debugging)
+                        LOGGER.debug("   Checking element %d: text='%s', aria-label='%s', data-channel-id='%s', data-value='%s'",
+                                   idx + 1, text_original[:80], aria_label_original[:80], data_channel_id, data_value)
+                        
                         # Check if this element matches our channel
-                        # Priority: channel_id > custom URL > channel name
+                        # Priority: channel name (from youtube_channels.name) > channel_id > custom URL
                         matches = False
                         match_reason = ""
                         
-                        # Method 1: Match by channel_id in data attribute (MOST RELIABLE)
-                        if data_channel_id:
+                        # Method 1: Match by channel name (MOST RELIABLE - matches youtube_channels.name)
+                        # Check all text sources for exact match first
+                        exact_match_found = False
+                        for source_name, source_text in all_text_sources:
+                            source_stripped = source_text.strip()
+                            if target_channel_name == source_stripped:
+                                matches = True
+                                match_reason = f"exact channel_name match in {source_name}: {text_original[:50]}"
+                                LOGGER.info("   ✅ Element %d: EXACT MATCH by name in %s (text='%s')", 
+                                          idx + 1, source_name, text_original[:50])
+                                exact_match_found = True
+                                break
+                        
+                        # Then check if channel name appears as substring (for multi-word names)
+                        if not exact_match_found and target_channel_name:
+                            text_normalized = text.lower()
+                            aria_normalized = aria_label.lower()
+                            
+                            # For multi-word names, check if all words appear in sequence
+                            # This handles cases where name might have extra spaces or formatting
+                            target_words = target_channel_name.split()
+                            
+                            # Check if all words of channel name appear in text in order
+                            if len(target_words) > 1:
+                                # Multi-word name: check if all words appear in sequence
+                                # Create pattern that matches all words in sequence
+                                # Allow flexible spacing and punctuation between words
+                                pattern_parts = [re.escape(word) for word in target_words]
+                                # Allow spaces, punctuation, or nothing between words
+                                pattern = r'\b' + r'[\s\W]*'.join(pattern_parts) + r'\b'
+                                
+                                # Check all text sources
+                                for source_name, source_text in all_text_sources:
+                                    # Normalize spaces (multiple spaces -> single space)
+                                    source_normalized = re.sub(r'\s+', ' ', source_text)
+                                    
+                                    if re.search(pattern, source_normalized, re.IGNORECASE):
+                                        matches = True
+                                        match_reason = f"channel_name (multi-word pattern) found in {source_name}: {text_original[:50]}"
+                                        LOGGER.info("   ✅ Element %d: MATCH by multi-word pattern in %s", idx + 1, source_name)
+                                        break
+                                
+                                # Also try simpler substring match as fallback (check all sources)
+                                if not matches:
+                                    for source_name, source_text in all_text_sources:
+                                        if target_channel_name in source_text:
+                                            matches = True
+                                            match_reason = f"channel_name found as substring in {source_name}: {text_original[:50]}"
+                                            LOGGER.info("   ✅ Element %d: MATCH by substring in %s", idx + 1, source_name)
+                                            break
+                                
+                                if not matches:
+                                    # Log why it didn't match for debugging
+                                    LOGGER.debug("   ❌ Element %d: No match - target='%s', checked all text sources", 
+                                               idx + 1, target_channel_name)
+                            else:
+                                # Single-word name: check as whole word
+                                text_words = set(re.findall(r'\b\w+\b', text_normalized))
+                                if target_channel_name in text_words:
+                                    matches = True
+                                    match_reason = f"channel_name as whole word in text: {text[:50]}"
+                                elif target_channel_name in aria_normalized:
+                                    # Check if it's a whole word in aria-label
+                                    aria_words = set(re.findall(r'\b\w+\b', aria_normalized))
+                                    if target_channel_name in aria_words:
+                                        matches = True
+                                        match_reason = f"channel_name as whole word in aria-label: {aria_label[:50]}"
+                        
+                        # Method 2: Match by channel_id in data attribute (fallback if name didn't match)
+                        if not matches and data_channel_id:
                             data_id_normalized = normalize_id(data_channel_id)
                             if data_id_normalized == target_channel_id:
                                 matches = True
                                 match_reason = f"channel_id in data-channel-id: {data_channel_id}"
                         
-                        # Method 2: Match by channel_id in data-value
+                        # Method 3: Match by channel_id in data-value
                         if not matches and data_value:
                             data_value_normalized = normalize_id(data_value)
                             if data_value_normalized == target_channel_id:
                                 matches = True
                                 match_reason = f"channel_id in data-value: {data_value}"
                         
-                        # Method 3: Match by channel_id in text (sometimes shown as UC... or @handle)
+                        # Method 4: Match by channel_id in text (sometimes shown as UC... or @handle)
                         if not matches and target_channel_id:
                             # Check if channel_id appears in text (could be full ID or part of URL)
                             text_normalized = text.lower()
@@ -596,39 +712,12 @@ async def _handle_youtube_channel_chooser_if_present(
                                     matches = True
                                     match_reason = f"channel_id in text: {text[:50]}"
                         
-                        # Method 4: Match by channel_id in aria-label
+                        # Method 5: Match by channel_id in aria-label
                         if not matches and target_channel_id:
                             aria_normalized = aria_label.lower()
                             if target_channel_id in aria_normalized:
                                 matches = True
                                 match_reason = f"channel_id in aria-label: {aria_label[:50]}"
-                        
-                        # Method 5: Match by channel name (LESS RELIABLE - use only if channel_id didn't match)
-                        # Only use name matching if we have no channel_id or channel_id matching failed
-                        if not matches:
-                            # Exact name match is preferred
-                            text_stripped = text.strip().lower()
-                            aria_stripped = aria_label.strip().lower()
-                            
-                            # Check for exact match first
-                            if target_channel_name == text_stripped or target_channel_name == aria_stripped:
-                                matches = True
-                                match_reason = f"exact channel_name match: {text[:50]}"
-                            # Then check for name as whole word (not substring)
-                            elif target_channel_name:
-                                # Split into words and check if channel name appears as complete word
-                                text_normalized = text.lower()
-                                aria_normalized = aria_label.lower()
-                                text_words = set(re.findall(r'\b\w+\b', text_normalized))
-                                if target_channel_name in text_words:
-                                    matches = True
-                                    match_reason = f"channel_name as whole word in text: {text[:50]}"
-                                elif target_channel_name in aria_normalized:
-                                    # Check if it's a whole word in aria-label
-                                    aria_words = set(re.findall(r'\b\w+\b', aria_normalized))
-                                    if target_channel_name in aria_words:
-                                        matches = True
-                                        match_reason = f"channel_name as whole word in aria-label: {aria_label[:50]}"
                         
                         if matches:
                             LOGGER.info("✅ Found matching channel element %d for %s: %s", 
@@ -667,12 +756,21 @@ async def _handle_youtube_channel_chooser_if_present(
         # Method 2: Look for "Continue" or "Next" button if channel selection is implicit
         # Sometimes Google auto-selects a channel but shows a confirmation
         if not selected_channel and found_channels:
+            # Log detailed diagnostic information
             LOGGER.error(
-                "❌ CRITICAL: Found channel chooser but couldn't match correct channel '%s' (channel_id: %s). "
-                "This will likely result in tokens being saved to the wrong channel. "
-                "Please check that channel_id is correct in the database.",
-                credential.channel_name,
-                credential.channel_id
+                "❌ CRITICAL: Found channel chooser but couldn't match correct channel '%s' (name from youtube_channels.name). "
+                "This will likely result in tokens being saved to the wrong channel.",
+                credential.channel_name
+            )
+            LOGGER.error(
+                "   Looking for: name='%s' (normalized: '%s'), channel_id='%s'",
+                credential.channel_name, credential.channel_name.lower(), credential.channel_id
+            )
+            LOGGER.error(
+                "   Please check that channel name in database (youtube_channels.name) matches exactly what appears on the selection screen."
+            )
+            LOGGER.error(
+                "   The available channels were logged above. Compare the 'text' or 'aria-label' values with your database name."
             )
             # DON'T use fallback - let it fail so user knows there's a problem
             # The token verification will catch this and prevent saving to wrong channel
