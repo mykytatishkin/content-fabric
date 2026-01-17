@@ -2,7 +2,7 @@
 
 **Версия:** 1.0  
 **Дата:** 2026-01-16  
-**Автор:** Lead Product Architect + Solution Architect  
+**Автор:** Mykyta Tishkin, Pavlo Hruznov
 **Статус:** Draft
 
 ---
@@ -1604,9 +1604,9 @@ CREATE TABLE processing_jobs (
 
 ### C. Контакты
 
-- **Product Owner:** [Contact]
-- **Tech Lead:** [Contact]
-- **Support:** support@contentfactory.com
+- **Product Owner:** Pavlo Hruznov
+- **Tech Lead:** Mykyta Tishkin
+- **Support:** company@tishify.online
 
 ---
 
