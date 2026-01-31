@@ -10,6 +10,8 @@ from fastapi.templating import Jinja2Templates
 
 from app.repositories.channel_repository import (
     add_channel,
+    channel_exists_by_channel_id,
+    channel_exists_by_name,
     get_channel_by_id,
     get_console_by_id,
     list_channels,
@@ -19,7 +21,7 @@ from app.schemas.channel import Channel, ChannelCreate, GoogleConsole
 from app.services.youtube_validator import validate_channel_id
 
 router = APIRouter()
-_templates_dir = Path(__file__).resolve().parent.parent / "templates"
+_templates_dir = Path(__file__).resolve().parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
 
@@ -57,19 +59,27 @@ async def create_channel(data: ChannelCreate):
     if not console:
         raise HTTPException(status_code=400, detail="Invalid console_id")
 
+    # Check duplicates by name
+    if channel_exists_by_name(data.name):
+        raise HTTPException(status_code=409, detail="Канал с таким названием уже существует")
+
     # Validate channel via YouTube API
     is_valid, result = validate_channel_id(data.channel_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=result or "Invalid channel")
-    # Use canonical ID from API (handles @handle -> UC...)
     canonical_id = result
+
+    # Check duplicate by channel_id (after resolving @handle to UC...)
+    if channel_exists_by_channel_id(canonical_id):
+        raise HTTPException(status_code=409, detail="Канал с таким YouTube channel_id уже существует")
+
     data = ChannelCreate(**{**data.model_dump(), "channel_id": canonical_id})
 
     channel_id = add_channel(data)
     if channel_id is None:
         raise HTTPException(
             status_code=409,
-            detail="Channel with this name or channel_id already exists",
+            detail="Канал с таким названием или channel_id уже существует",
         )
 
     channel = get_channel_by_id(channel_id)

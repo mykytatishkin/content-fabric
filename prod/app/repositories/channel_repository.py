@@ -26,6 +26,22 @@ def list_google_consoles(enabled_only: bool = True) -> list[dict]:
     ]
 
 
+def channel_exists_by_name(name: str) -> bool:
+    """Check if channel with this name already exists."""
+    query = "SELECT 1 FROM youtube_channels WHERE name = %s LIMIT 1"
+    with get_db_connection() as conn:
+        rows = execute_query(conn, query, (name.strip(),), fetch=True)
+    return bool(rows)
+
+
+def channel_exists_by_channel_id(channel_id: str) -> bool:
+    """Check if channel with this YouTube channel_id already exists."""
+    query = "SELECT 1 FROM youtube_channels WHERE channel_id = %s LIMIT 1"
+    with get_db_connection() as conn:
+        rows = execute_query(conn, query, (channel_id.strip(),), fetch=True)
+    return bool(rows)
+
+
 def get_console_by_id(console_id: int) -> dict | None:
     """Get console by ID."""
     query = "SELECT id, name FROM google_consoles WHERE id = %s AND enabled = 1"
