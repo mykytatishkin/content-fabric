@@ -21,7 +21,8 @@
     <h1>Добавить YouTube канал</h1>
     <form id="channelForm">
         <label for="name">Название канала</label>
-        <input type="text" id="name" name="name" required placeholder="My Channel">
+        <input type="text" id="name" name="name" required placeholder="My Channel" pattern="[a-zA-Z0-9\s_\-]+" title="Только латиница: буквы, цифры, пробел, _ -">
+        <p class="hint">Только латиница: a-z, 0-9, пробел, _ -</p>
 
         <label for="channel_id">YouTube Channel ID или @handle</label>
         <input type="text" id="channel_id" name="channel_id" required placeholder="UC... или @username">
@@ -38,6 +39,7 @@
         <label>
             <input type="checkbox" id="enabled" name="enabled" checked> Канал активен
         </label>
+        <p class="hint">Включён — worker будет публиковать на этот канал. Выключен — канал пропускается.</p>
 
         <div id="error" class="error" style="display:none;"></div>
         <div id="success" class="success" style="display:none;"></div>
@@ -53,8 +55,15 @@
             errEl.style.display = 'none';
             successEl.style.display = 'none';
 
+            const nameVal = document.getElementById('name').value.trim();
+            if (!/^[a-zA-Z0-9\s_\-]+$/.test(nameVal)) {
+                errEl.textContent = 'Название только латиницей (a-z, 0-9, пробел, _ -)';
+                errEl.style.display = 'block';
+                return;
+            }
+
             const data = {
-                name: document.getElementById('name').value.trim(),
+                name: nameVal,
                 channel_id: document.getElementById('channel_id').value.trim(),
                 console_id: parseInt(document.getElementById('console_id').value, 10),
                 enabled: document.getElementById('enabled').checked

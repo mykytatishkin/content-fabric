@@ -1,9 +1,13 @@
 """Channel schemas."""
 
+import re
 from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+# Latin letters, digits, spaces, underscore, hyphen
+LATIN_PATTERN = re.compile(r"^[a-zA-Z0-9\s_\-]+$")
 
 
 class GoogleConsole(BaseModel):
@@ -24,16 +28,19 @@ class ChannelBase(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def name_not_empty(cls, v: str) -> str:
+    def name_latin_only(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError("Name cannot be empty")
-        return v.strip()
+            raise ValueError("Название не может быть пустым")
+        v = v.strip()
+        if not LATIN_PATTERN.match(v):
+            raise ValueError("Название только латиницей (a-z, 0-9, пробел, _ -)")
+        return v
 
     @field_validator("channel_id")
     @classmethod
     def channel_id_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError("Channel ID cannot be empty")
+            raise ValueError("Channel ID не может быть пустым")
         return v.strip()
 
 
