@@ -1,0 +1,20 @@
+CREATE TABLE `tasks` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `account_id` int DEFAULT NULL,
+  `media_type` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `status` tinyint(1) DEFAULT '0',
+  `date_add` datetime DEFAULT NULL,
+  `att_file_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cover` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci,
+  `keywords` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `post_comment` text COLLATE utf8mb4_unicode_ci,
+  `add_info` longtext COLLATE utf8mb4_unicode_ci,
+  `date_post` datetime DEFAULT NULL,
+  `date_done` datetime DEFAULT NULL,
+  `upload_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Video ID from platform after upload',
+  `error_message` text COLLATE utf8mb4_unicode_ci COMMENT 'Error message when task fails',
+  PRIMARY KEY (`id`),
+  KEY `idx_upload_id` (`upload_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5080 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

@@ -1,0 +1,22 @@
+CREATE TABLE `youtube_channels` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `channel_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `console_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Reference to google_consoles.name (nullable for backward compatibility)',
+  `access_token` text COLLATE utf8mb4_unicode_ci,
+  `refresh_token` text COLLATE utf8mb4_unicode_ci,
+  `token_expires_at` datetime DEFAULT NULL,
+  `enabled` tinyint(1) DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `stat` tinyint(1) NOT NULL DEFAULT '0',
+  `add_info` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `console_id` int DEFAULT NULL COMMENT 'Reference to google_consoles.id',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `idx_youtube_channels_enabled_created` (`enabled`,`created_at`),
+  KEY `idx_console_id` (`console_id`),
+  KEY `idx_console_name` (`console_name`),
+  CONSTRAINT `fk_youtube_channels_console_id` FOREIGN KEY (`console_id`) REFERENCES `google_consoles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_youtube_channels_console_name` FOREIGN KEY (`console_name`) REFERENCES `google_consoles` (`name`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
