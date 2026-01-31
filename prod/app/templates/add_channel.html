@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добавить YouTube канал</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+        h1 { font-size: 1.25rem; margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem; }
+        input, select { width: 100%; padding: 0.5rem 0.75rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+        button { background: #0ea5e9; color: white; border: none; padding: 0.625rem 1.25rem; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+        button:hover { background: #0284c7; }
+        .error { color: #dc2626; font-size: 0.875rem; margin-top: -0.5rem; margin-bottom: 1rem; }
+        .success { color: #16a34a; font-size: 0.875rem; margin-top: 1rem; }
+        .hint { font-size: 0.75rem; color: #6b7280; margin-top: -0.5rem; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <h1>Добавить YouTube канал</h1>
+    <form id="channelForm">
+        <label for="name">Название канала</label>
+        <input type="text" id="name" name="name" required placeholder="My Channel">
+
+        <label for="channel_id">YouTube Channel ID или @handle</label>
+        <input type="text" id="channel_id" name="channel_id" required placeholder="UC... или @username">
+        <p class="hint">ID канала (UC...) или handle (@username)</p>
+
+        <label for="console_id">Google Console</label>
+        <select id="console_id" name="console_id" required>
+            <option value="">— Выберите консоль —</option>
+            {% for c in consoles %}
+            <option value="{{ c.id }}">{{ c.name }}{% if c.description %} — {{ c.description }}{% endif %}</option>
+            {% endfor %}
+        </select>
+
+        <label>
+            <input type="checkbox" id="enabled" name="enabled" checked> Канал активен
+        </label>
+
+        <div id="error" class="error" style="display:none;"></div>
+        <div id="success" class="success" style="display:none;"></div>
+
+        <button type="submit">Добавить канал</button>
+    </form>
+
+    <script>
+        document.getElementById('channelForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errEl = document.getElementById('error');
+            const successEl = document.getElementById('success');
+            errEl.style.display = 'none';
+            successEl.style.display = 'none';
+
+            const data = {
+                name: document.getElementById('name').value.trim(),
+                channel_id: document.getElementById('channel_id').value.trim(),
+                console_id: parseInt(document.getElementById('console_id').value, 10),
+                enabled: document.getElementById('enabled').checked
+            };
+
+            try {
+                const res = await fetch('/api/v1/channels/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const json = await res.json();
+
+                if (!res.ok) {
+                    let msg = 'Ошибка';
+                    if (json.detail) {
+                        msg = Array.isArray(json.detail)
+                            ? json.detail.map(d => d.msg || d.loc?.join('.')).join(', ')
+                            : (typeof json.detail === 'string' ? json.detail : JSON.stringify(json.detail));
+                    }
+                    errEl.textContent = msg;
+                    errEl.style.display = 'block';
+                    return;
+                }
+
+                successEl.textContent = `Канал «${json.name}» успешно добавлен (ID: ${json.id})`;
+                successEl.style.display = 'block';
+                e.target.reset();
+            } catch (err) {
+                errEl.textContent = 'Ошибка сети: ' + err.message;
+                errEl.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

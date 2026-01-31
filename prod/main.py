@@ -21,6 +21,16 @@ app.add_middleware(
 app.include_router(router, prefix="/api/v1")
 
 
+@app.get("/")
+async def root():
+    return {
+        "message": "Content Fabric Channels API",
+        "docs": "/docs",
+        "channels_form": "/api/v1/channels/form",
+        "channels_api": "/api/v1/channels/",
+    }
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
