@@ -44,10 +44,24 @@ class ChannelBase(BaseModel):
         return v.strip()
 
 
+class ChannelCredentials(BaseModel):
+    """RPA auth credentials for automated YouTube OAuth re-authorization."""
+
+    login_email: str = Field(..., max_length=320)
+    login_password: str = Field(..., min_length=1)
+    totp_secret: str | None = Field(None, max_length=64)
+    backup_codes: list[str] | None = None
+    proxy_host: str | None = Field(None, max_length=255)
+    proxy_port: int | None = Field(None, ge=1, le=65535)
+    proxy_username: str | None = Field(None, max_length=255)
+    proxy_password: str | None = Field(None, max_length=255)
+
+
 class ChannelCreate(ChannelBase):
     """Schema for creating a channel."""
 
     user_id: UUID | None = None
+    credentials: ChannelCredentials | None = None
 
 
 class Channel(ChannelBase):

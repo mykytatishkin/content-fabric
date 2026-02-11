@@ -1,5 +1,6 @@
 """Channels API endpoints."""
 
+import logging
 from uuid import UUID
 
 from pathlib import Path
@@ -9,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.repositories.channel_repository import (
+    add_account_credentials,
     add_channel,
     channel_exists_by_channel_id,
     channel_exists_by_name,
@@ -19,6 +21,8 @@ from app.repositories.channel_repository import (
 )
 from app.schemas.channel import Channel, ChannelCreate, GoogleConsole
 from app.services.youtube_validator import validate_channel_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _templates_dir = Path(__file__).resolve().parent.parent.parent / "templates"
@@ -81,6 +85,20 @@ async def create_channel(data: ChannelCreate):
             status_code=409,
             detail="Канал с таким названием или channel_id уже существует",
         )
+
+    # Save RPA auth credentials if provided
+    if data.credentials:
+        try:
+            add_account_credentials(data.name, data.credentials)
+        except Exception as e:
+            logger.error(
+                "Channel %s created (id=%s) but credentials insert failed: %s",
+                data.name, channel_id, e,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Канал создан (id={channel_id}), но не удалось сохранить креды: {e}",
+            )
 
     channel = get_channel_by_id(channel_id)
     if not channel:

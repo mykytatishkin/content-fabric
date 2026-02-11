@@ -1,10 +1,11 @@
 """Channel repository - DB operations for youtube_channels and google_consoles."""
 
+import json
 from datetime import datetime
 from uuid import UUID
 
 from app.core.database import execute_query, get_db_connection
-from app.schemas.channel import ChannelCreate
+from app.schemas.channel import ChannelCreate, ChannelCredentials
 
 
 def list_google_consoles(enabled_only: bool = True) -> list[dict]:
@@ -89,6 +90,40 @@ def add_channel(data: ChannelCreate) -> int | None:
         if hasattr(e, "errno") and e.errno == 1062:  # Duplicate entry
             return None
         raise
+
+
+def add_account_credentials(channel_name: str, creds: ChannelCredentials) -> int:
+    """
+    Insert RPA auth credentials into youtube_account_credentials.
+    Linked to youtube_channels via channel_name FK.
+    Returns the new row id.
+    """
+    query = """
+        INSERT INTO youtube_account_credentials
+        (channel_name, login_email, login_password, totp_secret, backup_codes,
+         proxy_host, proxy_port, proxy_username, proxy_password, enabled)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
+    """
+    backup_codes_json = json.dumps(creds.backup_codes) if creds.backup_codes else None
+    params = (
+        channel_name,
+        creds.login_email,
+        creds.login_password,
+        creds.totp_secret,
+        backup_codes_json,
+        creds.proxy_host,
+        creds.proxy_port,
+        creds.proxy_username,
+        creds.proxy_password,
+    )
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        conn.commit()
+        row_id = cursor.lastrowid
+        cursor.close()
+        return row_id
 
 
 def _row_to_channel_dict(r: tuple) -> dict:
