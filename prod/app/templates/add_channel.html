@@ -15,6 +15,17 @@
         .error { color: #dc2626; font-size: 0.875rem; margin-top: -0.5rem; margin-bottom: 1rem; }
         .success { color: #16a34a; font-size: 0.875rem; margin-top: 1rem; }
         .hint { font-size: 0.75rem; color: #6b7280; margin-top: -0.5rem; margin-bottom: 1rem; }
+        textarea { width: 100%; padding: 0.5rem 0.75rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; font-family: inherit; resize: vertical; }
+        .section { border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+        .section-header { display: flex; align-items: center; cursor: pointer; user-select: none; margin-bottom: 0.5rem; }
+        .section-header h2 { font-size: 1rem; margin: 0; }
+        .section-header .toggle { margin-left: auto; font-size: 0.75rem; color: #6b7280; }
+        .section-body { display: none; }
+        .section-body.open { display: block; }
+        .sub-section { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #f3f4f6; }
+        .sub-section-title { font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem; font-weight: 600; }
+        .row { display: flex; gap: 0.75rem; }
+        .row > div { flex: 1; }
     </style>
 </head>
 <body>
@@ -41,6 +52,57 @@
         </label>
         <p class="hint">Включён — worker будет публиковать на этот канал. Выключен — канал пропускается.</p>
 
+        <div class="section">
+            <div class="section-header" onclick="toggleCreds()">
+                <h2>Креды для RPA Auth</h2>
+                <span class="toggle" id="credsToggle">&#9660; развернуть</span>
+            </div>
+            <div class="section-body" id="credsBody">
+                <p class="hint" style="margin-top:0;">Данные для автоматической переавторизации YouTube OAuth через RPA.</p>
+
+                <label for="login_email">Email аккаунта Google</label>
+                <input type="email" id="login_email" name="login_email" placeholder="user@gmail.com">
+
+                <label for="login_password">Пароль</label>
+                <input type="password" id="login_password" name="login_password" placeholder="Пароль от Google аккаунта">
+
+                <div class="sub-section">
+                    <div class="sub-section-title">2FA (опционально)</div>
+                    <label for="totp_secret">TOTP Secret</label>
+                    <input type="text" id="totp_secret" name="totp_secret" placeholder="Base32 секрет для генерации OTP">
+                    <p class="hint">Секрет из настроек двухфакторной аутентификации</p>
+
+                    <label for="backup_codes">Backup-коды</label>
+                    <textarea id="backup_codes" name="backup_codes" rows="2" placeholder="Коды через запятую: ABC123, DEF456, ..."></textarea>
+                    <p class="hint">Резервные коды 2FA, через запятую</p>
+                </div>
+
+                <div class="sub-section">
+                    <div class="sub-section-title">Прокси (опционально)</div>
+                    <div class="row">
+                        <div>
+                            <label for="proxy_host">Хост</label>
+                            <input type="text" id="proxy_host" name="proxy_host" placeholder="proxy.example.com">
+                        </div>
+                        <div>
+                            <label for="proxy_port">Порт</label>
+                            <input type="number" id="proxy_port" name="proxy_port" placeholder="8080" min="1" max="65535">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div>
+                            <label for="proxy_username">Логин</label>
+                            <input type="text" id="proxy_username" name="proxy_username" placeholder="Логин прокси">
+                        </div>
+                        <div>
+                            <label for="proxy_password">Пароль</label>
+                            <input type="password" id="proxy_password" name="proxy_password" placeholder="Пароль прокси">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="error" class="error" style="display:none;"></div>
         <div id="success" class="success" style="display:none;"></div>
 
@@ -48,6 +110,41 @@
     </form>
 
     <script>
+        function toggleCreds() {
+            const body = document.getElementById('credsBody');
+            const toggle = document.getElementById('credsToggle');
+            const isOpen = body.classList.toggle('open');
+            toggle.innerHTML = isOpen ? '&#9650; свернуть' : '&#9660; развернуть';
+        }
+
+        function buildCredentials() {
+            const email = document.getElementById('login_email').value.trim();
+            const password = document.getElementById('login_password').value;
+            if (!email || !password) return null;
+
+            const creds = { login_email: email, login_password: password };
+
+            const totp = document.getElementById('totp_secret').value.trim();
+            if (totp) creds.totp_secret = totp;
+
+            const backupRaw = document.getElementById('backup_codes').value.trim();
+            if (backupRaw) {
+                creds.backup_codes = backupRaw.split(',').map(c => c.trim()).filter(Boolean);
+            }
+
+            const proxyHost = document.getElementById('proxy_host').value.trim();
+            const proxyPort = document.getElementById('proxy_port').value.trim();
+            if (proxyHost) creds.proxy_host = proxyHost;
+            if (proxyPort) creds.proxy_port = parseInt(proxyPort, 10);
+
+            const proxyUser = document.getElementById('proxy_username').value.trim();
+            const proxyPass = document.getElementById('proxy_password').value.trim();
+            if (proxyUser) creds.proxy_username = proxyUser;
+            if (proxyPass) creds.proxy_password = proxyPass;
+
+            return creds;
+        }
+
         document.getElementById('channelForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const errEl = document.getElementById('error');
@@ -62,11 +159,21 @@
                 return;
             }
 
+            // Validate credentials: if one is filled, both are required
+            const loginEmail = document.getElementById('login_email').value.trim();
+            const loginPassword = document.getElementById('login_password').value;
+            if ((loginEmail && !loginPassword) || (!loginEmail && loginPassword)) {
+                errEl.textContent = 'Для кредов нужно заполнить и email, и пароль';
+                errEl.style.display = 'block';
+                return;
+            }
+
             const data = {
                 name: nameVal,
                 channel_id: document.getElementById('channel_id').value.trim(),
                 console_id: parseInt(document.getElementById('console_id').value, 10),
-                enabled: document.getElementById('enabled').checked
+                enabled: document.getElementById('enabled').checked,
+                credentials: buildCredentials()
             };
 
             try {
@@ -92,6 +199,9 @@
                 successEl.textContent = `Канал «${json.name}» успешно добавлен (ID: ${json.id})`;
                 successEl.style.display = 'block';
                 e.target.reset();
+                // Collapse creds section after successful submit
+                document.getElementById('credsBody').classList.remove('open');
+                document.getElementById('credsToggle').innerHTML = '&#9660; развернуть';
             } catch (err) {
                 errEl.textContent = 'Ошибка сети: ' + err.message;
                 errEl.style.display = 'block';
