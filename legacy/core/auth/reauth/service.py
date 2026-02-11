@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+from pathlib import Path
+
+import requests as _requests
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Iterable, List, Optional
 
-from core.auth.reauth.models import AutomationCredential, ProxyConfig, ReauthResult, ReauthStatus
+from core.auth.reauth.models import AutomationCredential, MFAChallengeError, ProxyConfig, ReauthResult, ReauthStatus
 from core.auth.reauth.oauth_flow import OAuthConfig, OAuthFlow
 from core.auth.reauth.playwright_client import BrowserConfig, playwright_context, prepare_oauth_consent_page
 from core.database.mysql_db import YouTubeMySQLDatabase
@@ -142,28 +145,58 @@ class YouTubeReauthService:
         )
         oauth_flow = OAuthFlow(oauth_config)
 
-        async with playwright_context(credential, self.config.browser) as (_, context):
-            page = await context.new_page()
+        try:
+            async with playwright_context(credential, self.config.browser) as (_, context):
+                page = await context.new_page()
 
-            loop = asyncio.get_running_loop()
+                loop = asyncio.get_running_loop()
 
-            def navigate_to_consent(url: str) -> None:
-                LOGGER.debug("Navigating Playwright page to OAuth consent URL: %s", url)
-                future = asyncio.run_coroutine_threadsafe(
-                    prepare_oauth_consent_page(page, credential, self.config.browser, url),
-                    loop,
+                def navigate_to_consent(url: str) -> None:
+                    LOGGER.debug("Navigating Playwright page to OAuth consent URL: %s", url)
+                    future = asyncio.run_coroutine_threadsafe(
+                        prepare_oauth_consent_page(page, credential, self.config.browser, url),
+                        loop,
+                    )
+                    try:
+                        future.result(timeout=self.config.oauth_settings.timeout_seconds)
+                    except MFAChallengeError:
+                        raise
+                    except Exception as exc:
+                        LOGGER.error("Failed to prepare OAuth consent page: %s", exc)
+
+                result = await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    oauth_flow.run,
+                    credential,
+                    state,
+                    navigate_to_consent,
                 )
-                try:
-                    future.result(timeout=self.config.oauth_settings.timeout_seconds)
-                except Exception as exc:
-                    LOGGER.error("Failed to prepare OAuth consent page: %s", exc)
 
-            result = await asyncio.get_running_loop().run_in_executor(
-                None,
-                oauth_flow.run,
-                credential,
-                state,
-                navigate_to_consent,
+                # Capture a screenshot for any non-successful result while
+                # the browser page is still alive.
+                if result.status != ReauthStatus.SUCCESS:
+                    screenshot_file = await self._capture_failure_screenshot(
+                        page, credential.channel_name
+                    )
+                    if screenshot_file:
+                        if result.metadata is None:
+                            result.metadata = {}
+                        result.metadata["screenshot_path"] = screenshot_file
+
+        except MFAChallengeError as exc:
+            LOGGER.warning(
+                "Skipping channel %s due to MFA challenge: %s",
+                credential.channel_name,
+                exc,
+            )
+            metadata = {}
+            if exc.screenshot_path:
+                metadata["screenshot_path"] = exc.screenshot_path
+            result = ReauthResult(
+                channel_name=credential.channel_name,
+                status=ReauthStatus.SKIPPED,
+                error=str(exc),
+                metadata=metadata or None,
             )
 
         self.db.mark_credentials_attempt(
@@ -187,7 +220,7 @@ class YouTubeReauthService:
             result.status.value,
         )
         
-        # Send Telegram notification if reauth failed
+        # Send Telegram notification if reauth failed or skipped
         if result.status != ReauthStatus.SUCCESS:
             self._send_reauth_error_notification(result)
         
@@ -216,9 +249,29 @@ class YouTubeReauthService:
     def run_sync(self, channel_names: Iterable[str]) -> List[ReauthResult]:
         """Synchronous wrapper around async execution."""
         return asyncio.run(self.run_for_channels(channel_names))
-    
+
+    @staticmethod
+    async def _capture_failure_screenshot(page, channel_name: str) -> Optional[str]:
+        """Take a screenshot of the current browser state after a failure.
+
+        Returns the absolute path to the saved image, or ``None`` on error.
+        """
+        screenshot_dir = Path("data/logs/reauth_failures")
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = channel_name.replace(" ", "_")
+        file_path = screenshot_dir / f"{safe_name}_{timestamp}.png"
+        try:
+            await page.screenshot(path=str(file_path), full_page=True)
+            resolved = str(file_path.resolve())
+            LOGGER.info("Failure screenshot saved: %s", resolved)
+            return resolved
+        except Exception as exc:
+            LOGGER.debug("Failed to capture failure screenshot: %s", exc)
+            return None
+
     def _send_reauth_error_notification(self, result: ReauthResult) -> None:
-        """Send Telegram notification about reauth error."""
+        """Send Telegram notification about reauth error, with screenshot if available."""
         try:
             # Check if error is critical before sending notification
             error = result.error or ""
@@ -243,6 +296,13 @@ class YouTubeReauthService:
                 result.channel_name
             )
             message = self._format_reauth_error_message(result)
+
+            # If there is a screenshot attached, send it as a photo
+            screenshot_path = (result.metadata or {}).get("screenshot_path")
+            if screenshot_path and os.path.isfile(screenshot_path):
+                self._send_telegram_photo(screenshot_path, caption=message)
+                return
+
             self._send_telegram_message(message)
         except Exception as e:
             LOGGER.error(f"Failed to send reauth error notification: {e}")
@@ -349,9 +409,21 @@ class YouTubeReauthService:
         
         return message
     
+    def _ensure_subscribers(self) -> None:
+        """Add TELEGRAM_CHAT_ID as subscriber if the subscriber list is empty."""
+        if self.broadcaster and not self.broadcaster.get_subscribers():
+            telegram_chat_id = self.notifier.notification_config.telegram_chat_id
+            if telegram_chat_id:
+                try:
+                    chat_id_int = int(telegram_chat_id)
+                    self.broadcaster.add_subscriber(chat_id_int)
+                    LOGGER.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber")
+                except (ValueError, TypeError):
+                    LOGGER.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
+
     def _send_telegram_message(self, message: str) -> bool:
         """
-        Send message via Telegram (broadcast or single user).
+        Send text message via Telegram (broadcast or single user).
         
         Args:
             message: Message to send
@@ -361,32 +433,56 @@ class YouTubeReauthService:
         """
         try:
             if self.use_broadcast and self.broadcaster:
-                # Check if there are subscribers
-                subscribers = self.broadcaster.get_subscribers()
-                
-                if not subscribers:
-                    # If no subscribers - add TELEGRAM_CHAT_ID as subscriber
-                    telegram_chat_id = self.notifier.notification_config.telegram_chat_id
-                    if telegram_chat_id:
-                        try:
-                            chat_id_int = int(telegram_chat_id)
-                            self.broadcaster.add_subscriber(chat_id_int)
-                            LOGGER.info(f"Added TELEGRAM_CHAT_ID {chat_id_int} as subscriber")
-                        except (ValueError, TypeError):
-                            LOGGER.error(f"Invalid TELEGRAM_CHAT_ID: {telegram_chat_id}")
-                
-                # Broadcast to all subscribers
+                self._ensure_subscribers()
                 result = self.broadcaster.broadcast_message(message)
                 success = result['success'] > 0
                 if success:
                     LOGGER.info(f"Reauth error notification sent to {result['success']}/{result['total']} subscribers")
                 return success
             else:
-                # Send to single user (fallback method)
                 self.notifier._send_telegram_message(message)
                 return True
         except Exception as e:
             LOGGER.error(f"Error sending Telegram message: {str(e)}")
+            return False
+
+    def _send_telegram_photo(self, photo_path: str, caption: str = "") -> bool:
+        """Send a photo with caption via Telegram (broadcast or single user).
+
+        Args:
+            photo_path: Absolute path to the image file.
+            caption: Optional Markdown caption.
+
+        Returns:
+            True if sent successfully, False otherwise.
+        """
+        try:
+            if self.use_broadcast and self.broadcaster:
+                self._ensure_subscribers()
+                result = self.broadcaster.broadcast_photo(photo_path, caption=caption)
+                success = result["success"] > 0
+                if success:
+                    LOGGER.info(
+                        f"Reauth screenshot sent to {result['success']}/{result['total']} subscribers"
+                    )
+                return success
+            else:
+                # Fallback: send photo to single user via requests
+                bot_token = self.notifier.notification_config.telegram_bot_token
+                chat_id = self.notifier.notification_config.telegram_chat_id
+                if not bot_token or not chat_id:
+                    LOGGER.warning("Telegram credentials not configured for photo sending")
+                    return False
+                url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+                data = {"chat_id": chat_id}
+                if caption:
+                    data["caption"] = caption
+                    data["parse_mode"] = "Markdown"
+                with open(photo_path, "rb") as f:
+                    resp = _requests.post(url, data=data, files={"photo": f}, timeout=30)
+                return resp.ok
+        except Exception as e:
+            LOGGER.error(f"Error sending Telegram photo: {str(e)}")
             return False
 
 
