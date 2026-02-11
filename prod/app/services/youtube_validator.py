@@ -1,7 +1,5 @@
 """YouTube channel ID validation via YouTube Data API v3."""
 
-import json
-
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -27,12 +25,22 @@ def validate_channel_id(channel_id: str) -> tuple[bool, str | None]:
     try:
         youtube = build("youtube", "v3", developerKey=api_key)
 
-        # Handle @username format
+        # Handle @username format: resolve via Search API (forHandle not in cached discovery)
         if channel_id.startswith("@"):
-            request = youtube.channels().list(
-                part="id",
-                forHandle=channel_id.lstrip("@"),
-            )
+            handle = channel_id.lstrip("@")
+            # Search by @handle so API is more likely to match the channel handle
+            search_response = youtube.search().list(
+                part="snippet",
+                type="channel",
+                q="@" + handle,
+                maxResults=1,
+            ).execute()
+            search_items = search_response.get("items", [])
+            if not search_items:
+                return False, "Channel not found"
+            resolved_id = search_items[0]["snippet"]["channelId"]
+            # Validate and return canonical ID via channels.list
+            request = youtube.channels().list(part="id", id=resolved_id)
         else:
             request = youtube.channels().list(
                 part="id",
