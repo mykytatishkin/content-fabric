@@ -139,6 +139,79 @@ class TelegramBroadcast:
         self.logger.info(f"Broadcast completed: {success_count}/{len(self.subscribers)} successful")
         return result
     
+    def broadcast_photo(self, photo_path: str, caption: str = "", parse_mode: str = "Markdown") -> dict:
+        """Broadcast a photo with optional caption to all subscribers.
+
+        Args:
+            photo_path: Local file path to the image.
+            caption: Optional caption (supports Markdown).
+            parse_mode: Telegram parse mode for the caption.
+
+        Returns:
+            Dictionary with success/failure counts.
+        """
+        if not self.bot_token:
+            self.logger.error("TELEGRAM_BOT_TOKEN not configured")
+            return {"success": 0, "failed": 0, "total": 0}
+
+        if not self.subscribers:
+            self.logger.warning("No subscribers to send photos to")
+            return {"success": 0, "failed": 0, "total": 0}
+
+        success_count = 0
+        failed_count = 0
+        failed_users = []
+
+        for chat_id in self.subscribers:
+            try:
+                url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
+                data = {"chat_id": chat_id}
+                if caption:
+                    data["caption"] = caption
+                    data["parse_mode"] = parse_mode
+
+                with open(photo_path, "rb") as photo_file:
+                    response = requests.post(
+                        url, data=data, files={"photo": photo_file}, timeout=30
+                    )
+
+                if response.ok:
+                    success_count += 1
+                    self.logger.debug(f"Photo sent to {chat_id}")
+                else:
+                    # Retry without parse_mode on formatting errors
+                    error_text = response.text
+                    if "parse entities" in error_text.lower() or "can't parse" in error_text.lower():
+                        self.logger.warning(f"Caption parse error for {chat_id}, retrying without parse_mode")
+                        data.pop("parse_mode", None)
+                        with open(photo_path, "rb") as photo_file:
+                            retry = requests.post(
+                                url, data=data, files={"photo": photo_file}, timeout=30
+                            )
+                        if retry.ok:
+                            success_count += 1
+                        else:
+                            failed_count += 1
+                            failed_users.append(chat_id)
+                            self.logger.error(f"Failed to send photo to {chat_id}: {retry.text}")
+                    else:
+                        failed_count += 1
+                        failed_users.append(chat_id)
+                        self.logger.error(f"Failed to send photo to {chat_id}: {error_text}")
+            except Exception as e:
+                failed_count += 1
+                failed_users.append(chat_id)
+                self.logger.error(f"Error sending photo to {chat_id}: {str(e)}")
+
+        result = {
+            "success": success_count,
+            "failed": failed_count,
+            "total": len(self.subscribers),
+            "failed_users": failed_users,
+        }
+        self.logger.info(f"Photo broadcast completed: {success_count}/{len(self.subscribers)} successful")
+        return result
+
     def get_updates(self, offset: int = None) -> List[dict]:
         """Get updates from Telegram (for processing /start commands)."""
         if not self.bot_token:

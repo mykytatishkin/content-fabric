@@ -17,7 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 FrameLike = Union["Page", "Frame"]
 
-from core.auth.reauth.models import AutomationCredential, ProxyConfig
+from core.auth.reauth.models import AutomationCredential, ProxyConfig, MFAChallengeError
 from core.utils.logger import get_logger
 from core.utils.notifications import NotificationManager
 from core.utils.telegram_broadcast import TelegramBroadcast
@@ -799,14 +799,17 @@ async def _handle_mfa_if_needed(
     credential: AutomationCredential,
     browser_config: BrowserConfig,
 ) -> None:
-    """Handle MFA challenges when secrets or backup codes are available."""
+    """Detect MFA / security challenges and skip the channel immediately.
+
+    Raises :class:`MFAChallengeError` when any MFA prompt is detected so the
+    caller can abort this channel and move on to the next one.
+    """
     await page.wait_for_timeout(browser_config.human_delay_range_ms[0])
 
-    security_message: Optional[str] = None
     mfa_selectors = [
-        ("input[name='idvPin']", "Google запрашивает код подтверждения. Введите код вручную."),
-        ("input[name='totpPin']", "Google запрашивает TOTP код. Введите данные вручную."),
-        ("input[type='tel']", "Google запрашивает код подтверждения на телефон. Введите его вручную."),
+        ("input[name='idvPin']", "Google запрашивает код подтверждения."),
+        ("input[name='totpPin']", "Google запрашивает TOTP код."),
+        ("input[type='tel']", "Google запрашивает код подтверждения на телефон."),
     ]
     mfa_texts = [
         "Підтвердьте свою особу",
@@ -816,27 +819,22 @@ async def _handle_mfa_if_needed(
 
     security_message = await _detect_security_prompt(page, mfa_selectors, mfa_texts)
 
-    if credential.totp_secret:
-        LOGGER.warning(
-            "TOTP secret present for %s but automated MFA handling is not yet implemented.",
-            credential.channel_name,
-        )
-        # Don't notify here - notification will be sent from service.py if auth fails
-        LOGGER.info("TOTP challenge encountered for %s - will notify if auth fails", credential.channel_name)
-    elif credential.backup_codes:
-        LOGGER.warning(
-            "Backup codes available for %s; implement code entry when challenges appear.",
-            credential.channel_name,
-        )
-        # Don't notify here - notification will be sent from service.py if auth fails
-        LOGGER.info("Backup code challenge detected for %s - will notify if auth fails", credential.channel_name)
-    else:
-        LOGGER.debug("No MFA data configured for %s", credential.channel_name)
-        if security_message:
-            await _handle_security_challenge(page, credential, browser_config, security_message)
-        else:
-            # Don't notify here - notification will be sent from service.py if auth fails
-            LOGGER.warning("MFA or security challenge detected for %s but no automation data is configured - will notify if auth fails", credential.channel_name)
+    if not security_message:
+        # No MFA challenge on the page — nothing to do.
+        return
+
+    # Save a diagnostic screenshot before skipping.
+    screenshot_path = await _handle_security_challenge(page, credential, browser_config, security_message)
+
+    LOGGER.warning(
+        "MFA challenge detected for %s — skipping channel. Reason: %s",
+        credential.channel_name,
+        security_message,
+    )
+    raise MFAChallengeError(
+        f"MFA challenge for {credential.channel_name}: {security_message}",
+        screenshot_path=screenshot_path,
+    )
 
 
 async def _handle_security_challenge(
@@ -844,15 +842,22 @@ async def _handle_security_challenge(
     credential: AutomationCredential,
     browser_config: BrowserConfig,
     security_message: str,
-) -> None:
+) -> Optional[str]:
+    """Save a diagnostic screenshot when a security challenge is detected.
+
+    Returns the absolute path to the saved screenshot, or ``None`` if the
+    capture failed.
+    """
     await _click_more_ways_if_available(page, browser_config)
 
-    screenshot_path = Path("data/logs/mfa")
-    screenshot_path.mkdir(parents=True, exist_ok=True)
+    screenshot_dir = Path("data/logs/mfa")
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = screenshot_path / f"{credential.channel_name.replace(' ', '_')}_{timestamp}.png"
+    file_path = screenshot_dir / f"{credential.channel_name.replace(' ', '_')}_{timestamp}.png"
+    saved_path: Optional[str] = None
     try:
         await page.screenshot(path=str(file_path), full_page=True)
+        saved_path = str(file_path.resolve())
     except Exception as exc:
         LOGGER.debug("Failed to capture MFA screenshot: %s", exc)
 
@@ -861,9 +866,10 @@ async def _handle_security_challenge(
         credential.channel_name,
         security_message,
     )
-    # Don't notify here - notification will be sent from service.py if auth fails
-    # Screenshot is saved for debugging purposes
-    LOGGER.info("Security challenge screenshot saved to %s - will notify if auth fails", file_path.resolve())
+    if saved_path:
+        LOGGER.info("Security challenge screenshot saved to %s", saved_path)
+
+    return saved_path
 
 
 async def _handle_account_data_prompt(

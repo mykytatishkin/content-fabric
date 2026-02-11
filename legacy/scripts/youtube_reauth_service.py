@@ -14,6 +14,7 @@ from typing import Optional, Dict  # noqa: E402
 
 from core.auth.reauth.service import ServiceConfig, YouTubeReauthService  # noqa: E402
 from core.auth.reauth.models import ReauthResult  # noqa: E402
+from core.auth.token_validator import test_refresh_token  # noqa: E402
 from core.database.mysql_db import get_mysql_database  # noqa: E402
 from core.utils.logger import get_logger  # noqa: E402
 import requests  # noqa: E402
@@ -61,13 +62,43 @@ def resolve_channels(args: argparse.Namespace, db) -> list[str]:
         return args.channels
 
     if args.all_expiring:
-        # Get channels with tokens expiring within 3 days or already expired
-        expiring = db.get_expiring_tokens(days_ahead=3)
-        if expiring:
-            LOGGER.info("Automatically selected %d expiring channels.", len(expiring))
-            return expiring
-        LOGGER.info("No channels with expiring tokens found.")
-        return []
+        reauth_list: list[str] = []
+
+        # Step 1+2: Channels missing access_token or refresh_token
+        no_token, expiring = db.get_channels_needing_reauth(expiry_threshold_hours=24)
+        for ch in no_token:
+            LOGGER.info("Channel '%s' needs reauth: missing token(s)", ch.name)
+            reauth_list.append(ch.name)
+
+        # Step 3a: Channels expiring within 1 day — add directly
+        for ch in expiring:
+            LOGGER.info("Channel '%s' needs reauth: expires within 24h", ch.name)
+            reauth_list.append(ch.name)
+
+        # Step 3b: Remaining channels with both tokens — test refresh token validity
+        already_selected = set(reauth_list)
+        remaining = [
+            ch
+            for ch in db.get_all_channels(enabled_only=True)
+            if ch.name not in already_selected
+            and ch.access_token
+            and ch.refresh_token
+        ]
+        for ch in remaining:
+            is_valid, err = test_refresh_token(ch, db)
+            if not is_valid:
+                LOGGER.info(
+                    "Channel '%s' needs reauth: refresh token invalid (%s)",
+                    ch.name,
+                    err,
+                )
+                reauth_list.append(ch.name)
+
+        if reauth_list:
+            LOGGER.info("Selected %d channel(s) for reauth.", len(reauth_list))
+        else:
+            LOGGER.info("All channels have valid tokens.")
+        return reauth_list
 
     raise SystemExit("No channels provided. Pass channel names or use --all-expiring.")
 

@@ -6,6 +6,17 @@ from enum import Enum
 from typing import Dict, Optional, Sequence
 
 
+class MFAChallengeError(Exception):
+    """Raised when an MFA/security challenge is detected during login.
+
+    The caller should skip the current channel and continue with the next one.
+    """
+
+    def __init__(self, message: str, screenshot_path: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.screenshot_path = screenshot_path
+
+
 class ReauthStatus(str, Enum):
     """High-level outcome of a re-authentication attempt."""
 

@@ -412,6 +412,39 @@ class YouTubeMySQLDatabase:
                     expiring_channels.append(channel.name)
         return expiring_channels
     
+    def get_channels_needing_reauth(self, expiry_threshold_hours: int = 24) -> tuple:
+        """Identify enabled channels that need re-authentication.
+
+        Checks are applied in priority order:
+        1. Missing ``access_token`` or ``refresh_token`` → immediate reauth.
+        2. ``token_expires_at`` is set and falls within *expiry_threshold_hours* → reauth.
+
+        Args:
+            expiry_threshold_hours: Hours before expiry at which a token is
+                considered "expiring soon" (default 24).
+
+        Returns:
+            A ``(no_token_channels, expiring_channels)`` tuple where both
+            elements are lists of :class:`YouTubeChannel` objects.
+        """
+        no_token_channels: List[YouTubeChannel] = []
+        expiring_channels: List[YouTubeChannel] = []
+
+        now = datetime.now()
+        threshold = now + timedelta(hours=expiry_threshold_hours)
+
+        for channel in self.get_all_channels(enabled_only=True):
+            # Step 1+2: missing access_token or refresh_token
+            if not channel.access_token or not channel.refresh_token:
+                no_token_channels.append(channel)
+                continue
+
+            # Step 3a: token_expires_at is set and within threshold (or already expired)
+            if channel.token_expires_at and channel.token_expires_at <= threshold:
+                expiring_channels.append(channel)
+
+        return no_token_channels, expiring_channels
+
     def export_config(self) -> Dict[str, Any]:
         """Export current configuration for config.yaml compatibility."""
         config = {
