@@ -1,169 +1,202 @@
-# Content Factory Database Schema
+# Content Fabric Database Schema
 
-This document describes the microservices database architecture for the Content Factory SaaS platform.
+Database architecture for the Content Fabric SaaS platform with projects, RBAC, and multi-platform support.
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Content Factory Database                         │
-├──────────────┬──────────────┬──────────────┬──────────────┬─────────────┤
-│ Auth Service │ Channel Svc  │ Publishing   │ Analytics    │ Streaming   │
-│              │              │ Service      │ Service      │ Service     │
-├──────────────┼──────────────┼──────────────┼──────────────┼─────────────┤
-│ users        │ oauth_consoles│ publish_tasks│ channel_     │ streaming_  │
-│              │ channels     │              │ daily_stats  │ accounts    │
-│              │ channel_     │              │ reauth_audit │ streams     │
-│              │ tokens       │              │              │             │
-│              │ channel_     │              │              │             │
-│              │ credentials  │              │              │             │
-└──────────────┴──────────────┴──────────────┴──────────────┴─────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       Content Fabric Database                                │
+├───────────────────┬──────────────────┬──────────────┬────────────┬───────────┤
+│ Identity & Access │ Channels & OAuth │ Publishing   │ Analytics  │ Streaming │
+├───────────────────┼──────────────────┼──────────────┼────────────┼───────────┤
+│ platform_users    │ platform_oauth_  │ content_     │ channel_   │ live_     │
+│ platform_projects │  credentials     │  upload_     │  daily_    │  streaming│
+│ platform_project_ │ platform_        │  queue_tasks │  statistics│  _accounts│
+│  members          │  channels        │              │ channel_   │ live_     │
+│                   │ platform_channel_│              │  reauth_   │  stream_  │
+│                   │  tokens          │              │  audit_logs│  configu- │
+│                   │ platform_channel_│              │            │  rations  │
+│                   │  login_creds     │              │            │           │
+└───────────────────┴──────────────────┴──────────────┴────────────┴───────────┘
 ```
 
-## Microservice Groupings
+## Table Index
 
-### 1. Auth Service (`auth/`)
-User authentication and authorization.
-
-| Table | Purpose |
-|-------|---------|
-| `users` | User accounts, subscriptions, authentication |
-
-### 2. Channel Service (`channels/`)
-Multi-platform channel management (YouTube, TikTok, Instagram).
+### 1. Identity & Access (`auth/`)
 
 | Table | Purpose |
 |-------|---------|
-| `oauth_consoles` | OAuth credentials from cloud platforms |
-| `channels` | Connected social media channels |
-| `channel_tokens` | Token history and backups |
-| `channel_credentials` | Login credentials for automated reauth |
+| `platform_users` | User accounts, authentication |
+| `platform_projects` | Workspaces grouping resources, subscription billing |
+| `platform_project_members` | RBAC: user-to-project roles (owner/admin/editor/viewer) |
 
-### 3. Publishing Service (`publishing/`)
-Video publishing and scheduling.
+### 2. Channels & OAuth (`channels/`)
 
 | Table | Purpose |
 |-------|---------|
-| `publish_tasks` | Scheduled and executed publishing tasks |
+| `platform_oauth_credentials` | OAuth app creds from cloud providers (Google, Meta, TikTok) |
+| `platform_channels` | Multi-platform channels (YouTube, TikTok, Instagram) |
+| `platform_channel_tokens` | Token history and backup |
+| `platform_channel_login_credentials` | RPA login creds for automated reauth (Playwright) |
 
-### 4. Analytics Service (`analytics/`)
-Statistics, reporting, and audit logs.
-
-| Table | Purpose |
-|-------|---------|
-| `channel_daily_stats` | Daily channel statistics snapshots |
-| `reauth_audit` | Reauthorization attempt logs |
-
-### 5. Streaming Service (`streaming/`)
-Live streaming management.
+### 3. Publishing (`publishing/`)
 
 | Table | Purpose |
 |-------|---------|
-| `streaming_accounts` | OAuth accounts for live streaming |
-| `streams` | Live stream configurations |
+| `content_upload_queue_tasks` | Video publishing task queue with retry logic |
+
+### 4. Analytics & Audit (`analytics/`)
+
+| Table | Purpose |
+|-------|---------|
+| `channel_daily_statistics` | Daily channel stats snapshots |
+| `channel_reauth_audit_logs` | OAuth reauthorization attempt audit trail |
+
+### 5. Streaming (`streaming/`)
+
+| Table | Purpose |
+|-------|---------|
+| `live_streaming_accounts` | OAuth accounts for live streaming |
+| `live_stream_configurations` | RTMP/systemd stream configurations |
+
+### 6. System
+
+| Table | Purpose |
+|-------|---------|
+| `platform_schema_migrations` | Migration version tracking |
 
 ## Entity Relationships
 
 ```
-users (1)
+platform_users (1)
   │
-  ├──< oauth_consoles (*)
+  ├──< platform_projects (*) [owner_id]
   │       │
-  │       └──< channels (*) ──< channel_tokens (*)
-  │               │
-  │               ├──< channel_credentials (1)
-  │               ├──< channel_daily_stats (*)
-  │               ├──< reauth_audit (*)
-  │               └──< publish_tasks (*)
-  │
-  ├──< streaming_accounts (*)
+  │       ├──< platform_project_members (*) [project_id]
+  │       │       └──> platform_users [user_id]
   │       │
-  │       └──< streams (*)
+  │       ├──< platform_oauth_credentials (*)
+  │       │       │
+  │       │       └──< platform_channels (*) [console_id, SET NULL]
+  │       │               │
+  │       │               ├──< platform_channel_tokens (*)
+  │       │               ├──< platform_channel_login_credentials (1)
+  │       │               ├──< channel_daily_statistics (*)
+  │       │               ├──< channel_reauth_audit_logs (*)
+  │       │               └──< content_upload_queue_tasks (*)
+  │       │
+  │       ├──< live_streaming_accounts (*)
+  │       │       │
+  │       │       └──< live_stream_configurations (*) [SET NULL]
+  │       │
+  │       └──< live_stream_configurations (*) [project_id]
   │
-  └──< streams (*) [direct ownership]
+  └──< content_upload_queue_tasks (*) [created_by, SET NULL]
 ```
 
 ## Key Design Decisions
 
-### 1. User Ownership
-All entities are owned by users via `user_id` foreign key:
-- Enables multi-tenancy
-- Supports subscription-based access control
-- Allows per-user quotas and limits
+### 1. Project-Based Ownership (not user-based)
+All resources belong to a **project**, not directly to a user:
+- 1 user can have multiple projects
+- 1 project can have multiple users with different roles
+- Subscription/billing is per-project
 
-### 2. Platform Agnostic
-Tables are designed to support multiple platforms:
-- `channels.platform` = 'youtube' | 'tiktok' | 'instagram'
-- `streaming_accounts.platform` = 'youtube' | 'twitch'
-- Metadata stored as JSON for platform-specific fields
+### 2. RBAC Roles
+Enforced in application layer via `platform_project_members.role`:
 
-### 3. Naming Conventions
-- Removed `youtube_` prefix from table names
-- Renamed `channel_id` to `platform_channel_id` (for platform's ID)
-- Our internal `channel_id` now refers to `channels.id`
+| Role | Channels | Tasks | Settings | Members | Billing |
+|------|----------|-------|----------|---------|---------|
+| owner | CRUD | CRUD | CRUD | CRUD | CRUD |
+| admin | CRUD | CRUD | CRUD | CRU | Read |
+| editor | Read | CRUD | Read | Read | - |
+| viewer | Read | Read | Read | Read | - |
 
-### 4. Foreign Key Strategy
-- Changed from `channel_name` FKs to `channel_id` (more efficient)
-- CASCADE DELETE for user-owned data
-- SET NULL for optional relationships
+### 3. Descriptive Table Naming
+Tables use descriptive names grouped by domain prefix:
+- `platform_*` — identity, access, core infrastructure
+- `content_*` — content publishing
+- `channel_*` — channel analytics and audit
+- `live_*` — live streaming
+
+### 4. Platform Agnostic
+Multi-platform support via `platform` column:
+- youtube, tiktok, instagram, twitch, meta, kick
+
+### 5. FK Strategy
+- Integer FKs everywhere (no string-based FKs)
+- CASCADE DELETE for project-owned resources
+- SET NULL for optional references (console, streaming_account)
+
+## Legacy Table Mapping
+
+| Legacy Table | New Table |
+|---|---|
+| `user` | `platform_users` |
+| `google_consoles` | `platform_oauth_credentials` |
+| `youtube_channels` | `platform_channels` |
+| `youtube_tokens` | `platform_channel_tokens` |
+| `youtube_account_credentials` | `platform_channel_login_credentials` |
+| `tasks` | `content_upload_queue_tasks` |
+| `youtube_channel_daily` | `channel_daily_statistics` |
+| `youtube_reauth_audit` | `channel_reauth_audit_logs` |
+| `youtube_account` | `live_streaming_accounts` |
+| `stream` | `live_stream_configurations` |
+| `migration` | `platform_schema_migrations` |
+
+## Migrations
+
+All migration scripts are in `database/migrations/`:
+
+```bash
+# 1. Backup
+mysqldump -u root -p content_factory > backup_$(date +%Y%m%d).sql
+
+# 2. Run migrations sequentially
+mysql -u root -p content_factory < database/migrations/001_create_new_schema.sql
+mysql -u root -p content_factory < database/migrations/002_migrate_identity.sql
+mysql -u root -p content_factory < database/migrations/003_migrate_channels.sql
+mysql -u root -p content_factory < database/migrations/004_migrate_publishing.sql
+mysql -u root -p content_factory < database/migrations/005_migrate_analytics.sql
+mysql -u root -p content_factory < database/migrations/006_migrate_streaming.sql
+mysql -u root -p content_factory < database/migrations/007_verify_migration.sql
+
+# 3. Cleanup (ONLY after all code updated and verified)
+# mysql -u root -p content_factory < database/migrations/008_cleanup_legacy.sql
+```
 
 ## Directory Structure
 
 ```
-database/DDL/
-├── SCHEMA_INDEX.md          # This file
-├── auth/
-│   └── users.sql
-├── channels/
-│   ├── oauth_consoles.sql
-│   ├── channels.sql
-│   ├── channel_tokens.sql
-│   └── channel_credentials.sql
-├── publishing/
-│   └── publish_tasks.sql
-├── analytics/
-│   ├── channel_daily_stats.sql
-│   └── reauth_audit.sql
-├── streaming/
-│   ├── streaming_accounts.sql
-│   └── streams.sql
+database/
+├── DDL/
+│   ├── SCHEMA_INDEX.md              # This file
+│   ├── auth/
+│   │   ├── platform_users.sql
+│   │   ├── platform_projects.sql
+│   │   └── platform_project_members.sql
+│   ├── channels/
+│   │   ├── platform_oauth_credentials.sql
+│   │   ├── platform_channels.sql
+│   │   ├── platform_channel_tokens.sql
+│   │   └── platform_channel_login_credentials.sql
+│   ├── publishing/
+│   │   └── content_upload_queue_tasks.sql
+│   ├── analytics/
+│   │   ├── channel_daily_statistics.sql
+│   │   └── channel_reauth_audit_logs.sql
+│   └── streaming/
+│       ├── live_streaming_accounts.sql
+│       └── live_stream_configurations.sql
 └── migrations/
-    ├── README.md
-    ├── 001_create_schema.sql
-    ├── 002_migrate_data.sql
-    ├── 003_cleanup_legacy.sql
-    ├── rollback_001.sql
-    └── rollback_002.sql
-```
-
-## Legacy Table Mapping
-
-| Legacy Table | New Table | Service |
-|-------------|-----------|---------|
-| `user` | `users` | Auth |
-| `google_consoles` | `oauth_consoles` | Channel |
-| `youtube_channels` | `channels` | Channel |
-| `youtube_tokens` | `channel_tokens` | Channel |
-| `youtube_account_credentials` | `channel_credentials` | Channel |
-| `tasks` | `publish_tasks` | Publishing |
-| `youtube_channel_daily` | `channel_daily_stats` | Analytics |
-| `youtube_reauth_audit` | `reauth_audit` | Analytics |
-| `youtube_account` | `streaming_accounts` | Streaming |
-| `stream` | `streams` | Streaming |
-
-## Migration
-
-See `migrations/README.md` for detailed migration instructions.
-
-Quick start:
-```bash
-# 1. Backup database
-mysqldump -u root -p content_factory > backup.sql
-
-# 2. Run migrations
-mysql -u root -p content_factory < migrations/001_create_schema.sql
-mysql -u root -p content_factory < migrations/002_migrate_data.sql
-
-# 3. Verify and cleanup (optional)
-mysql -u root -p content_factory < migrations/003_cleanup_legacy.sql
+    ├── 001_create_new_schema.sql
+    ├── 002_migrate_identity.sql
+    ├── 003_migrate_channels.sql
+    ├── 004_migrate_publishing.sql
+    ├── 005_migrate_analytics.sql
+    ├── 006_migrate_streaming.sql
+    ├── 007_verify_migration.sql
+    ├── 008_cleanup_legacy.sql
+    └── rollback_001..006.sql
 ```
