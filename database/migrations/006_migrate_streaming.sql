@@ -70,9 +70,9 @@ SELECT
     s.`id`,
     @default_project_id,
     s.`youtube_account_id`,
-    -- Resolve channel_name to channel_id
+    -- Resolve channel_name to channel_id (COLLATE needed: stream uses 0900_ai_ci)
     (SELECT pc.`id` FROM `platform_channels` pc
-     WHERE pc.`name` = s.`channel_name` AND pc.`platform` = 'youtube' LIMIT 1),
+     WHERE pc.`name` = s.`channel_name` COLLATE utf8mb4_unicode_ci AND pc.`platform` = 'youtube' LIMIT 1),
     s.`name`,
     s.`service_name`,
     s.`workdir`,
