@@ -49,7 +49,7 @@ DROP TABLE IF EXISTS `migration`;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
-INSERT INTO `platform_schema_migrations` (`version`, `description`)
+INSERT IGNORE INTO `platform_schema_migrations` (`version`, `description`)
 VALUES (@migration_version, 'Dropped all legacy tables after successful migration');
 */
 

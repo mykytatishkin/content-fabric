@@ -101,5 +101,5 @@ WHERE NOT EXISTS (
 -- Record migration
 -- ============================================================================
 
-INSERT INTO `platform_schema_migrations` (`version`, `description`)
+INSERT IGNORE INTO `platform_schema_migrations` (`version`, `description`)
 VALUES (@migration_version, 'Migrate youtube_channel_daily and youtube_reauth_audit to new analytics tables');

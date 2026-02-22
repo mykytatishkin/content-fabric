@@ -150,5 +150,5 @@ WHERE NOT EXISTS (
 -- Record migration
 -- ============================================================================
 
-INSERT INTO `platform_schema_migrations` (`version`, `description`)
+INSERT IGNORE INTO `platform_schema_migrations` (`version`, `description`)
 VALUES (@migration_version, 'Migrate google_consoles, youtube_channels, youtube_tokens, youtube_account_credentials to new schema');
