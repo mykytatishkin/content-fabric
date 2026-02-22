@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-MySQL Database module for managing YouTube channels and tokens.
+MySQL Database module for managing channels, credentials, tasks and audit.
+
+Refactored for new schema:
+  platform_channels, platform_oauth_credentials,
+  platform_channel_login_credentials, channel_reauth_audit_logs,
+  content_upload_queue_tasks, platform_channel_tokens
 """
 
 import mysql.connector
@@ -14,42 +19,51 @@ from pathlib import Path
 
 
 @dataclass
-class GoogleConsole:
-    """Google Cloud Console credentials data structure."""
+class OAuthCredential:
+    """OAuth console/app credentials (platform_oauth_credentials)."""
     id: int
-    name: str  # Unique identifier for the console
+    name: str
     client_id: str
     client_secret: str
     credentials_file: Optional[str] = None
-    project_id: Optional[str] = None
+    cloud_project_id: Optional[str] = None
     redirect_uris: Optional[List[str]] = None
     description: Optional[str] = None
+    platform: str = 'google'
     enabled: bool = True
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
 
+# Keep old name as alias for backward compatibility
+GoogleConsole = OAuthCredential
+
+
 @dataclass
-class YouTubeChannel:
-    """YouTube channel data structure."""
+class PlatformChannel:
+    """Platform channel (platform_channels)."""
     id: int
     name: str
-    channel_id: str
-    console_name: Optional[str] = None  # Reference to google_consoles.name
+    platform_channel_id: str
+    console_id: Optional[int] = None
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     token_expires_at: Optional[datetime] = None
-    console_id: Optional[int] = None
+    project_id: Optional[int] = None
     enabled: bool = True
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
 
+# Keep old name as alias for backward compatibility
+YouTubeChannel = PlatformChannel
+
+
 @dataclass
-class YouTubeAccountCredential:
-    """Credentials required for automated OAuth re-authentication."""
+class ChannelLoginCredential:
+    """RPA login credentials (platform_channel_login_credentials)."""
     id: int
-    channel_name: str
+    channel_id: int
     login_email: str
     login_password: str
     totp_secret: Optional[str] = None
@@ -68,11 +82,15 @@ class YouTubeAccountCredential:
     updated_at: Optional[datetime] = None
 
 
+# Keep old name as alias
+YouTubeAccountCredential = ChannelLoginCredential
+
+
 @dataclass
-class YouTubeReauthAudit:
-    """Audit record for OAuth re-authentication attempts."""
+class ReauthAuditLog:
+    """Reauth audit record (channel_reauth_audit_logs)."""
     id: int
-    channel_name: str
+    channel_id: int
     initiated_at: datetime
     completed_at: Optional[datetime]
     status: str
@@ -80,9 +98,13 @@ class YouTubeReauthAudit:
     metadata: Optional[Dict[str, Any]] = None
 
 
+# Keep old name as alias
+YouTubeReauthAudit = ReauthAuditLog
+
+
 @dataclass
-class Task:
-    """Task data structure for scheduled posting.
+class UploadTask:
+    """Upload task (content_upload_queue_tasks).
 
     Status codes:
         0 -> pending
@@ -91,44 +113,39 @@ class Task:
         3 -> processing
     """
     id: int
-    account_id: int
+    channel_id: int
     media_type: str
     status: int
-    att_file_path: str
+    source_file_path: str
     title: str
-    date_post: datetime
-    date_add: Optional[datetime] = None
-    cover: Optional[str] = None
+    scheduled_at: datetime
+    created_at: Optional[datetime] = None
+    thumbnail_path: Optional[str] = None
     description: Optional[str] = None
     keywords: Optional[str] = None
     post_comment: Optional[str] = None
-    add_info: Optional[Dict[str, Any]] = None
-    date_done: Optional[datetime] = None
-    upload_id: Optional[str] = None  # Video ID from platform after upload
+    legacy_add_info: Optional[Dict[str, Any]] = None
+    completed_at: Optional[datetime] = None
+    upload_id: Optional[str] = None
     error_message: Optional[str] = None
     retry_count: int = 0
 
 
+# Keep old name as alias
+Task = UploadTask
+
+
 class YouTubeMySQLDatabase:
-    """MySQL Database manager for YouTube channels and tokens."""
-    
+    """MySQL Database manager for channels, credentials and tasks."""
+
     def __init__(self, config: Dict[str, Any] = None):
-        """
-        Initialize MySQL database connection.
-        
-        Args:
-            config: MySQL connection configuration dict with keys:
-                   host, port, database, user, password, charset, collation
-        """
         if config is None:
             config = self._get_default_config()
-        
         self.config = config
         self.connection = None
         self._connect()
-    
+
     def _get_default_config(self) -> Dict[str, Any]:
-        """Get default MySQL configuration from environment variables."""
         return {
             'host': os.getenv('MYSQL_HOST', 'localhost'),
             'port': int(os.getenv('MYSQL_PORT', 3306)),
@@ -139,156 +156,118 @@ class YouTubeMySQLDatabase:
             'collation': 'utf8mb4_unicode_ci',
             'autocommit': True
         }
-    
+
     def _connect(self):
-        """Connect to MySQL database."""
         try:
             self.connection = mysql.connector.connect(**self.config)
             if self.connection.is_connected():
-                print("✅ Connected to MySQL database")
+                print("Connected to MySQL database")
             else:
                 raise Error("Failed to connect to MySQL")
         except Error as e:
-            print(f"❌ Error connecting to MySQL: {e}")
+            print(f"Error connecting to MySQL: {e}")
             raise
-    
+
     def _ensure_connection(self):
-        """Ensure database connection is active."""
         if not self.connection or not self.connection.is_connected():
             self._connect()
-    
+
     def _execute_query(self, query: str, params: tuple = None, fetch: bool = False) -> Optional[List[tuple]]:
-        """Execute a SQL query and return results if fetch=True."""
         try:
             self._ensure_connection()
             cursor = self.connection.cursor()
             cursor.execute(query, params)
-            
             if fetch:
                 return cursor.fetchall()
             else:
                 self.connection.commit()
                 return None
         except Error as e:
-            print(f"❌ Database error: {e}")
+            print(f"Database error: {e}")
             self.connection.rollback()
             raise
-    
-    def add_channel(self, name: str, channel_id: str, console_name: Optional[str] = None,
+
+    # ==================== Channel Methods ====================
+
+    def add_channel(self, name: str, platform_channel_id: str, console_id: Optional[int] = None,
                    enabled: bool = True) -> bool:
-        """Add a new YouTube channel.
-        
-        Args:
-            name: Channel name
-            channel_id: YouTube channel ID
-            console_name: Reference to google_consoles.name (required for OAuth)
-            enabled: Whether channel is enabled
-        """
+        """Add a new channel to platform_channels."""
         try:
+            project_id = self._get_default_project_id()
             query = """
-                INSERT INTO youtube_channels 
-                (name, channel_id, console_name, enabled)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO platform_channels
+                (project_id, name, platform_channel_id, console_id, enabled)
+                VALUES (%s, %s, %s, %s, %s)
             """
-            self._execute_query(query, (name, channel_id, console_name, enabled))
+            self._execute_query(query, (project_id, name, platform_channel_id, console_id, enabled))
             return True
         except Error as e:
-            if e.errno == 1062:  # Duplicate entry
+            if e.errno == 1062:
                 return False
             raise
-    
-    def get_channel(self, name: str) -> Optional[YouTubeChannel]:
+
+    def get_channel(self, name: str) -> Optional[PlatformChannel]:
         """Get channel by name."""
         query = """
-            SELECT id, name, channel_id, console_name,
-                   access_token, refresh_token, token_expires_at,
-                   console_id, enabled, created_at, updated_at
-            FROM youtube_channels WHERE name = %s
+            SELECT id, name, platform_channel_id,
+                   console_id, access_token, refresh_token, token_expires_at,
+                   project_id, enabled, created_at, updated_at
+            FROM platform_channels WHERE name = %s
         """
         results = self._execute_query(query, (name,), fetch=True)
-        
         if results:
-            row = results[0]
-            return YouTubeChannel(
-                id=row[0],
-                name=row[1],
-                channel_id=row[2],
-                console_name=row[3],
-                access_token=row[4],
-                refresh_token=row[5],
-                token_expires_at=row[6],
-                console_id=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            )
+            return self._row_to_channel(results[0])
         return None
-    
-    def get_channel_by_channel_id(self, channel_id: str) -> Optional[YouTubeChannel]:
-        """Get channel by YouTube channel_id."""
+
+    def get_channel_by_channel_id(self, platform_channel_id: str) -> Optional[PlatformChannel]:
+        """Get channel by platform_channel_id."""
         query = """
-            SELECT id, name, channel_id, console_name,
-                   access_token, refresh_token, token_expires_at,
-                   console_id, enabled, created_at, updated_at
-            FROM youtube_channels WHERE channel_id = %s
+            SELECT id, name, platform_channel_id,
+                   console_id, access_token, refresh_token, token_expires_at,
+                   project_id, enabled, created_at, updated_at
+            FROM platform_channels WHERE platform_channel_id = %s
         """
-        results = self._execute_query(query, (channel_id,), fetch=True)
-        
+        results = self._execute_query(query, (platform_channel_id,), fetch=True)
         if results:
-            row = results[0]
-            return YouTubeChannel(
-                id=row[0],
-                name=row[1],
-                channel_id=row[2],
-                console_name=row[3],
-                access_token=row[4],
-                refresh_token=row[5],
-                token_expires_at=row[6],
-                console_id=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            )
+            return self._row_to_channel(results[0])
         return None
-    
-    def get_all_channels(self, enabled_only: bool = False) -> List[YouTubeChannel]:
+
+    def get_all_channels(self, enabled_only: bool = False) -> List[PlatformChannel]:
         """Get all channels."""
         if enabled_only:
             query = """
-                SELECT id, name, channel_id, console_name,
-                       access_token, refresh_token, token_expires_at,
-                       console_id, enabled, created_at, updated_at
-                FROM youtube_channels WHERE enabled = 1
+                SELECT id, name, platform_channel_id,
+                       console_id, access_token, refresh_token, token_expires_at,
+                       project_id, enabled, created_at, updated_at
+                FROM platform_channels WHERE enabled = 1
             """
         else:
             query = """
-                SELECT id, name, channel_id, console_name,
-                       access_token, refresh_token, token_expires_at,
-                       console_id, enabled, created_at, updated_at
-                FROM youtube_channels
+                SELECT id, name, platform_channel_id,
+                       console_id, access_token, refresh_token, token_expires_at,
+                       project_id, enabled, created_at, updated_at
+                FROM platform_channels
             """
-        
         results = self._execute_query(query, fetch=True)
-        channels = []
-        
-        for row in results:
-            channels.append(YouTubeChannel(
-                id=row[0],
-                name=row[1],
-                channel_id=row[2],
-                console_name=row[3],
-                access_token=row[4],
-                refresh_token=row[5],
-                token_expires_at=row[6],
-                console_id=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            ))
-        
-        return channels
-    
-    def update_channel_tokens(self, name: str, access_token: str, 
+        return [self._row_to_channel(row) for row in results]
+
+    def _row_to_channel(self, row: tuple) -> PlatformChannel:
+        """Convert DB row to PlatformChannel."""
+        return PlatformChannel(
+            id=row[0],
+            name=row[1],
+            platform_channel_id=row[2],
+            console_id=row[3],
+            access_token=row[4],
+            refresh_token=row[5],
+            token_expires_at=row[6],
+            project_id=row[7],
+            enabled=bool(row[8]),
+            created_at=row[9],
+            updated_at=row[10]
+        )
+
+    def update_channel_tokens(self, name: str, access_token: str,
                             refresh_token: Optional[str] = None,
                             expires_at: Optional[datetime] = None) -> bool:
         """Update channel tokens."""
@@ -296,41 +275,33 @@ class YouTubeMySQLDatabase:
             self._ensure_connection()
             cursor = self.connection.cursor()
             query = """
-                UPDATE youtube_channels 
-                SET access_token = %s, refresh_token = %s, 
+                UPDATE platform_channels
+                SET access_token = %s, refresh_token = %s,
                     token_expires_at = %s, updated_at = NOW()
                 WHERE name = %s
             """
             cursor.execute(query, (access_token, refresh_token, expires_at, name))
             self.connection.commit()
-            
-            # Проверить, была ли обновлена хотя бы одна запись
             rows_affected = cursor.rowcount
             cursor.close()
-            
             if rows_affected == 0:
-                print(f"⚠️ Канал '{name}' не найден в базе данных")
+                print(f"Channel '{name}' not found")
                 return False
-            
-            print(f"✅ Токены обновлены для канала '{name}'")
             return True
         except Error as e:
-            print(f"❌ Ошибка обновления токенов для канала '{name}': {e}")
+            print(f"Error updating tokens for channel '{name}': {e}")
             return False
-    
+
     def enable_channel(self, name: str) -> bool:
-        """Enable a channel."""
         return self._set_channel_enabled(name, True)
-    
+
     def disable_channel(self, name: str) -> bool:
-        """Disable a channel."""
         return self._set_channel_enabled(name, False)
-    
+
     def _set_channel_enabled(self, name: str, enabled: bool) -> bool:
-        """Set channel enabled status."""
         try:
             query = """
-                UPDATE youtube_channels 
+                UPDATE platform_channels
                 SET enabled = %s, updated_at = NOW()
                 WHERE name = %s
             """
@@ -338,275 +309,172 @@ class YouTubeMySQLDatabase:
             return True
         except Error:
             return False
-    
+
     def delete_channel(self, name: str) -> bool:
-        """Delete a channel."""
         try:
-            query = "DELETE FROM youtube_channels WHERE name = %s"
+            query = "DELETE FROM platform_channels WHERE name = %s"
             self._execute_query(query, (name,))
             return True
         except Error:
             return False
-    
+
     def remove_channel(self, name: str) -> bool:
-        """Remove a channel from database."""
         return self.delete_channel(name)
-    
+
     def is_token_expired(self, name: str) -> bool:
-        """Check if channel token is expired.
-        
-        A token is considered expired if:
-        1. Channel doesn't exist
-        2. No access_token is present
-        3. token_expires_at is set AND current time >= expiration time
-        
-        Note: If token_expires_at is None but access_token exists, 
-        the token is NOT considered expired (it may be refreshable).
-        """
         channel = self.get_channel(name)
         if not channel or not channel.access_token:
             return True
-        
-        # If no expiry date is set, but we have an access token,
-        # don't consider it expired (it can be refreshed)
         if not channel.token_expires_at:
             return False
-        
         return datetime.now() >= channel.token_expires_at
-    
+
     def get_expired_tokens(self) -> List[str]:
-        """Get list of channels with expired tokens.
-        
-        Only returns channels that have token_expires_at set and are actually expired.
-        Channels without expiration dates are not included.
-        """
         expired_channels = []
         now = datetime.now()
         for channel in self.get_all_channels(enabled_only=True):
-            # Only consider channels with a valid expiration date
-            if channel.token_expires_at:
-                # Check if token is expired (current time >= expiration time)
-                if now >= channel.token_expires_at:
-                    expired_channels.append(channel.name)
+            if channel.token_expires_at and now >= channel.token_expires_at:
+                expired_channels.append(channel.name)
         return expired_channels
-    
+
     def get_expiring_tokens(self, days_ahead: int = 7) -> List[str]:
-        """Get list of channels with tokens expiring soon or already expired.
-        
-        Args:
-            days_ahead: Number of days to look ahead for expiring tokens (default: 7)
-        
-        Returns:
-            List of channel names with tokens expiring within the specified days or already expired.
-            Only includes channels that have token_expires_at set.
-        """
         expiring_channels = []
         now = datetime.now()
         threshold = now + timedelta(days=days_ahead)
-        
         for channel in self.get_all_channels(enabled_only=True):
-            # Only consider channels with a valid expiration date
-            if channel.token_expires_at:
-                # Check if token is expired or expiring within the threshold
-                if channel.token_expires_at <= threshold:
-                    expiring_channels.append(channel.name)
+            if channel.token_expires_at and channel.token_expires_at <= threshold:
+                expiring_channels.append(channel.name)
         return expiring_channels
-    
+
     def get_channels_needing_reauth(self, expiry_threshold_hours: int = 24) -> tuple:
-        """Identify enabled channels that need re-authentication.
-
-        Checks are applied in priority order:
-        1. Missing ``access_token`` or ``refresh_token`` → immediate reauth.
-        2. ``token_expires_at`` is set and falls within *expiry_threshold_hours* → reauth.
-
-        Args:
-            expiry_threshold_hours: Hours before expiry at which a token is
-                considered "expiring soon" (default 24).
-
-        Returns:
-            A ``(no_token_channels, expiring_channels)`` tuple where both
-            elements are lists of :class:`YouTubeChannel` objects.
-        """
-        no_token_channels: List[YouTubeChannel] = []
-        expiring_channels: List[YouTubeChannel] = []
-
+        no_token_channels: List[PlatformChannel] = []
+        expiring_channels: List[PlatformChannel] = []
         now = datetime.now()
         threshold = now + timedelta(hours=expiry_threshold_hours)
-
         for channel in self.get_all_channels(enabled_only=True):
-            # Step 1+2: missing access_token or refresh_token
             if not channel.access_token or not channel.refresh_token:
                 no_token_channels.append(channel)
                 continue
-
-            # Step 3a: token_expires_at is set and within threshold (or already expired)
             if channel.token_expires_at and channel.token_expires_at <= threshold:
                 expiring_channels.append(channel)
-
         return no_token_channels, expiring_channels
 
     def export_config(self) -> Dict[str, Any]:
-        """Export current configuration for config.yaml compatibility."""
-        config = {
-            'accounts': {
-                'youtube': []
-            }
-        }
-        
+        config = {'accounts': {'youtube': []}}
         for channel in self.get_all_channels():
-            # Get OAuth credentials from google_consoles table via console_name
             credentials = self.get_console_credentials_for_channel(channel.name)
-            
             if credentials:
                 client_id = credentials['client_id']
                 client_secret = credentials['client_secret']
                 credentials_file = credentials.get('credentials_file', 'credentials.json')
             else:
-                # No console assigned - skip or use empty values
                 client_id = ''
                 client_secret = ''
                 credentials_file = 'credentials.json'
-            
             config['accounts']['youtube'].append({
                 'name': channel.name,
-                'channel_id': channel.channel_id,
-                'console_name': channel.console_name,
+                'platform_channel_id': channel.platform_channel_id,
+                'console_id': channel.console_id,
                 'client_id': client_id,
                 'client_secret': client_secret,
                 'credentials_file': credentials_file,
                 'enabled': channel.enabled
             })
-        
         return config
-    
+
     def import_from_config(self, config: Dict[str, Any]) -> int:
-        """Import channels from config.yaml format."""
         imported_count = 0
         youtube_accounts = config.get('accounts', {}).get('youtube', [])
-        
         for account in youtube_accounts:
             if self.add_channel(
                 name=account.get('name'),
-                channel_id=account.get('channel_id', ''),
-                console_name=account.get('console_name'),
+                platform_channel_id=account.get('platform_channel_id', account.get('channel_id', '')),
+                console_id=account.get('console_id'),
                 enabled=account.get('enabled', True)
             ):
                 imported_count += 1
-        
         return imported_count
-    
-    # ==================== Google Console Methods ====================
-    
+
+    # ==================== OAuth Credential Methods ====================
+
     def add_google_console(self, name: str, client_id: str, client_secret: str,
                           credentials_file: Optional[str] = None,
                           description: Optional[str] = None,
                           enabled: bool = True) -> bool:
-        """Add a new Google Cloud Console configuration.
-        
-        Args:
-            name: Unique name for the console (used as identifier)
-            client_id: OAuth Client ID from Google Cloud Console
-            client_secret: OAuth Client Secret from Google Cloud Console
-            credentials_file: Path to credentials.json file (optional)
-            description: Optional description
-            enabled: Whether console is enabled
-        """
+        """Add a new OAuth credential to platform_oauth_credentials."""
         try:
+            project_id = self._get_default_project_id()
             query = """
-                INSERT INTO google_consoles 
-                (name, client_id, client_secret, credentials_file, description, enabled)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO platform_oauth_credentials
+                (project_id, name, client_id, client_secret, credentials_file, description, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            self._execute_query(query, (name, client_id, client_secret, credentials_file, description, enabled))
+            self._execute_query(query, (project_id, name, client_id, client_secret, credentials_file, description, enabled))
             return True
         except Error as e:
-            if e.errno == 1062:  # Duplicate entry
+            if e.errno == 1062:
                 return False
             raise
-    
-    def get_google_console(self, name: str) -> Optional[GoogleConsole]:
-        """Get Google Console by name."""
+
+    def get_google_console(self, name: str) -> Optional[OAuthCredential]:
+        """Get OAuth credential by name."""
         query = """
-            SELECT id, name, project_id, client_id, client_secret, credentials_file,
+            SELECT id, name, cloud_project_id, client_id, client_secret, credentials_file,
                    redirect_uris, description, enabled, created_at, updated_at
-            FROM google_consoles WHERE name = %s
+            FROM platform_oauth_credentials WHERE name = %s
         """
         results = self._execute_query(query, (name,), fetch=True)
-        
         if results:
-            row = results[0]
-            redirect_uris = None
-            if row[6]:  # redirect_uris
-                try:
-                    redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
-                except (json.JSONDecodeError, TypeError):
-                    redirect_uris = None
-            return GoogleConsole(
-                id=row[0],
-                name=row[1],
-                project_id=row[2],
-                client_id=row[3],
-                client_secret=row[4],
-                credentials_file=row[5],
-                redirect_uris=redirect_uris,
-                description=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            )
+            return self._row_to_oauth_credential(results[0])
         return None
-    
-    def get_all_google_consoles(self, enabled_only: bool = False) -> List[GoogleConsole]:
-        """Get all Google Console configurations."""
+
+    def get_all_google_consoles(self, enabled_only: bool = False) -> List[OAuthCredential]:
+        """Get all OAuth credentials."""
         if enabled_only:
             query = """
-                SELECT id, name, project_id, client_id, client_secret, credentials_file,
+                SELECT id, name, cloud_project_id, client_id, client_secret, credentials_file,
                        redirect_uris, description, enabled, created_at, updated_at
-                FROM google_consoles WHERE enabled = 1
+                FROM platform_oauth_credentials WHERE enabled = 1
             """
         else:
             query = """
-                SELECT id, name, project_id, client_id, client_secret, credentials_file,
+                SELECT id, name, cloud_project_id, client_id, client_secret, credentials_file,
                        redirect_uris, description, enabled, created_at, updated_at
-                FROM google_consoles
+                FROM platform_oauth_credentials
             """
-        
         results = self._execute_query(query, fetch=True)
-        consoles = []
-        
-        for row in results:
-            redirect_uris = None
-            if row[6]:  # redirect_uris
-                try:
-                    redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
-                except (json.JSONDecodeError, TypeError):
-                    redirect_uris = None
-            consoles.append(GoogleConsole(
-                id=row[0],
-                name=row[1],
-                project_id=row[2],
-                client_id=row[3],
-                client_secret=row[4],
-                credentials_file=row[5],
-                redirect_uris=redirect_uris,
-                description=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            ))
-        
-        return consoles
-    
+        return [self._row_to_oauth_credential(row) for row in results]
+
+    def _row_to_oauth_credential(self, row: tuple) -> OAuthCredential:
+        """Convert DB row to OAuthCredential."""
+        redirect_uris = None
+        if row[6]:
+            try:
+                redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
+            except (json.JSONDecodeError, TypeError):
+                redirect_uris = None
+        return OAuthCredential(
+            id=row[0],
+            name=row[1],
+            cloud_project_id=row[2],
+            client_id=row[3],
+            client_secret=row[4],
+            credentials_file=row[5],
+            redirect_uris=redirect_uris,
+            description=row[7],
+            enabled=bool(row[8]),
+            created_at=row[9],
+            updated_at=row[10]
+        )
+
     def update_google_console(self, name: str, client_id: Optional[str] = None,
                               client_secret: Optional[str] = None,
                               credentials_file: Optional[str] = None,
                               description: Optional[str] = None,
                               enabled: Optional[bool] = None) -> bool:
-        """Update Google Console configuration."""
         try:
             updates = []
             params = []
-            
             if client_id is not None:
                 updates.append("client_id = %s")
                 params.append(client_id)
@@ -622,54 +490,29 @@ class YouTubeMySQLDatabase:
             if enabled is not None:
                 updates.append("enabled = %s")
                 params.append(enabled)
-            
             if not updates:
                 return False
-            
             updates.append("updated_at = NOW()")
             params.append(name)
-            
-            query = f"UPDATE google_consoles SET {', '.join(updates)} WHERE name = %s"
+            query = f"UPDATE platform_oauth_credentials SET {', '.join(updates)} WHERE name = %s"
             self._execute_query(query, tuple(params))
             return True
         except Error:
             return False
-    
+
     def delete_google_console(self, name: str) -> bool:
-        """Delete a Google Console configuration."""
         try:
-            query = "DELETE FROM google_consoles WHERE name = %s"
+            query = "DELETE FROM platform_oauth_credentials WHERE name = %s"
             self._execute_query(query, (name,))
             return True
         except Error:
             return False
-    
+
     def get_console_credentials_for_channel(self, channel_name: str) -> Optional[Dict[str, str]]:
-        """Get OAuth credentials for a channel from its associated Google Console.
-        
-        Priority:
-        1. console_name (if set) -> get from google_consoles by name
-        2. console_id (if set) -> get from google_consoles by id
-        
-        Returns:
-            Dict with 'client_id', 'client_secret', and 'credentials_file' if found,
-            None if channel or console not found
-        """
+        """Get OAuth credentials for a channel from its associated console."""
         channel = self.get_channel(channel_name)
         if not channel:
             return None
-        
-        # Priority 1: If channel has console_name, get credentials from google_consoles by name
-        if channel.console_name:
-            console = self.get_google_console(channel.console_name)
-            if console and console.enabled:
-                return {
-                    'client_id': console.client_id,
-                    'client_secret': console.client_secret,
-                    'credentials_file': console.credentials_file or 'credentials.json'
-                }
-        
-        # Priority 2: If channel has console_id, get credentials from google_consoles by id
         if channel.console_id:
             console = self.get_console(channel.console_id)
             if console and console.enabled:
@@ -678,37 +521,25 @@ class YouTubeMySQLDatabase:
                     'client_secret': console.client_secret,
                     'credentials_file': console.credentials_file or 'credentials.json'
                 }
-        
         return None
-    
+
     def get_database_stats(self) -> Dict[str, Any]:
-        """Get database statistics."""
         try:
-            # Get channel count
-            channel_count = self._execute_query("SELECT COUNT(*) FROM youtube_channels", fetch=True)[0][0]
-            enabled_count = self._execute_query("SELECT COUNT(*) FROM youtube_channels WHERE enabled = 1", fetch=True)[0][0]
-            
-            # Get token count
-            token_count = self._execute_query("SELECT COUNT(*) FROM youtube_tokens", fetch=True)[0][0]
-            
-            # Get expired tokens count
+            channel_count = self._execute_query("SELECT COUNT(*) FROM platform_channels", fetch=True)[0][0]
+            enabled_count = self._execute_query("SELECT COUNT(*) FROM platform_channels WHERE enabled = 1", fetch=True)[0][0]
+            token_count = self._execute_query("SELECT COUNT(*) FROM platform_channel_tokens", fetch=True)[0][0]
             expired_count = len(self.get_expired_tokens())
-            
-            # Get Google Console count
             try:
-                console_count = self._execute_query("SELECT COUNT(*) FROM google_consoles", fetch=True)[0][0]
+                console_count = self._execute_query("SELECT COUNT(*) FROM platform_oauth_credentials", fetch=True)[0][0]
             except (Error, IndexError, TypeError):
                 console_count = 0
-            
-            # Get task stats
             try:
-                task_count = self._execute_query("SELECT COUNT(*) FROM tasks", fetch=True)[0][0]
-                pending_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 0", fetch=True)[0][0]
-                completed_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 1", fetch=True)[0][0]
-                failed_count = self._execute_query("SELECT COUNT(*) FROM tasks WHERE status = 2", fetch=True)[0][0]
+                task_count = self._execute_query("SELECT COUNT(*) FROM content_upload_queue_tasks", fetch=True)[0][0]
+                pending_count = self._execute_query("SELECT COUNT(*) FROM content_upload_queue_tasks WHERE status = 0", fetch=True)[0][0]
+                completed_count = self._execute_query("SELECT COUNT(*) FROM content_upload_queue_tasks WHERE status = 1", fetch=True)[0][0]
+                failed_count = self._execute_query("SELECT COUNT(*) FROM content_upload_queue_tasks WHERE status = 2", fetch=True)[0][0]
             except (Error, IndexError, TypeError):
                 task_count = pending_count = completed_count = failed_count = 0
-            
             return {
                 'total_channels': channel_count,
                 'enabled_channels': enabled_count,
@@ -722,14 +553,14 @@ class YouTubeMySQLDatabase:
                 'failed_tasks': failed_count
             }
         except Error as e:
-            print(f"❌ Error getting database stats: {e}")
+            print(f"Error getting database stats: {e}")
             return {}
 
-    # ==================== Credential Management ====================
+    # ==================== Login Credential Management ====================
 
     def upsert_account_credentials(
         self,
-        channel_name: str,
+        channel_id: int,
         login_email: str,
         login_password: str,
         totp_secret: Optional[str] = None,
@@ -742,41 +573,16 @@ class YouTubeMySQLDatabase:
         user_agent: Optional[str] = None,
         enabled: bool = True
     ) -> bool:
-        """Create or update stored credentials for an automation channel.
-
-        Args:
-            channel_name: Linked YouTube channel name.
-            login_email: Google account email.
-            login_password: Google account password in raw form.
-            totp_secret: Optional TOTP seed for MFA.
-            backup_codes: Optional list of backup codes.
-            proxy_host: Optional proxy hostname.
-            proxy_port: Optional proxy port.
-            proxy_username: Optional proxy username.
-            proxy_password: Optional proxy password.
-            profile_path: Optional Chromium profile path.
-            user_agent: Optional custom user-agent string.
-            enabled: Whether automation should use this credential.
-
-        Returns:
-            True if credentials were inserted or updated.
-        """
+        """Create or update login credentials for a channel."""
         try:
             backup_codes_json = json.dumps(backup_codes) if backup_codes else None
             query = """
-                INSERT INTO youtube_account_credentials (
-                    channel_name,
-                    login_email,
-                    login_password,
-                    totp_secret,
-                    backup_codes,
-                    proxy_host,
-                    proxy_port,
-                    proxy_username,
-                    proxy_password,
-                    profile_path,
-                    user_agent,
-                    enabled
+                INSERT INTO platform_channel_login_credentials (
+                    channel_id,
+                    login_email, login_password,
+                    totp_secret, backup_codes,
+                    proxy_host, proxy_port, proxy_username, proxy_password,
+                    profile_path, user_agent, enabled
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
@@ -794,104 +600,86 @@ class YouTubeMySQLDatabase:
                     updated_at = CURRENT_TIMESTAMP
             """
             params = (
-                channel_name,
-                login_email,
-                login_password,
-                totp_secret,
-                backup_codes_json,
-                proxy_host,
-                proxy_port,
-                proxy_username,
-                proxy_password,
-                profile_path,
-                user_agent,
-                enabled
+                channel_id,
+                login_email, login_password,
+                totp_secret, backup_codes_json,
+                proxy_host, proxy_port, proxy_username, proxy_password,
+                profile_path, user_agent, enabled
             )
             self._execute_query(query, params)
             return True
         except Error as e:
-            print(f"❌ Error upserting credentials for '{channel_name}': {e}")
+            print(f"Error upserting credentials for channel_id={channel_id}: {e}")
             return False
 
-    def disable_account_credentials(self, channel_name: str) -> bool:
-        """Disable stored credentials for the specified channel."""
+    def disable_account_credentials(self, channel_id: int) -> bool:
+        """Disable credentials for a channel."""
         try:
             query = """
-                UPDATE youtube_account_credentials
+                UPDATE platform_channel_login_credentials
                 SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP
-                WHERE channel_name = %s
+                WHERE channel_id = %s
             """
-            self._execute_query(query, (channel_name,))
+            self._execute_query(query, (channel_id,))
             return True
         except Error as e:
-            print(f"❌ Error disabling credentials for '{channel_name}': {e}")
+            print(f"Error disabling credentials for channel_id={channel_id}: {e}")
             return False
 
     def get_account_credentials(
         self,
-        channel_name: str,
+        channel_id: int,
         include_disabled: bool = False
-    ) -> Optional[YouTubeAccountCredential]:
-        """Fetch automation credentials for the channel."""
+    ) -> Optional[ChannelLoginCredential]:
+        """Fetch login credentials for a channel."""
         try:
             query = """
                 SELECT
-                    id,
-                    channel_name,
-                    login_email,
-                    login_password,
-                    totp_secret,
-                    backup_codes,
-                    proxy_host,
-                    proxy_port,
-                    proxy_username,
-                    proxy_password,
-                    profile_path,
-                    user_agent,
-                    last_success_at,
-                    last_attempt_at,
-                    last_error,
-                    enabled,
-                    created_at,
-                    updated_at
-                FROM youtube_account_credentials
-                WHERE channel_name = %s
+                    id, channel_id,
+                    login_email, login_password,
+                    totp_secret, backup_codes,
+                    proxy_host, proxy_port, proxy_username, proxy_password,
+                    profile_path, user_agent,
+                    last_success_at, last_attempt_at, last_error,
+                    enabled, created_at, updated_at
+                FROM platform_channel_login_credentials
+                WHERE channel_id = %s
             """
             if not include_disabled:
                 query += " AND enabled = TRUE"
-            results = self._execute_query(query, (channel_name,), fetch=True)
+            results = self._execute_query(query, (channel_id,), fetch=True)
             if not results:
                 return None
             return self._row_to_credentials(results[0])
         except Error as e:
-            print(f"❌ Error fetching credentials for '{channel_name}': {e}")
+            print(f"Error fetching credentials for channel_id={channel_id}: {e}")
             return None
 
-    def list_account_credentials(self, limit: Optional[int] = None) -> List[YouTubeAccountCredential]:
-        """List stored credentials."""
+    def get_account_credentials_by_name(
+        self,
+        channel_name: str,
+        include_disabled: bool = False
+    ) -> Optional[ChannelLoginCredential]:
+        """Fetch login credentials by channel name (convenience wrapper)."""
+        channel = self.get_channel(channel_name)
+        if not channel:
+            return None
+        return self.get_account_credentials(channel.id, include_disabled)
+
+    def list_account_credentials(self, limit: Optional[int] = None) -> List[ChannelLoginCredential]:
+        """List all login credentials."""
         try:
             query = """
                 SELECT
-                    id,
-                    channel_name,
-                    login_email,
-                    login_password,
-                    totp_secret,
-                    backup_codes,
-                    proxy_host,
-                    proxy_port,
-                    proxy_username,
-                    proxy_password,
-                    profile_path,
-                    user_agent,
-                    last_success_at,
-                    last_attempt_at,
-                    last_error,
-                    enabled,
-                    created_at,
-                    updated_at
-                FROM youtube_account_credentials
-                ORDER BY channel_name ASC
+                    id, channel_id,
+                    login_email, login_password,
+                    totp_secret, backup_codes,
+                    proxy_host, proxy_port, proxy_username, proxy_password,
+                    profile_path, user_agent,
+                    last_success_at, last_attempt_at, last_error,
+                    enabled, created_at, updated_at
+                FROM platform_channel_login_credentials
+                ORDER BY channel_id ASC
             """
             if limit:
                 results = self._execute_query(query + " LIMIT %s", (limit,), fetch=True)
@@ -899,12 +687,12 @@ class YouTubeMySQLDatabase:
                 results = self._execute_query(query, fetch=True)
             return [self._row_to_credentials(row) for row in results]
         except Error as e:
-            print(f"❌ Error listing credentials: {e}")
+            print(f"Error listing credentials: {e}")
             return []
 
     def mark_credentials_attempt(
         self,
-        channel_name: str,
+        channel_id: int,
         success: bool,
         error_message: Optional[str] = None,
         attempt_time: Optional[datetime] = None
@@ -913,76 +701,65 @@ class YouTubeMySQLDatabase:
         try:
             attempt_time = attempt_time or datetime.now()
             query = """
-                UPDATE youtube_account_credentials
+                UPDATE platform_channel_login_credentials
                 SET
                     last_attempt_at = %s,
                     last_success_at = CASE WHEN %s THEN %s ELSE last_success_at END,
                     last_error = %s,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE channel_name = %s
+                WHERE channel_id = %s
             """
             params = (
                 attempt_time,
                 success,
                 attempt_time if success else None,
                 None if success else error_message,
-                channel_name
+                channel_id
             )
             self._execute_query(query, params)
             return True
         except Error as e:
-            print(f"❌ Error updating credentials attempt for '{channel_name}': {e}")
+            print(f"Error updating credentials attempt for channel_id={channel_id}: {e}")
             return False
-    
-    def update_profile_path(self, channel_name: str, profile_path: str) -> bool:
-        """Update profile_path for a channel's credentials.
-        
-        Args:
-            channel_name: Name of the channel
-            profile_path: Path to the browser profile directory
-            
-        Returns:
-            True if updated successfully, False otherwise
-        """
+
+    def update_profile_path(self, channel_id: int, profile_path: str) -> bool:
+        """Update profile_path for a channel's credentials."""
         try:
             query = """
-                UPDATE youtube_account_credentials
+                UPDATE platform_channel_login_credentials
                 SET profile_path = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE channel_name = %s
+                WHERE channel_id = %s
             """
-            self._execute_query(query, (profile_path, channel_name))
+            self._execute_query(query, (profile_path, channel_id))
             return True
         except Error as e:
-            print(f"❌ Error updating profile_path for '{channel_name}': {e}")
+            print(f"Error updating profile_path for channel_id={channel_id}: {e}")
             return False
 
     # ==================== Re-auth Audit ====================
 
     def create_reauth_audit(
         self,
-        channel_name: str,
+        channel_id: int,
         status: str,
         initiated_at: Optional[datetime] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[int]:
-        """Create an audit record for an automation attempt."""
+        """Create an audit record in channel_reauth_audit_logs."""
         try:
             initiated_at = initiated_at or datetime.now()
             metadata_json = json.dumps(metadata) if metadata else None
             query = """
-                INSERT INTO youtube_reauth_audit (
-                    channel_name,
-                    initiated_at,
-                    status,
-                    metadata
+                INSERT INTO channel_reauth_audit_logs (
+                    channel_id, initiated_at, status, metadata
                 )
                 VALUES (%s, %s, %s, %s)
             """
-            self._execute_query(query, (channel_name, initiated_at, status, metadata_json))
+            self._execute_query(query, (channel_id, initiated_at, status, metadata_json))
             result = self._execute_query("SELECT LAST_INSERT_ID()", fetch=True)
             return result[0][0] if result else None
         except Error as e:
-            print(f"❌ Error creating reauth audit for '{channel_name}': {e}")
+            print(f"Error creating reauth audit for channel_id={channel_id}: {e}")
             return None
 
     def complete_reauth_audit(
@@ -998,7 +775,7 @@ class YouTubeMySQLDatabase:
             completed_at = completed_at or datetime.now()
             metadata_json = json.dumps(metadata) if metadata else None
             query = """
-                UPDATE youtube_reauth_audit
+                UPDATE channel_reauth_audit_logs
                 SET
                     completed_at = %s,
                     status = %s,
@@ -1009,144 +786,119 @@ class YouTubeMySQLDatabase:
             self._execute_query(query, (completed_at, status, error_message, metadata_json, audit_id))
             return True
         except Error as e:
-            print(f"❌ Error completing reauth audit #{audit_id}: {e}")
+            print(f"Error completing reauth audit #{audit_id}: {e}")
             return False
 
     def get_recent_reauth_audit(
         self,
-        channel_name: str,
+        channel_id: int,
         limit: int = 10
-    ) -> List[YouTubeReauthAudit]:
+    ) -> List[ReauthAuditLog]:
         """Retrieve recent audit entries for a channel."""
         try:
             query = """
                 SELECT
-                    id,
-                    channel_name,
-                    initiated_at,
-                    completed_at,
-                    status,
-                    error_message,
-                    metadata
-                FROM youtube_reauth_audit
-                WHERE channel_name = %s
+                    id, channel_id,
+                    initiated_at, completed_at,
+                    status, error_message, metadata
+                FROM channel_reauth_audit_logs
+                WHERE channel_id = %s
                 ORDER BY initiated_at DESC
                 LIMIT %s
             """
-            results = self._execute_query(query, (channel_name, limit), fetch=True)
+            results = self._execute_query(query, (channel_id, limit), fetch=True)
             return [self._row_to_audit(row) for row in results]
         except Error as e:
-            print(f"❌ Error fetching reauth audit for '{channel_name}': {e}")
+            print(f"Error fetching reauth audit for channel_id={channel_id}: {e}")
             return []
-    
-    # ==================== Task Management Methods ====================
-    
-    def create_task(self, account_id: int, att_file_path: str, title: str,
-                   date_post: datetime, media_type: str = 'youtube',
-                   cover: Optional[str] = None, description: Optional[str] = None,
+
+    # ==================== Task Management ====================
+
+    def create_task(self, channel_id: int, source_file_path: str, title: str,
+                   scheduled_at: datetime, media_type: str = 'youtube',
+                   thumbnail_path: Optional[str] = None, description: Optional[str] = None,
                    keywords: Optional[str] = None, post_comment: Optional[str] = None,
-                   add_info: Optional[Dict[str, Any]] = None) -> Optional[int]:
-        """Create a new task."""
+                   legacy_add_info: Optional[Dict[str, Any]] = None) -> Optional[int]:
+        """Create a new task in content_upload_queue_tasks."""
         try:
-            add_info_json = json.dumps(add_info) if add_info else None
-            
+            project_id = self._get_default_project_id()
+            add_info_json = json.dumps(legacy_add_info) if legacy_add_info else None
             query = """
-                INSERT INTO tasks 
-                (account_id, media_type, att_file_path, cover, title, description, 
-                 keywords, post_comment, add_info, date_post)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO content_upload_queue_tasks
+                (project_id, channel_id, media_type, source_file_path, thumbnail_path,
+                 title, description, keywords, post_comment, legacy_add_info, scheduled_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             self._execute_query(query, (
-                account_id, media_type, att_file_path, cover, title, 
-                description, keywords, post_comment, add_info_json, date_post
+                project_id, channel_id, media_type, source_file_path, thumbnail_path,
+                title, description, keywords, post_comment, add_info_json, scheduled_at
             ))
-            
-            # Get the last inserted ID
             result = self._execute_query("SELECT LAST_INSERT_ID()", fetch=True)
             return result[0][0] if result else None
-            
         except Error as e:
-            print(f"❌ Error creating task: {e}")
+            print(f"Error creating task: {e}")
             return None
-    
-    def get_task(self, task_id: int) -> Optional[Task]:
+
+    def get_task(self, task_id: int) -> Optional[UploadTask]:
         """Get task by ID."""
         query = """
-            SELECT id, account_id, media_type, status, date_add, att_file_path,
-                   cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done, upload_id
-            FROM tasks WHERE id = %s
+            SELECT id, channel_id, media_type, status, created_at, source_file_path,
+                   thumbnail_path, title, description, keywords, post_comment, legacy_add_info,
+                   scheduled_at, completed_at, upload_id
+            FROM content_upload_queue_tasks WHERE id = %s
         """
         results = self._execute_query(query, (task_id,), fetch=True)
-        
         if results:
-            row = results[0]
-            return self._row_to_task(row)
+            return self._row_to_task(results[0])
         return None
-    
-    def get_pending_tasks(self, limit: Optional[int] = None) -> List[Task]:
-        """Get all pending tasks that are ready to be executed."""
+
+    def get_pending_tasks(self, limit: Optional[int] = None) -> List[UploadTask]:
+        """Get all pending tasks ready to execute."""
         query = """
-            SELECT id, account_id, media_type, status, date_add, att_file_path,
-                   cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done, upload_id
-            FROM tasks 
-            WHERE status = 0 AND date_post <= NOW()
-            ORDER BY date_post ASC
+            SELECT id, channel_id, media_type, status, created_at, source_file_path,
+                   thumbnail_path, title, description, keywords, post_comment, legacy_add_info,
+                   scheduled_at, completed_at, upload_id
+            FROM content_upload_queue_tasks
+            WHERE status = 0 AND scheduled_at <= NOW()
+            ORDER BY scheduled_at ASC
         """
         if limit:
             query += f" LIMIT {limit}"
-        
         results = self._execute_query(query, fetch=True)
         return [self._row_to_task(row) for row in results]
-    
-    def get_all_tasks(self, status: Optional[int] = None, 
-                     account_id: Optional[int] = None,
-                     limit: Optional[int] = None) -> List[Task]:
+
+    def get_all_tasks(self, status: Optional[int] = None,
+                     channel_id: Optional[int] = None,
+                     limit: Optional[int] = None) -> List[UploadTask]:
         """Get all tasks with optional filtering."""
         query = """
-            SELECT id, account_id, media_type, status, date_add, att_file_path,
-                   cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done, upload_id
-            FROM tasks WHERE 1=1
+            SELECT id, channel_id, media_type, status, created_at, source_file_path,
+                   thumbnail_path, title, description, keywords, post_comment, legacy_add_info,
+                   scheduled_at, completed_at, upload_id
+            FROM content_upload_queue_tasks WHERE 1=1
         """
         params = []
-        
         if status is not None:
             query += " AND status = %s"
             params.append(status)
-        
-        if account_id is not None:
-            query += " AND account_id = %s"
-            params.append(account_id)
-        
-        query += " ORDER BY date_post DESC"
-        
+        if channel_id is not None:
+            query += " AND channel_id = %s"
+            params.append(channel_id)
+        query += " ORDER BY scheduled_at DESC"
         if limit:
             query += f" LIMIT {limit}"
-        
         results = self._execute_query(query, tuple(params) if params else None, fetch=True)
         return [self._row_to_task(row) for row in results]
-    
-    def get_token_related_failed_tasks(self, account_id: int) -> List[Task]:
-        """
-        Get failed tasks with token-related errors for a specific channel.
-        
-        Args:
-            account_id: Channel account ID (youtube_channels.id)
-            
-        Returns:
-            List of failed tasks with token-related error messages
-        """
-        # Query to get failed tasks with error_message containing token-related errors
-        # Use COALESCE to handle NULL error_message values
+
+    def get_token_related_failed_tasks(self, channel_id: int) -> List[UploadTask]:
+        """Get failed tasks with token-related errors for a channel."""
         query = """
-            SELECT id, account_id, media_type, status, date_add, att_file_path,
-                   cover, title, description, keywords, post_comment, add_info,
-                   date_post, date_done, upload_id, error_message
-            FROM tasks 
-            WHERE status = 2 
-            AND account_id = %s
+            SELECT id, channel_id, media_type, status, created_at, source_file_path,
+                   thumbnail_path, title, description, keywords, post_comment, legacy_add_info,
+                   scheduled_at, completed_at, upload_id, error_message
+            FROM content_upload_queue_tasks
+            WHERE status = 2
+            AND channel_id = %s
             AND error_message IS NOT NULL
             AND (
                 error_message LIKE %s OR
@@ -1155,118 +907,93 @@ class YouTubeMySQLDatabase:
                 error_message LIKE %s OR
                 error_message LIKE %s
             )
-            ORDER BY date_post ASC
+            ORDER BY scheduled_at ASC
         """
         params = (
-            account_id,
+            channel_id,
             '%invalid_grant%',
             '%Token has been expired or revoked%',
             '%refresh token%invalid%',
             '%refresh token%revoked%',
             '%token expired%'
         )
-        
         results = self._execute_query(query, params, fetch=True)
         return [self._row_to_task(row) for row in results]
-    
-    def update_task_status(self, task_id: int, status: int, 
+
+    def update_task_status(self, task_id: int, status: int,
                           error_message: Optional[str] = None,
-                          date_done: Optional[datetime] = None) -> bool:
+                          completed_at: Optional[datetime] = None) -> bool:
         """Update task status."""
         try:
-            if date_done is None and status == 1:  # Completed
-                date_done = datetime.now()
-            
-            # Always try to update with error_message (column should exist after migration)
+            if completed_at is None and status == 1:
+                completed_at = datetime.now()
             query = """
-                UPDATE tasks 
-                SET status = %s, date_done = %s, error_message = %s
+                UPDATE content_upload_queue_tasks
+                SET status = %s, completed_at = %s, error_message = %s
                 WHERE id = %s
             """
-            self._execute_query(query, (status, date_done, error_message, task_id))
-            
+            self._execute_query(query, (status, completed_at, error_message, task_id))
             return True
         except Error as e:
-            # If error_message column doesn't exist, try without it
-            if 'error_message' in str(e).lower():
-                try:
-                    query = """
-                        UPDATE tasks 
-                        SET status = %s, date_done = %s
-                        WHERE id = %s
-                    """
-                    self._execute_query(query, (status, date_done, task_id))
-                    print("⚠️  Warning: error_message column not found, update without it")
-                    return True
-                except Error as e2:
-                    print(f"❌ Error updating task status: {e2}")
-                    return False
-            else:
-                print(f"❌ Error updating task status: {e}")
-                return False
-    
-    def mark_task_processing(self, task_id: int) -> bool:
-        """Mark task as processing."""
-        return self.update_task_status(task_id, 3)
-    
-    def mark_task_completed(self, task_id: int, upload_id: Optional[str] = None) -> bool:
-        """Mark task as completed and optionally save upload_id."""
-        try:
-            date_done = datetime.now()
-            query = """
-                UPDATE tasks 
-                SET status = %s, date_done = %s, upload_id = %s
-                WHERE id = %s
-            """
-            self._execute_query(query, (1, date_done, upload_id, task_id))
-            return True
-        except Error as e:
-            print(f"❌ Error marking task completed: {e}")
+            print(f"Error updating task status: {e}")
             return False
-    
+
+    def mark_task_processing(self, task_id: int) -> bool:
+        return self.update_task_status(task_id, 3)
+
+    def mark_task_completed(self, task_id: int, upload_id: Optional[str] = None) -> bool:
+        try:
+            completed_at = datetime.now()
+            query = """
+                UPDATE content_upload_queue_tasks
+                SET status = %s, completed_at = %s, upload_id = %s
+                WHERE id = %s
+            """
+            self._execute_query(query, (1, completed_at, upload_id, task_id))
+            return True
+        except Error as e:
+            print(f"Error marking task completed: {e}")
+            return False
+
     def mark_task_failed(self, task_id: int, error_message: str = None) -> bool:
-        """Mark task as failed and store error message."""
         return self.update_task_status(task_id, 2, error_message=error_message)
-    
+
     def update_task_upload_id(self, task_id: int, upload_id: str) -> bool:
-        """Update task with upload_id after successful upload."""
         try:
             query = """
-                UPDATE tasks 
+                UPDATE content_upload_queue_tasks
                 SET upload_id = %s
                 WHERE id = %s
             """
             self._execute_query(query, (upload_id, task_id))
             return True
         except Error as e:
-            print(f"❌ Error updating task upload_id: {e}")
+            print(f"Error updating task upload_id: {e}")
             return False
-    
+
     def increment_task_retry(self, _task_id: int) -> bool:
-        """Increment task retry count (in memory only, not in DB)."""
-        # retry_count тільки в пам'яті Task Worker
         return True
-    
+
     def delete_task(self, task_id: int) -> bool:
-        """Delete a task."""
         try:
-            query = "DELETE FROM tasks WHERE id = %s"
+            query = "DELETE FROM content_upload_queue_tasks WHERE id = %s"
             self._execute_query(query, (task_id,))
             return True
         except Error:
             return False
-    
-    def _row_to_credentials(self, row: tuple) -> YouTubeAccountCredential:
-        """Convert database row to YouTubeAccountCredential."""
+
+    # ==================== Row Converters ====================
+
+    def _row_to_credentials(self, row: tuple) -> ChannelLoginCredential:
         backup_codes = None
         if row[5]:
             try:
                 backup_codes = json.loads(row[5])
             except (json.JSONDecodeError, TypeError):
                 backup_codes = None
-        return YouTubeAccountCredential(
+        return ChannelLoginCredential(
             id=row[0],
-            channel_name=row[1],
+            channel_id=row[1],
             login_email=row[2],
             login_password=row[3],
             totp_secret=row[4],
@@ -1285,17 +1012,16 @@ class YouTubeMySQLDatabase:
             updated_at=row[17]
         )
 
-    def _row_to_audit(self, row: tuple) -> YouTubeReauthAudit:
-        """Convert database row to YouTubeReauthAudit."""
+    def _row_to_audit(self, row: tuple) -> ReauthAuditLog:
         metadata = None
         if row[6]:
             try:
                 metadata = json.loads(row[6])
             except (json.JSONDecodeError, TypeError):
                 metadata = None
-        return YouTubeReauthAudit(
+        return ReauthAuditLog(
             id=row[0],
-            channel_name=row[1],
+            channel_id=row[1],
             initiated_at=row[2],
             completed_at=row[3],
             status=row[4],
@@ -1303,173 +1029,95 @@ class YouTubeMySQLDatabase:
             metadata=metadata
         )
 
-    def _row_to_task(self, row: tuple) -> Task:
-        """Convert database row to Task object."""
-        add_info = None
-        if row[11]:  # add_info field
+    def _row_to_task(self, row: tuple) -> UploadTask:
+        legacy_add_info = None
+        if row[11]:
             try:
-                add_info = json.loads(row[11])
+                legacy_add_info = json.loads(row[11])
             except (json.JSONDecodeError, TypeError):
                 pass
-        
-        # Get error_message if column exists (position 15)
         error_message = None
         if len(row) > 15:
             error_message = row[15]
-        
-        return Task(
+        return UploadTask(
             id=row[0],
-            account_id=row[1],
+            channel_id=row[1],
             media_type=row[2],
             status=row[3],
-            date_add=row[4],
-            att_file_path=row[5],
-            cover=row[6],
+            created_at=row[4],
+            source_file_path=row[5],
+            thumbnail_path=row[6],
             title=row[7],
             description=row[8],
             keywords=row[9],
             post_comment=row[10],
-            add_info=add_info,
-            date_post=row[12],
-            date_done=row[13],
+            legacy_add_info=legacy_add_info,
+            scheduled_at=row[12],
+            completed_at=row[13],
             upload_id=row[14] if len(row) > 14 else None,
             error_message=error_message,
-            retry_count=0  # Не зберігаємо в БД
+            retry_count=0
         )
-    
-    # ==================== Google Console Management ====================
-    
+
+    # ==================== Console Management ====================
+
     def add_console(self, name: str, client_id: str, client_secret: str,
-                   project_id: Optional[str] = None,
+                   cloud_project_id: Optional[str] = None,
                    credentials_file: Optional[str] = None,
                    redirect_uris: Optional[List[str]] = None,
                    description: Optional[str] = None,
                    enabled: bool = True) -> bool:
-        """Add a new Google Cloud Console project."""
+        """Add a new OAuth credential."""
         try:
+            project_id = self._get_default_project_id()
             redirect_uris_json = json.dumps(redirect_uris) if redirect_uris else None
             query = """
-                INSERT INTO google_consoles 
-                (name, project_id, client_id, client_secret, credentials_file, redirect_uris, description, enabled)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO platform_oauth_credentials
+                (project_id, name, cloud_project_id, client_id, client_secret,
+                 credentials_file, redirect_uris, description, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
-            self._execute_query(query, (name, project_id, client_id, client_secret, credentials_file, redirect_uris_json, description, enabled))
+            self._execute_query(query, (project_id, name, cloud_project_id, client_id, client_secret,
+                                       credentials_file, redirect_uris_json, description, enabled))
             return True
         except Error as e:
-            if e.errno == 1062:  # Duplicate entry
+            if e.errno == 1062:
                 return False
             raise
-    
-    def get_console(self, console_id: int) -> Optional[GoogleConsole]:
-        """Get console by ID."""
+
+    def get_console(self, console_id: int) -> Optional[OAuthCredential]:
+        """Get OAuth credential by ID."""
         query = """
-            SELECT id, name, project_id, client_id, client_secret, credentials_file,
+            SELECT id, name, cloud_project_id, client_id, client_secret, credentials_file,
                    redirect_uris, description, enabled, created_at, updated_at
-            FROM google_consoles WHERE id = %s
+            FROM platform_oauth_credentials WHERE id = %s
         """
         results = self._execute_query(query, (console_id,), fetch=True)
-        
         if results:
-            row = results[0]
-            redirect_uris = None
-            if row[6]:  # redirect_uris
-                try:
-                    redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
-                except (json.JSONDecodeError, TypeError):
-                    redirect_uris = None
-            return GoogleConsole(
-                id=row[0],
-                name=row[1],
-                project_id=row[2],
-                client_id=row[3],
-                client_secret=row[4],
-                credentials_file=row[5],
-                redirect_uris=redirect_uris,
-                description=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            )
+            return self._row_to_oauth_credential(results[0])
         return None
-    
-    def get_console_by_name(self, name: str) -> Optional[GoogleConsole]:
-        """Get console by name."""
+
+    def get_console_by_name(self, name: str) -> Optional[OAuthCredential]:
+        """Get OAuth credential by name."""
         query = """
-            SELECT id, name, project_id, client_id, client_secret, credentials_file,
+            SELECT id, name, cloud_project_id, client_id, client_secret, credentials_file,
                    redirect_uris, description, enabled, created_at, updated_at
-            FROM google_consoles WHERE name = %s
+            FROM platform_oauth_credentials WHERE name = %s
         """
         results = self._execute_query(query, (name,), fetch=True)
-        
         if results:
-            row = results[0]
-            redirect_uris = None
-            if row[6]:  # redirect_uris
-                try:
-                    redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
-                except (json.JSONDecodeError, TypeError):
-                    redirect_uris = None
-            return GoogleConsole(
-                id=row[0],
-                name=row[1],
-                project_id=row[2],
-                client_id=row[3],
-                client_secret=row[4],
-                credentials_file=row[5],
-                redirect_uris=redirect_uris,
-                description=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            )
+            return self._row_to_oauth_credential(results[0])
         return None
-    
-    def get_all_consoles(self, enabled_only: bool = False) -> List[GoogleConsole]:
-        """Get all Google Cloud Console projects."""
-        if enabled_only:
-            query = """
-                SELECT id, name, project_id, client_id, client_secret, credentials_file,
-                       redirect_uris, description, enabled, created_at, updated_at
-                FROM google_consoles WHERE enabled = 1
-            """
-        else:
-            query = """
-                SELECT id, name, project_id, client_id, client_secret, credentials_file,
-                       redirect_uris, description, enabled, created_at, updated_at
-                FROM google_consoles
-            """
-        
-        results = self._execute_query(query, fetch=True)
-        consoles = []
-        
-        for row in results:
-            redirect_uris = None
-            if row[6]:  # redirect_uris
-                try:
-                    redirect_uris = json.loads(row[6]) if isinstance(row[6], str) else row[6]
-                except (json.JSONDecodeError, TypeError):
-                    redirect_uris = None
-            consoles.append(GoogleConsole(
-                id=row[0],
-                name=row[1],
-                project_id=row[2],
-                client_id=row[3],
-                client_secret=row[4],
-                credentials_file=row[5],
-                redirect_uris=redirect_uris,
-                description=row[7],
-                enabled=bool(row[8]),
-                created_at=row[9],
-                updated_at=row[10]
-            ))
-        
-        return consoles
-    
+
+    def get_all_consoles(self, enabled_only: bool = False) -> List[OAuthCredential]:
+        """Get all OAuth credentials."""
+        return self.get_all_google_consoles(enabled_only)
+
     def update_channel_console(self, channel_name: str, console_id: Optional[int]) -> bool:
         """Update console_id for a channel."""
         try:
             query = """
-                UPDATE youtube_channels 
+                UPDATE platform_channels
                 SET console_id = %s, updated_at = NOW()
                 WHERE name = %s
             """
@@ -1477,19 +1125,30 @@ class YouTubeMySQLDatabase:
             return True
         except Error:
             return False
-    
-    def get_console_for_channel(self, channel_name: str) -> Optional[GoogleConsole]:
-        """Get the Google Console associated with a channel."""
+
+    def get_console_for_channel(self, channel_name: str) -> Optional[OAuthCredential]:
+        """Get the OAuth credential associated with a channel."""
         channel = self.get_channel(channel_name)
         if not channel or not channel.console_id:
             return None
         return self.get_console(channel.console_id)
-    
+
+    # ==================== Helpers ====================
+
+    def _get_default_project_id(self) -> int:
+        """Get default project ID."""
+        result = self._execute_query(
+            "SELECT id FROM platform_projects WHERE slug = 'default' LIMIT 1",
+            fetch=True
+        )
+        if result:
+            return result[0][0]
+        raise Error("No default project found. Run migration 002 first.")
+
     def close(self):
-        """Close database connection."""
         if self.connection and self.connection.is_connected():
             self.connection.close()
-            print("✅ MySQL connection closed")
+            print("MySQL connection closed")
 
 
 # Global database instance
