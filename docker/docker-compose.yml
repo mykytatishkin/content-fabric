@@ -1,0 +1,55 @@
+# Content Fabric - Local Development Environment
+# Usage: docker-compose up -d
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: dev-test-env-mysql
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-dev_root_pass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-content_fabric}
+      MYSQL_USER: ${MYSQL_USER:-dev_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dev_pass}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init:/docker-entrypoint-initdb.d
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-dev_root_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - dev-test-env-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: dev-test-env-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: ${MYSQL_USER:-dev_user}
+      PMA_PASSWORD: ${MYSQL_PASSWORD:-dev_pass}
+    ports:
+      - "${PHPMYADMIN_PORT:-8080}:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dev-test-env-network
+
+volumes:
+  mysql_data:
+    name: dev-test-env-mysql-data
+
+networks:
+  dev-test-env-network:
+    name: dev-test-env-network
+    driver: bridge
