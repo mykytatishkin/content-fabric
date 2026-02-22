@@ -1,8 +1,6 @@
 """Channels API endpoints."""
 
 import logging
-from uuid import UUID
-
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -17,9 +15,9 @@ from app.repositories.channel_repository import (
     get_channel_by_id,
     get_console_by_id,
     list_channels,
-    list_google_consoles,
+    list_oauth_credentials,
 )
-from app.schemas.channel import Channel, ChannelCreate, GoogleConsole
+from app.schemas.channel import Channel, ChannelCreate, OAuthCredential
 from app.services.youtube_validator import validate_channel_id
 
 logger = logging.getLogger(__name__)
@@ -29,24 +27,24 @@ _templates_dir = Path(__file__).resolve().parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
 
-@router.get("/google-consoles", response_model=list[GoogleConsole])
+@router.get("/google-consoles", response_model=list[OAuthCredential])
 async def get_consoles():
-    """List Google consoles for dropdown."""
-    consoles = list_google_consoles(enabled_only=True)
-    return [GoogleConsole(**c) for c in consoles]
+    """List OAuth credentials for dropdown."""
+    consoles = list_oauth_credentials(enabled_only=True)
+    return [OAuthCredential(**c) for c in consoles]
 
 
 @router.get("/", response_model=list[Channel])
-async def get_channels(user_id: UUID | None = None):
-    """List all channels, optionally filtered by user."""
-    channels = list_channels(user_id=user_id)
+async def get_channels(project_id: int | None = None):
+    """List all channels, optionally filtered by project."""
+    channels = list_channels(project_id=project_id)
     return [Channel(**c) for c in channels]
 
 
 @router.get("/form", response_class=HTMLResponse)
 async def channel_form(request: Request):
     """Serve add-channel form page."""
-    consoles = list_google_consoles(enabled_only=True)
+    consoles = list_oauth_credentials(enabled_only=True)
     return templates.TemplateResponse(
         "add_channel.html",
         {"request": request, "consoles": consoles},
@@ -68,16 +66,16 @@ async def create_channel(data: ChannelCreate):
         raise HTTPException(status_code=409, detail="Канал с таким названием уже существует")
 
     # Validate channel via YouTube API
-    is_valid, result = validate_channel_id(data.channel_id)
+    is_valid, result = validate_channel_id(data.platform_channel_id)
     if not is_valid:
         raise HTTPException(status_code=400, detail=result or "Invalid channel")
     canonical_id = result
 
-    # Check duplicate by channel_id (after resolving @handle to UC...)
+    # Check duplicate by platform_channel_id (after resolving @handle to UC...)
     if channel_exists_by_channel_id(canonical_id):
         raise HTTPException(status_code=409, detail="Канал с таким YouTube channel_id уже существует")
 
-    data = ChannelCreate(**{**data.model_dump(), "channel_id": canonical_id})
+    data = ChannelCreate(**{**data.model_dump(), "platform_channel_id": canonical_id})
 
     channel_id = add_channel(data)
     if channel_id is None:
@@ -89,7 +87,7 @@ async def create_channel(data: ChannelCreate):
     # Save RPA auth credentials if provided
     if data.credentials:
         try:
-            add_account_credentials(data.name, data.credentials)
+            add_account_credentials(channel_id, data.credentials)
         except Exception as e:
             logger.error(
                 "Channel %s created (id=%s) but credentials insert failed: %s",
