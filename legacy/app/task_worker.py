@@ -184,9 +184,9 @@ class TaskWorker:
             # Get channel information (not needed for voice_change tasks)
             channel = None
             if task.media_type != 'voice_change':
-                channel = self._get_channel_by_id(task.account_id)
+                channel = self.db.get_channel_by_id(task.channel_id)
                 if not channel:
-                    error_msg = f"Channel with ID {task.account_id} not found"
+                    error_msg = f"Channel with ID {task.channel_id} not found"
                     self.logger.error(error_msg)
                     self.db.mark_task_failed(task.id, error_msg)
                     # Channel not found is final failure - count immediately
@@ -205,9 +205,9 @@ class TaskWorker:
                     return
             
             # Check if video file exists
-            video_path = Path(task.att_file_path)
+            video_path = Path(task.source_file_path)
             if not video_path.exists():
-                error_msg = f"Video file not found: {task.att_file_path}"
+                error_msg = f"Video file not found: {task.source_file_path}"
                 self.logger.error(error_msg)
                 self.db.mark_task_failed(task.id, error_msg)
                 # Missing file is final failure - count immediately
@@ -275,30 +275,23 @@ class TaskWorker:
             True if successful, False otherwise
         """
         try:
-            # Get OAuth credentials from google_consoles table via console_name or console_id
+            # Get OAuth credentials from platform_oauth_credentials via console_id
             credentials = self.db.get_console_credentials_for_channel(channel.name)
-            
+
             if not credentials:
-                self.logger.error(f"No OAuth credentials found for channel '{channel.name}'. Channel must have console_name or console_id set.")
+                self.logger.error(f"No OAuth credentials found for channel '{channel.name}'. Channel must have console_id set.")
                 return False
             
             client_id = credentials['client_id']
             client_secret = credentials['client_secret']
             
             # Log which console is being used
-            console_info = None
             if channel.console_id:
                 console_info = self.db.get_console(channel.console_id)
                 if console_info:
                     self.logger.info(f"Using credentials from console ID {channel.console_id} ('{console_info.name}') for channel '{channel.name}'")
                 else:
                     self.logger.warning(f"Console ID {channel.console_id} not found for channel '{channel.name}'")
-            elif channel.console_name:
-                console_info = self.db.get_google_console(channel.console_name)
-                if console_info:
-                    self.logger.info(f"Using credentials from console '{channel.console_name}' for channel '{channel.name}'")
-                else:
-                    self.logger.warning(f"Console '{channel.console_name}' not found for channel '{channel.name}'")
             
             # Initialize YouTube client if not already set
             if not self.youtube_client:
@@ -321,17 +314,17 @@ class TaskWorker:
                 'privacyStatus': 'public'  # Default to public
             }
             
-            # Add additional info from add_info JSON
-            if task.add_info:
-                if 'privacy' in task.add_info:
-                    video_metadata['privacyStatus'] = task.add_info['privacy']
-                if 'category' in task.add_info:
-                    video_metadata['categoryId'] = str(task.add_info['category'])
+            # Add additional info from legacy_add_info JSON
+            if task.legacy_add_info:
+                if 'privacy' in task.legacy_add_info:
+                    video_metadata['privacyStatus'] = task.legacy_add_info['privacy']
+                if 'category' in task.legacy_add_info:
+                    video_metadata['categoryId'] = str(task.legacy_add_info['category'])
             
             # Prepare account info
             account_info = {
                 'name': channel.name,
-                'channel_id': channel.channel_id,
+                'channel_id': channel.platform_channel_id,
                 'access_token': channel.access_token,
                 'refresh_token': channel.refresh_token,
                 'client_id': client_id,
@@ -362,7 +355,7 @@ class TaskWorker:
                 
                 result = self.youtube_client.post_video(
                     account_info=account_info,
-                    video_path=task.att_file_path,
+                    video_path=task.source_file_path,
                     caption=task.description or '',
                     metadata={
                         'title': task.title,
@@ -370,7 +363,7 @@ class TaskWorker:
                         'tags': video_metadata['tags'],
                         'category': video_metadata['categoryId'],
                         'privacy': video_metadata['privacyStatus'],
-                        'thumbnail': task.cover
+                        'thumbnail': task.thumbnail_path
                     }
                 )
                 
@@ -422,7 +415,7 @@ class TaskWorker:
                 if self.auto_cleanup:
                     self._cleanup_files(task)
                 else:
-                    self.logger.info(f"Auto-cleanup disabled, files kept: {task.att_file_path}")
+                    self.logger.info(f"Auto-cleanup disabled, files kept: {task.source_file_path}")
                 
                 return True
             else:
@@ -544,13 +537,13 @@ class TaskWorker:
             pitch_shift = None
             formant_shift = None
             
-            if task.add_info:
-                conversion_type = task.add_info.get('conversion_type', 'male_to_female')
-                pitch_shift = task.add_info.get('pitch_shift')
-                formant_shift = task.add_info.get('formant_shift')
-            
+            if task.legacy_add_info:
+                conversion_type = task.legacy_add_info.get('conversion_type', 'male_to_female')
+                pitch_shift = task.legacy_add_info.get('pitch_shift')
+                formant_shift = task.legacy_add_info.get('formant_shift')
+
             # Determine output file path
-            input_path = Path(task.att_file_path)
+            input_path = Path(task.source_file_path)
             output_dir = input_path.parent / 'voice_converted'
             output_dir.mkdir(parents=True, exist_ok=True)
             
@@ -684,79 +677,38 @@ class TaskWorker:
         failed_files = []
         
         # Delete video file
-        if task.att_file_path:
+        if task.source_file_path:
             try:
-                if os.path.exists(task.att_file_path):
-                    file_size = os.path.getsize(task.att_file_path)
-                    os.remove(task.att_file_path)
-                    deleted_files.append(f"Video: {task.att_file_path} ({file_size / (1024*1024):.2f} MB)")
-                    self.logger.info(f"🗑️  Deleted video file: {task.att_file_path}")
+                if os.path.exists(task.source_file_path):
+                    file_size = os.path.getsize(task.source_file_path)
+                    os.remove(task.source_file_path)
+                    deleted_files.append(f"Video: {task.source_file_path} ({file_size / (1024*1024):.2f} MB)")
+                    self.logger.info(f"Deleted video file: {task.source_file_path}")
                 else:
-                    self.logger.warning(f"Video file not found: {task.att_file_path}")
+                    self.logger.warning(f"Video file not found: {task.source_file_path}")
             except Exception as e:
-                failed_files.append(f"Video: {task.att_file_path} - {str(e)}")
-                self.logger.error(f"Failed to delete video file: {task.att_file_path} - {str(e)}")
-        
-        # Delete cover file
-        if task.cover:
+                failed_files.append(f"Video: {task.source_file_path} - {str(e)}")
+                self.logger.error(f"Failed to delete video file: {task.source_file_path} - {str(e)}")
+
+        # Delete thumbnail file
+        if task.thumbnail_path:
             try:
-                if os.path.exists(task.cover):
-                    file_size = os.path.getsize(task.cover)
-                    os.remove(task.cover)
-                    deleted_files.append(f"Cover: {task.cover} ({file_size / 1024:.2f} KB)")
-                    self.logger.info(f"🗑️  Deleted cover file: {task.cover}")
+                if os.path.exists(task.thumbnail_path):
+                    file_size = os.path.getsize(task.thumbnail_path)
+                    os.remove(task.thumbnail_path)
+                    deleted_files.append(f"Thumbnail: {task.thumbnail_path} ({file_size / 1024:.2f} KB)")
+                    self.logger.info(f"Deleted thumbnail file: {task.thumbnail_path}")
                 else:
-                    self.logger.warning(f"Cover file not found: {task.cover}")
+                    self.logger.warning(f"Thumbnail file not found: {task.thumbnail_path}")
             except Exception as e:
-                failed_files.append(f"Cover: {task.cover} - {str(e)}")
-                self.logger.error(f"Failed to delete cover file: {task.cover} - {str(e)}")
+                failed_files.append(f"Thumbnail: {task.thumbnail_path} - {str(e)}")
+                self.logger.error(f"Failed to delete thumbnail file: {task.thumbnail_path} - {str(e)}")
         
         # Summary log
         if deleted_files:
             self.logger.info(f"✅ Cleanup complete for task #{task.id}. Deleted: {', '.join(deleted_files)}")
         if failed_files:
             self.logger.warning(f"⚠️  Some files could not be deleted: {', '.join(failed_files)}")
-    
-    def _get_channel_by_id(self, channel_id: int):
-        """Get channel from database by ID."""
-        try:
-            # Get channel by ID (including console_id)
-            query = """
-                SELECT id, name, channel_id, console_name,
-                       access_token, refresh_token, token_expires_at,
-                       console_id, enabled, created_at, updated_at
-                FROM youtube_channels WHERE id = %s
-            """
-            self.db._ensure_connection()
-            cursor = self.db.connection.cursor()
-            cursor.execute(query, (channel_id,))
-            row = cursor.fetchone()
-            cursor.close()
-            
-            if row:
-                from core.database.mysql_db import YouTubeChannel
-                channel = YouTubeChannel(
-                    id=row[0],
-                    name=row[1],
-                    channel_id=row[2],
-                    console_name=row[3],
-                    access_token=row[4],
-                    refresh_token=row[5],
-                    token_expires_at=row[6],
-                    console_id=row[7],
-                    enabled=bool(row[8]),
-                    created_at=row[9],
-                    updated_at=row[10]
-                )
-                
-                # Note: Credentials are now handled by get_console_credentials_for_channel
-                # which checks both console_name and console_id automatically
-                
-                return channel
-            return None
-        except Exception as e:
-            self.logger.error(f"Error getting channel by ID: {str(e)}")
-            return None
     
     def _handle_token_revocation(self, channel_name: str, error_message: str):
         """

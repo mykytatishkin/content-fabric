@@ -219,6 +219,19 @@ class YouTubeMySQLDatabase:
             return self._row_to_channel(results[0])
         return None
 
+    def get_channel_by_id(self, channel_id: int) -> Optional[PlatformChannel]:
+        """Get channel by ID."""
+        query = """
+            SELECT id, name, platform_channel_id,
+                   console_id, access_token, refresh_token, token_expires_at,
+                   project_id, enabled, created_at, updated_at
+            FROM platform_channels WHERE id = %s
+        """
+        results = self._execute_query(query, (channel_id,), fetch=True)
+        if results:
+            return self._row_to_channel(results[0])
+        return None
+
     def get_channel_by_channel_id(self, platform_channel_id: str) -> Optional[PlatformChannel]:
         """Get channel by platform_channel_id."""
         query = """
