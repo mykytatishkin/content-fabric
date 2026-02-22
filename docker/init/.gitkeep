@@ -1,3 +1,0 @@
-# This directory is for database dump files
-# Files here are mounted to Docker MySQL init directory
-# Add your production_dump.sql here after running migrate_prod_to_local.py

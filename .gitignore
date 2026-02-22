@@ -87,13 +87,13 @@ tmp/
 
 # Docker local dev environment
 docker/.env
-docker/init/*.sql
 docker/init/*.gz
-!docker/init/.gitkeep
 
 # Database dumps
 *.sql
 !config/mysql_schema.sql
+!docker/init/01-legacy-schema.sql
+!docker/init/02-new-schema-migration.sql
 
 # Backups directory
 backups/
