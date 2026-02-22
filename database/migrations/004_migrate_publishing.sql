@@ -82,5 +82,5 @@ WHERE NOT EXISTS (
 -- Record migration
 -- ============================================================================
 
-INSERT INTO `platform_schema_migrations` (`version`, `description`)
+INSERT IGNORE INTO `platform_schema_migrations` (`version`, `description`)
 VALUES (@migration_version, 'Migrate tasks to content_upload_queue_tasks with column renames and project assignment');

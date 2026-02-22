@@ -90,5 +90,5 @@ WHERE NOT EXISTS (
 -- Record migration
 -- ============================================================================
 
-INSERT INTO `platform_schema_migrations` (`version`, `description`)
+INSERT IGNORE INTO `platform_schema_migrations` (`version`, `description`)
 VALUES (@migration_version, 'Migrate users from legacy, create default project and owner membership');

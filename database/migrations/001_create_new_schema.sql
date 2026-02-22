@@ -383,5 +383,5 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- Record migration
 -- ============================================================================
 
-INSERT INTO `platform_schema_migrations` (`version`, `description`)
+INSERT IGNORE INTO `platform_schema_migrations` (`version`, `description`)
 VALUES (@migration_version, 'Create all 13 new tables for refactored schema with projects and RBAC');
