@@ -79,7 +79,7 @@ def main():
     
     for channel in channels:
         print(f"📺 {channel.name}")
-        print(f"   Channel ID: {channel.channel_id}")
+        print(f"   Channel ID: {channel.platform_channel_id}")
         print(f"   Enabled: {channel.enabled}")
         
         if not channel.refresh_token:

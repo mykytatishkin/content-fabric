@@ -18,7 +18,7 @@ print(f"✅ Канал найден: {channel.name}")
 pending_tasks = db.get_pending_tasks()
 task = None
 for t in pending_tasks:
-    if t.account_id == channel.id:
+    if t.channel_id == channel.id:
         task = t
         break
 

@@ -193,7 +193,7 @@ def save_reauth_tokens_to_db(db, result: ReauthResult) -> bool:
     actual_custom_url = actual_channel_info.get("custom_url")
     
     # Check if the token belongs to the expected channel
-    expected_channel_id = expected_channel.channel_id
+    expected_channel_id = expected_channel.platform_channel_id
     
     # Normalize channel IDs for comparison (remove @ prefix if present)
     def normalize_channel_identifier(identifier: str) -> str:
@@ -224,7 +224,7 @@ def save_reauth_tokens_to_db(db, result: ReauthResult) -> bool:
             # Search all channels for matching custom URL
             all_channels = db.get_all_channels()
             for channel in all_channels:
-                channel_normalized = normalize_channel_identifier(channel.channel_id)
+                channel_normalized = normalize_channel_identifier(channel.platform_channel_id)
                 if channel_normalized == actual_url_normalized:
                     correct_channel = channel
                     break

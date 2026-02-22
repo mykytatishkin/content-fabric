@@ -148,27 +148,15 @@ class DailyReportManager:
             
             # Query tasks for the date
             # Try to include error_message if column exists
-            try:
-                query = """
-                    SELECT id, account_id, media_type, status, date_add, att_file_path,
-                           cover, title, description, keywords, post_comment, add_info,
-                           date_post, date_done, upload_id, error_message
-                    FROM tasks 
-                    WHERE date_post >= %s AND date_post <= %s
-                    ORDER BY account_id, media_type
-                """
-                results = self.db._execute_query(query, (start_of_day, end_of_day), fetch=True)
-            except Exception:
-                # Fallback if error_message column doesn't exist yet
-                query = """
-                    SELECT id, account_id, media_type, status, date_add, att_file_path,
-                           cover, title, description, keywords, post_comment, add_info,
-                           date_post, date_done, upload_id
-                    FROM tasks 
-                    WHERE date_post >= %s AND date_post <= %s
-                    ORDER BY account_id, media_type
-                """
-                results = self.db._execute_query(query, (start_of_day, end_of_day), fetch=True)
+            query = """
+                SELECT id, channel_id, media_type, status, created_at, source_file_path,
+                       thumbnail_path, title, description, keywords, post_comment, legacy_add_info,
+                       scheduled_at, completed_at, upload_id, error_message
+                FROM content_upload_queue_tasks
+                WHERE scheduled_at >= %s AND scheduled_at <= %s
+                ORDER BY channel_id, media_type
+            """
+            results = self.db._execute_query(query, (start_of_day, end_of_day), fetch=True)
             
             if not results:
                 return []
@@ -194,7 +182,7 @@ class DailyReportManager:
         platform_data = defaultdict(lambda: defaultdict(list))
         
         for task in tasks:
-            platform_data[task.media_type][task.account_id].append(task)
+            platform_data[task.media_type][task.channel_id].append(task)
         
         # Build platform reports
         platform_reports = {}
@@ -260,8 +248,8 @@ class DailyReportManager:
         """
         try:
             query = """
-                SELECT name, channel_id
-                FROM youtube_channels
+                SELECT name, platform_channel_id
+                FROM platform_channels
                 WHERE id = %s
             """
             results = self.db._execute_query(query, (account_id,), fetch=True)
@@ -381,14 +369,14 @@ class DailyReportManager:
             # Get all channels for this platform
             if platform.lower() == 'youtube':
                 query = """
-                    SELECT c.id, c.name, c.channel_id
-                    FROM youtube_channels c
+                    SELECT c.id, c.name, c.platform_channel_id
+                    FROM platform_channels c
                     WHERE c.enabled = TRUE
                     AND c.id NOT IN (
-                        SELECT DISTINCT t.account_id
-                        FROM tasks t
+                        SELECT DISTINCT t.channel_id
+                        FROM content_upload_queue_tasks t
                         WHERE t.media_type = %s
-                        AND t.date_post >= %s AND t.date_post <= %s
+                        AND t.scheduled_at >= %s AND t.scheduled_at <= %s
                     )
                     ORDER BY c.id
                 """
