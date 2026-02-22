@@ -56,7 +56,7 @@ def check_refresh_tokens(channel_names: list[str]) -> None:
             continue
         
         print(f"📺 Channel: {channel_name}")
-        print(f"   Channel ID: {channel.channel_id}")
+        print(f"   Channel ID: {channel.platform_channel_id}")
         print(f"   Enabled: {channel.enabled}")
         
         if channel.refresh_token:

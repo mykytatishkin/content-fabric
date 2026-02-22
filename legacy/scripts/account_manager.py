@@ -549,8 +549,8 @@ def handle_console_command(auto_poster: SocialMediaAutoPoster, args):
         for console in consoles:
             status_icon = "✅" if console.enabled else "❌"
             print(f"   {status_icon} {console.name} (ID: {console.id})")
-            if console.project_id:
-                print(f"      Project ID: {console.project_id}")
+            if console.cloud_project_id:
+                print(f"      Project ID: {console.cloud_project_id}")
             if console.description:
                 print(f"      Описание: {console.description}")
             if console.credentials_file:
@@ -575,7 +575,7 @@ def handle_console_command(auto_poster: SocialMediaAutoPoster, args):
                 affected += 1
         
         # Удаляем консоль
-        query = "DELETE FROM google_consoles WHERE id = %s"
+        query = "DELETE FROM platform_oauth_credentials WHERE id = %s"
         db_loader.db._execute_query(query, (console.id,))
         print(f"✅ Консоль '{args.name}' удалена")
         if affected > 0:
