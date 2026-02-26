@@ -1,18 +1,17 @@
-"""Channel repository - DB operations for youtube_channels and google_consoles."""
+"""Channel repository - DB operations for platform_channels and platform_oauth_credentials."""
 
 import json
 from datetime import datetime
-from uuid import UUID
 
 from app.core.database import execute_query, get_db_connection
 from app.schemas.channel import ChannelCreate, ChannelCredentials
 
 
-def list_google_consoles(enabled_only: bool = True) -> list[dict]:
-    """List Google consoles for dropdown."""
+def list_oauth_credentials(enabled_only: bool = True) -> list[dict]:
+    """List OAuth credentials for dropdown."""
     query = """
         SELECT id, name, COALESCE(description, '') as description, enabled
-        FROM google_consoles
+        FROM platform_oauth_credentials
         WHERE 1=1
     """
     if enabled_only:
@@ -27,25 +26,29 @@ def list_google_consoles(enabled_only: bool = True) -> list[dict]:
     ]
 
 
+# Keep old name as alias for backward compatibility in endpoints
+list_google_consoles = list_oauth_credentials
+
+
 def channel_exists_by_name(name: str) -> bool:
     """Check if channel with this name already exists."""
-    query = "SELECT 1 FROM youtube_channels WHERE name = %s LIMIT 1"
+    query = "SELECT 1 FROM platform_channels WHERE name = %s LIMIT 1"
     with get_db_connection() as conn:
         rows = execute_query(conn, query, (name.strip(),), fetch=True)
     return bool(rows)
 
 
-def channel_exists_by_channel_id(channel_id: str) -> bool:
-    """Check if channel with this YouTube channel_id already exists."""
-    query = "SELECT 1 FROM youtube_channels WHERE channel_id = %s LIMIT 1"
+def channel_exists_by_channel_id(platform_channel_id: str) -> bool:
+    """Check if channel with this platform_channel_id already exists."""
+    query = "SELECT 1 FROM platform_channels WHERE platform_channel_id = %s LIMIT 1"
     with get_db_connection() as conn:
-        rows = execute_query(conn, query, (channel_id.strip(),), fetch=True)
+        rows = execute_query(conn, query, (platform_channel_id.strip(),), fetch=True)
     return bool(rows)
 
 
 def get_console_by_id(console_id: int) -> dict | None:
-    """Get console by ID."""
-    query = "SELECT id, name FROM google_consoles WHERE id = %s AND enabled = 1"
+    """Get OAuth credential by ID."""
+    query = "SELECT id, name FROM platform_oauth_credentials WHERE id = %s AND enabled = 1"
     with get_db_connection() as conn:
         rows = execute_query(conn, query, (console_id,), fetch=True)
     if not rows:
@@ -54,27 +57,32 @@ def get_console_by_id(console_id: int) -> dict | None:
     return {"id": r[0], "name": r[1]}
 
 
+def _get_default_project_id() -> int | None:
+    """Get default project ID."""
+    query = "SELECT id FROM platform_projects WHERE slug = 'default' LIMIT 1"
+    with get_db_connection() as conn:
+        rows = execute_query(conn, query, fetch=True)
+    return rows[0][0] if rows else None
+
+
 def add_channel(data: ChannelCreate) -> int | None:
     """
     Add channel to DB. Returns new channel id or None on duplicate.
-    Sets console_name from console_id for legacy worker compatibility.
     """
-    console_name = None
-    if data.console_id:
-        console = get_console_by_id(data.console_id)
-        if console:
-            console_name = console["name"]
+    project_id = data.project_id or _get_default_project_id()
+    if not project_id:
+        raise ValueError("No project_id provided and no default project found")
 
     query = """
-        INSERT INTO youtube_channels
-        (name, channel_id, console_id, console_name, enabled)
+        INSERT INTO platform_channels
+        (project_id, name, platform_channel_id, console_id, enabled)
         VALUES (%s, %s, %s, %s, %s)
     """
     params = (
+        project_id,
         data.name.strip(),
-        data.channel_id.strip(),
+        data.platform_channel_id.strip(),
         data.console_id,
-        console_name,
         data.enabled,
     )
 
@@ -92,21 +100,21 @@ def add_channel(data: ChannelCreate) -> int | None:
         raise
 
 
-def add_account_credentials(channel_name: str, creds: ChannelCredentials) -> int:
+def add_account_credentials(channel_id: int, creds: ChannelCredentials) -> int:
     """
-    Insert RPA auth credentials into youtube_account_credentials.
-    Linked to youtube_channels via channel_name FK.
+    Insert RPA auth credentials into platform_channel_login_credentials.
+    Linked to platform_channels via channel_id FK.
     Returns the new row id.
     """
     query = """
-        INSERT INTO youtube_account_credentials
-        (channel_name, login_email, login_password, totp_secret, backup_codes,
+        INSERT INTO platform_channel_login_credentials
+        (channel_id, login_email, login_password, totp_secret, backup_codes,
          proxy_host, proxy_port, proxy_username, proxy_password, enabled)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
     """
     backup_codes_json = json.dumps(creds.backup_codes) if creds.backup_codes else None
     params = (
-        channel_name,
+        channel_id,
         creds.login_email,
         creds.login_password,
         creds.totp_secret,
@@ -126,71 +134,50 @@ def add_account_credentials(channel_name: str, creds: ChannelCredentials) -> int
         return row_id
 
 
-def _row_to_channel_dict(r: tuple) -> dict:
-    """Convert DB row to channel dict. Works with or without user_id column."""
-    return {
-        "id": r[0],
-        "name": r[1],
-        "channel_id": r[2],
-        "console_id": r[3],
-        "console_name": r[4],
-        "enabled": bool(r[5]),
-        "user_id": r[6] if len(r) > 6 else None,
-        "created_at": r[7] if len(r) > 7 else r[6],
-        "updated_at": r[8] if len(r) > 8 else r[7],
-    }
-
-
-def list_channels(user_id: UUID | None = None) -> list[dict]:
-    """List channels, optionally filtered by user_id (when column exists)."""
-    # Base columns - user_id optional (after migration)
-    base_cols = "id, name, channel_id, console_id, console_name, enabled"
-    try:
-        if user_id:
-            query = f"""
-                SELECT {base_cols}, user_id, created_at, updated_at
-                FROM youtube_channels
-                WHERE user_id = %s OR user_id IS NULL
-                ORDER BY created_at DESC
-            """
-            params: tuple = (str(user_id),)
-        else:
-            query = f"""
-                SELECT {base_cols}, created_at, updated_at
-                FROM youtube_channels
-                ORDER BY created_at DESC
-            """
-            params = ()
-        with get_db_connection() as conn:
-            rows = execute_query(conn, query, params if params else None, fetch=True) or []
-    except Exception:
-        # user_id column might not exist - retry without
-        query = f"""
-            SELECT {base_cols}, created_at, updated_at
-            FROM youtube_channels
+def list_channels(project_id: int | None = None) -> list[dict]:
+    """List channels, optionally filtered by project_id."""
+    if project_id:
+        query = """
+            SELECT id, name, platform_channel_id, console_id, enabled,
+                   project_id, created_at, updated_at
+            FROM platform_channels
+            WHERE project_id = %s
             ORDER BY created_at DESC
         """
-        with get_db_connection() as conn:
-            rows = execute_query(conn, query, fetch=True) or []
+        params: tuple = (project_id,)
+    else:
+        query = """
+            SELECT id, name, platform_channel_id, console_id, enabled,
+                   project_id, created_at, updated_at
+            FROM platform_channels
+            ORDER BY created_at DESC
+        """
+        params = ()
 
-    result = []
-    for r in rows:
-        d = {"id": r[0], "name": r[1], "channel_id": r[2], "console_id": r[3],
-             "console_name": r[4], "enabled": bool(r[5]), "user_id": None}
-        if len(r) == 9:
-            d.update(created_at=r[7], updated_at=r[8])
-        elif len(r) == 8:
-            d.update(created_at=r[6], updated_at=r[7])
-        result.append(d)
-    return result
+    with get_db_connection() as conn:
+        rows = execute_query(conn, query, params if params else None, fetch=True) or []
+
+    return [
+        {
+            "id": r[0],
+            "name": r[1],
+            "platform_channel_id": r[2],
+            "console_id": r[3],
+            "enabled": bool(r[4]),
+            "project_id": r[5],
+            "created_at": r[6],
+            "updated_at": r[7],
+        }
+        for r in rows
+    ]
 
 
 def get_channel_by_id(channel_id: int) -> dict | None:
     """Get channel by ID."""
     query = """
-        SELECT id, name, channel_id, console_id, console_name, enabled,
-               created_at, updated_at
-        FROM youtube_channels
+        SELECT id, name, platform_channel_id, console_id, enabled,
+               project_id, created_at, updated_at
+        FROM platform_channels
         WHERE id = %s
     """
     with get_db_connection() as conn:
@@ -201,11 +188,10 @@ def get_channel_by_id(channel_id: int) -> dict | None:
     return {
         "id": r[0],
         "name": r[1],
-        "channel_id": r[2],
+        "platform_channel_id": r[2],
         "console_id": r[3],
-        "console_name": r[4],
-        "enabled": bool(r[5]),
-        "user_id": None,
+        "enabled": bool(r[4]),
+        "project_id": r[5],
         "created_at": r[6],
         "updated_at": r[7],
     }
