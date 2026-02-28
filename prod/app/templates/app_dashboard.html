@@ -12,10 +12,14 @@
 <div class="cards">
     <div class="card">
         <div class="label">Channels</div>
-        <div class="value">{{ channels_total }}</div>
+        <div class="value">{{ channels_active }} <span style="font-size:0.75rem;color:#64748b;">/ {{ channels_total }}</span></div>
     </div>
     <div class="card">
-        <div class="label">Pending Tasks</div>
+        <div class="label">Total Tasks</div>
+        <div class="value">{{ tasks_total }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Pending</div>
         <div class="value" style="color:#d97706;">{{ tasks_pending }}</div>
     </div>
     <div class="card">
@@ -26,9 +30,32 @@
         <div class="label">Failed</div>
         <div class="value" style="color:#dc2626;">{{ tasks_failed }}</div>
     </div>
+    <div class="card">
+        <div class="label">Success Rate</div>
+        <div class="value" style="color:{% if success_rate >= 80 %}#16a34a{% elif success_rate >= 50 %}#d97706{% else %}#dc2626{% endif %};">{{ success_rate }}%</div>
+    </div>
 </div>
 
-<h2>Recent Tasks</h2>
+{% if upcoming_tasks %}
+<h3 style="font-size:1.1rem;margin:1.5rem 0 0.75rem;">Upcoming Tasks</h3>
+<table>
+    <thead>
+        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Scheduled</th></tr>
+    </thead>
+    <tbody>
+        {% for t in upcoming_tasks %}
+        <tr>
+            <td><a href="/app/tasks/{{ t.id }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
+            <td><a href="/app/channels/{{ t.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
+            <td>{{ (t.title or '—')[:50] }}</td>
+            <td>{{ t.scheduled_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<h3 style="font-size:1.1rem;margin:1.5rem 0 0.75rem;">Recent Tasks</h3>
 {% if recent_tasks %}
 <table>
     <thead>
@@ -37,16 +64,15 @@
     <tbody>
         {% for t in recent_tasks %}
         <tr>
-            <td>{{ t.id }}</td>
-            <td>{{ t.channel_id }}</td>
-            <td>{{ t.title or '—' }}</td>
+            <td><a href="/app/tasks/{{ t.id }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
+            <td><a href="/app/channels/{{ t.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
+            <td>{{ (t.title or '—')[:50] }}</td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
                 {% elif t.status == 1 %}<span class="badge badge-green">Completed</span>
                 {% elif t.status == 2 %}<span class="badge badge-red">Failed</span>
                 {% elif t.status == 3 %}<span class="badge badge-blue">Processing</span>
                 {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
-                {% else %}<span class="badge badge-gray">{{ t.status }}</span>
                 {% endif %}
             </td>
             <td>{{ t.scheduled_at or '—' }}</td>

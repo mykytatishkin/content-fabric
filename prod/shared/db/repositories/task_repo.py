@@ -226,6 +226,18 @@ def update_task_upload_id(task_id: int, upload_id: str) -> bool:
         return result.rowcount > 0
 
 
+def retry_task(task_id: int) -> bool:
+    """Reset a failed/cancelled task back to pending."""
+    sql = text(
+        "UPDATE content_upload_queue_tasks "
+        "SET status = 0, error_message = NULL, retry_count = retry_count + 1 "
+        "WHERE id = :tid AND status IN (2, 4)"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"tid": task_id})
+        return result.rowcount > 0
+
+
 def cancel_task(task_id: int) -> bool:
     """Cancel a task (set status=4). Only allowed if status in (0, 3)."""
     sql = text(
