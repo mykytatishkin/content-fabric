@@ -119,13 +119,30 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
             if attempt < MAX_UPLOAD_ATTEMPTS - 1:
                 channel = channel_repo.get_channel_by_id(channel_id) or channel
 
-    _fail(task_id, last_error)
+    _fail(task_id, last_error, channel_id=channel_id)
     return {"ok": False, "error": last_error}
 
 
-def _fail(task_id: int, error: str) -> None:
+_TOKEN_ERROR_PATTERNS = ["invalid_grant", "Token has been expired or revoked", "token expired"]
+
+
+def _is_token_error(error: str) -> bool:
+    return any(p.lower() in error.lower() for p in _TOKEN_ERROR_PATTERNS)
+
+
+def _fail(task_id: int, error: str, channel_id: int | None = None) -> None:
     logger.error("Task %d failed: %s", task_id, error)
     _audit_logger.info("task.failed task_id=%d error=%s", task_id, error[:200])
     _set_progress(task_id, "failed", 0)
     task_repo.mark_task_failed(task_id, error)
-    telegram.send(f"Upload task {task_id} failed: {error}")
+
+    if _is_token_error(error) and channel_id:
+        channel = channel_repo.get_channel_by_id(channel_id)
+        ch_name = channel["name"] if channel else f"id={channel_id}"
+        telegram.send(
+            f"Token expired for channel '{ch_name}' (id={channel_id}). "
+            f"Re-authorization required. Run: "
+            f"python3 run_youtube_reauth.py {ch_name}"
+        )
+    else:
+        telegram.send(f"Upload task {task_id} failed: {error}")
