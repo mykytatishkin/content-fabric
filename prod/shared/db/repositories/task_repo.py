@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, insert, text, func
+from sqlalchemy import select, insert, text, func, or_
 
 from shared.db.connection import get_connection
 from shared.db.models import content_upload_queue_tasks, platform_projects
@@ -100,8 +100,12 @@ def get_pending_tasks(limit: int | None = None) -> list[dict[str, Any]]:
 
 def get_all_tasks(
     status: int | None = None,
+    statuses: list[int] | None = None,
     channel_id: int | None = None,
     limit: int | None = None,
+    offset: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> list[dict[str, Any]]:
     t = content_upload_queue_tasks
     cols = [
@@ -114,9 +118,17 @@ def get_all_tasks(
     stmt = select(*cols)
     if status is not None:
         stmt = stmt.where(t.c.status == status)
+    elif statuses:
+        stmt = stmt.where(t.c.status.in_(statuses))
     if channel_id is not None:
         stmt = stmt.where(t.c.channel_id == channel_id)
+    if date_from is not None:
+        stmt = stmt.where(t.c.scheduled_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(t.c.scheduled_at <= date_to)
     stmt = stmt.order_by(t.c.scheduled_at.desc())
+    if offset:
+        stmt = stmt.offset(offset)
     if limit:
         stmt = stmt.limit(limit)
     with get_connection() as conn:
@@ -211,6 +223,28 @@ def update_task_upload_id(task_id: int, upload_id: str) -> bool:
     )
     with get_connection() as conn:
         result = conn.execute(sql, {"uid": upload_id, "tid": task_id})
+        return result.rowcount > 0
+
+
+def cancel_task(task_id: int) -> bool:
+    """Cancel a task (set status=4). Only allowed if status in (0, 3)."""
+    sql = text(
+        "UPDATE content_upload_queue_tasks "
+        "SET status = 4 WHERE id = :tid AND status IN (0, 3)"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"tid": task_id})
+        return result.rowcount > 0
+
+
+def update_task_scheduled_at(task_id: int, scheduled_at: datetime) -> bool:
+    """Reschedule a task. Only allowed if status in (0, 3)."""
+    sql = text(
+        "UPDATE content_upload_queue_tasks "
+        "SET scheduled_at = :scheduled_at WHERE id = :tid AND status IN (0, 3)"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"scheduled_at": scheduled_at, "tid": task_id})
         return result.rowcount > 0
 
 
