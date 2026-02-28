@@ -199,7 +199,7 @@ def test_with_real_channel(channel_name: str):
         return False
     
     print(f"✅ Found channel: {channel.name}")
-    print(f"   Channel ID: {channel.channel_id}")
+    print(f"   Channel ID: {channel.platform_channel_id}")
     print(f"   Enabled: {channel.enabled}")
     print()
     
@@ -213,7 +213,7 @@ def test_with_real_channel(channel_name: str):
     pending_tasks = db.get_pending_tasks()
     task = None
     for t in pending_tasks:
-        if t.account_id == channel.id:
+        if t.channel_id == channel.id:
             task = t
             break
     

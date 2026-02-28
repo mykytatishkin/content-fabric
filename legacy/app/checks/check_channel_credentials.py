@@ -49,7 +49,7 @@ def check_channel(channel_name: str):
     print(f"✅ Channel found:")
     print(f"   ID: {channel.id}")
     print(f"   Name: {channel.name}")
-    print(f"   Channel ID: {channel.channel_id}")
+    print(f"   Channel ID: {channel.platform_channel_id}")
     print(f"   Enabled: {channel.enabled}")
     print(f"   Created: {channel.created_at}")
     print(f"   Updated: {channel.updated_at}")
@@ -57,10 +57,10 @@ def check_channel(channel_name: str):
     
     # Check console assignment
     print("Console Assignment:")
-    if channel.console_name:
-        print(f"   ✅ console_name: {channel.console_name}")
+    if channel.console_id:
+        print(f"   ✅ console_id: {channel.console_id}")
     else:
-        print(f"   ⚠️  console_name: not set")
+        print(f"   ⚠️  console_id: not set")
     
     if channel.console_id:
         print(f"   ✅ console_id: {channel.console_id}")
