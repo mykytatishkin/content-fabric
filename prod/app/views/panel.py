@@ -28,7 +28,7 @@ def _require_admin(request: Request):
         return None, RedirectResponse("/app/login", status_code=302)
     from shared.db.repositories import user_repo
     user = user_repo.get_user_by_id(int(payload["sub"]))
-    if not user or user.get("status") != "admin":
+    if not user or user.get("status") != 1:  # UserStatus.ADMIN
         return None, RedirectResponse("/app/", status_code=302)
     return user, None
 
