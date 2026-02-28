@@ -194,6 +194,18 @@ def update_channel_tokens(
         return result.rowcount > 0
 
 
+def delete_channel(channel_id: int) -> bool:
+    """Delete channel and its login credentials."""
+    with get_connection() as conn:
+        conn.execute(text(
+            "DELETE FROM platform_channel_login_credentials WHERE channel_id = :cid"
+        ), {"cid": channel_id})
+        result = conn.execute(text(
+            "DELETE FROM platform_channels WHERE id = :cid"
+        ), {"cid": channel_id})
+        return result.rowcount > 0
+
+
 def add_login_credentials(
     channel_id: int,
     login_email: str,

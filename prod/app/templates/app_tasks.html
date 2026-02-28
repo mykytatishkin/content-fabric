@@ -41,13 +41,13 @@
 {% if tasks %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th></tr>
+        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th><th></th></tr>
     </thead>
     <tbody>
         {% for t in tasks %}
         <tr>
             <td>{{ t.id }}</td>
-            <td>{{ t.channel_name }}</td>
+            <td><a href="/app/channels/{{ t.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
             <td>{{ (t.title or '—')[:50] }}</td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
@@ -60,6 +60,13 @@
             <td>{{ t.scheduled_at or '—' }}</td>
             <td>{{ t.created_at }}</td>
             <td style="font-size:0.75rem;color:#991b1b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:80] }}</td>
+            <td>
+                {% if t.status == 0 %}
+                <form method="POST" action="/app/tasks/{{ t.id }}/cancel" style="display:inline;">
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel</button>
+                </form>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
