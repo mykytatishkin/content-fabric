@@ -40,7 +40,7 @@ def enqueue_voice_change(payload: VoiceChangePayload, **kwargs) -> str:
     """Enqueue a voice change job. Returns job ID."""
     q = _get_queue(QUEUE_VOICE)
     job = q.enqueue(
-        "workers.voice_worker.process_voice_change",
+        "workers.voice_worker.process_voice_change_job",
         payload,
         job_timeout="30m",
         **kwargs,
