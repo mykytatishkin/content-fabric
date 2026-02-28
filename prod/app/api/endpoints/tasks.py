@@ -127,7 +127,7 @@ async def task_history(
         statuses_list = None
         single_status = status_filter
     else:
-        statuses_list = [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]
+        statuses_list = [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]
         single_status = None
 
     tasks = task_repo.get_all_tasks(
