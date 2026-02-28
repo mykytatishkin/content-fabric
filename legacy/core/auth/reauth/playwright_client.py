@@ -799,10 +799,13 @@ async def _handle_mfa_if_needed(
     credential: AutomationCredential,
     browser_config: BrowserConfig,
 ) -> None:
-    """Detect MFA / security challenges and skip the channel immediately.
+    """Detect MFA / security challenges and attempt to solve TOTP automatically.
 
-    Raises :class:`MFAChallengeError` when any MFA prompt is detected so the
-    caller can abort this channel and move on to the next one.
+    If a TOTP input is detected and the credential has a totp_secret, the code
+    is generated via pyotp and entered automatically.  For any other MFA type
+    (SMS, phone call, security key) the channel is skipped.
+
+    Raises :class:`MFAChallengeError` when MFA cannot be solved automatically.
     """
     await page.wait_for_timeout(browser_config.human_delay_range_ms[0])
 
@@ -823,12 +826,76 @@ async def _handle_mfa_if_needed(
         # No MFA challenge on the page — nothing to do.
         return
 
-    # Save a diagnostic screenshot before skipping.
+    # ── Try to auto-solve TOTP if we have the secret ──────────────
+    totp_input = page.locator("input[name='totpPin']")
+    if await totp_input.count() > 0 and credential.totp_secret:
+        LOGGER.info(
+            "TOTP challenge detected for %s — entering code automatically.",
+            credential.channel_name,
+        )
+        try:
+            import pyotp
+            totp = pyotp.TOTP(credential.totp_secret)
+            code = totp.now()
+            await totp_input.fill(code)
+            await page.wait_for_timeout(random.randint(*browser_config.human_delay_range_ms))
+
+            # Click "Next" / "Далі" / "Далее" button
+            next_btn = page.locator("button[type='submit'], #totpNext button, div#totpNext")
+            if await next_btn.count() > 0:
+                await next_btn.first.click()
+            else:
+                await page.keyboard.press("Enter")
+
+            # Wait for navigation after TOTP submission
+            await page.wait_for_timeout(3000)
+
+            # Check if we're still on the TOTP page (code was wrong)
+            still_totp = await page.locator("input[name='totpPin']").count() > 0
+            if still_totp:
+                LOGGER.warning(
+                    "TOTP code rejected for %s — trying backup code.",
+                    credential.channel_name,
+                )
+                # Try backup codes
+                if credential.backup_codes:
+                    for backup_code in credential.backup_codes:
+                        await totp_input.fill("")
+                        await totp_input.fill(backup_code)
+                        await page.wait_for_timeout(random.randint(*browser_config.human_delay_range_ms))
+                        if await next_btn.count() > 0:
+                            await next_btn.first.click()
+                        else:
+                            await page.keyboard.press("Enter")
+                        await page.wait_for_timeout(3000)
+                        if await page.locator("input[name='totpPin']").count() == 0:
+                            LOGGER.info(
+                                "Backup code accepted for %s.",
+                                credential.channel_name,
+                            )
+                            return
+                    LOGGER.error("All backup codes exhausted for %s.", credential.channel_name)
+                else:
+                    LOGGER.error("TOTP rejected and no backup codes for %s.", credential.channel_name)
+            else:
+                LOGGER.info(
+                    "TOTP code accepted for %s — continuing OAuth flow.",
+                    credential.channel_name,
+                )
+                return
+        except ImportError:
+            LOGGER.error("pyotp not installed — cannot auto-solve TOTP.")
+        except Exception as exc:
+            LOGGER.exception("Error during TOTP auto-solve for %s: %s", credential.channel_name, exc)
+
+    # ── Cannot auto-solve — save screenshot and raise ─────────────
     screenshot_path = await _handle_security_challenge(page, credential, browser_config, security_message)
 
+    has_secret = bool(credential.totp_secret)
     LOGGER.warning(
-        "MFA challenge detected for %s — skipping channel. Reason: %s",
+        "MFA challenge for %s cannot be solved automatically (totp_secret=%s). Reason: %s",
         credential.channel_name,
+        "present" if has_secret else "MISSING",
         security_message,
     )
     raise MFAChallengeError(
