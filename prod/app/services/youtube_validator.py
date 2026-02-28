@@ -14,11 +14,6 @@ def validate_channel_id(channel_id: str) -> tuple[bool, str | None]:
     Returns (is_valid, canonical_channel_id or error_message).
     """
     api_key = api_settings.YOUTUBE_API_KEY
-    # #region agent log
-    # Use the same debug log mechanism as in config.py instead of hardcoding the path
-    from app.core.config import _log
-    _log({"hypothesisId": "D", "location": "youtube_validator.py:validate", "message": "api_key at validate", "data": {"has_key": bool(api_key), "key_len": len(api_key or "")}})
-    # #endregion
     if not api_key:
         return False, "YOUTUBE_API_KEY not configured"
 

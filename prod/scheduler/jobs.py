@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from shared.db.models import TaskStatus
 from shared.db.repositories import task_repo, channel_repo
 from shared.queue.publisher import enqueue_video_upload
 from shared.queue.types import VideoUploadPayload
@@ -42,6 +43,6 @@ def enqueue_pending_tasks() -> int:
         except Exception:
             logger.exception("Failed to enqueue task %d", t["id"])
             # Reset back to pending so it can be retried
-            task_repo.update_task_status(t["id"], 0)
+            task_repo.update_task_status(t["id"], TaskStatus.PENDING)
 
     return count

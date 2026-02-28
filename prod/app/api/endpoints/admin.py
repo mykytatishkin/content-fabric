@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_current_user
 from shared.db.connection import get_connection
+from shared.db.models import TaskStatus, UserStatus
 from sqlalchemy import text
 
 router = APIRouter()
@@ -12,7 +13,7 @@ router = APIRouter()
 def _require_admin(user: dict) -> dict:
     """Check that the current user has admin status (status=1)."""
     # status=1 is admin in platform_users
-    if user.get("status") != 1:
+    if user.get("status") != UserStatus.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
@@ -37,7 +38,7 @@ async def admin_dashboard(user: dict = Depends(get_current_user)):
             "ORDER BY completed_at DESC LIMIT 10"
         )).mappings().fetchall()
 
-    status_names = {0: "pending", 1: "completed", 2: "failed", 3: "processing", 4: "cancelled"}
+    status_names = {s.value: s.name.lower() for s in TaskStatus}
     tasks = {status_names.get(r[0], f"unknown_{r[0]}"): r[1] for r in task_stats}
 
     return {
@@ -102,8 +103,9 @@ async def update_user_status(user_id: int, new_status: int, user: dict = Depends
     """Change user status (activate/deactivate)."""
     _require_admin(user)
 
-    if new_status not in (0, 1, 10):
-        raise HTTPException(status_code=400, detail="Invalid status (0=inactive, 1=admin, 10=active)")
+    valid_statuses = {s.value for s in UserStatus}
+    if new_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {', '.join(f'{s.value}={s.name.lower()}' for s in UserStatus)}")
 
     sql = text("UPDATE platform_users SET status = :status WHERE id = :uid")
     with get_connection() as conn:
