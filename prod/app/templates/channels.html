@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Каналы{% endblock %}
+
+{% block content %}
+<h2>Каналы ({{ channels | length }})</h2>
+
+<table>
+    <tr>
+        <th>ID</th><th>Название</th><th>Platform ID</th><th>Enabled</th>
+        <th>Processing</th><th>Токены</th><th>Created</th>
+    </tr>
+    {% for ch in channels %}
+    <tr>
+        <td>{{ ch.id }}</td>
+        <td><strong>{{ ch.name }}</strong></td>
+        <td style="font-family: monospace; font-size: 0.75rem;">{{ ch.platform_channel_id or '—' }}</td>
+        <td>
+            {% if ch.enabled %}
+                <span class="badge badge-green">ON</span>
+            {% else %}
+                <span class="badge badge-red">OFF</span>
+            {% endif %}
+        </td>
+        <td>
+            {% if ch.processing_status %}
+                <span class="badge badge-green">Active</span>
+            {% else %}
+                <span class="badge badge-yellow">Stopped</span>
+            {% endif %}
+        </td>
+        <td>
+            {% if ch.has_tokens %}
+                <span class="badge badge-green">OK</span>
+            {% else %}
+                <span class="badge badge-red">None</span>
+            {% endif %}
+        </td>
+        <td>{{ ch.created_at.strftime('%Y-%m-%d') if ch.created_at else '—' }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

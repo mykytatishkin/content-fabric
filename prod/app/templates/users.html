@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Пользователи{% endblock %}
+
+{% block content %}
+<h2>Пользователи ({{ users | length }})</h2>
+
+<table>
+    <tr>
+        <th>ID</th><th>Username</th><th>Email</th><th>Display Name</th>
+        <th>Статус</th><th>2FA</th><th>Создан</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+        <td>{{ u.id }}</td>
+        <td><strong>{{ u.username }}</strong></td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.display_name or '—' }}</td>
+        <td>
+            {% if u.status == 1 %}<span class="badge badge-blue">Admin</span>
+            {% elif u.status == 10 %}<span class="badge badge-green">Active</span>
+            {% else %}<span class="badge badge-gray">Inactive</span>
+            {% endif %}
+        </td>
+        <td>
+            {% if u.totp_enabled %}<span class="badge badge-green">ON</span>
+            {% else %}<span class="badge badge-gray">OFF</span>{% endif %}
+        </td>
+        <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
