@@ -4,6 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS `content_upload_queue_tasks` (
   `id`                INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+  `uuid`              VARCHAR(36)     NOT NULL COMMENT 'External identifier for portal URLs (IDOR protection)',
   `project_id`        INT UNSIGNED    NOT NULL,
   `channel_id`        INT UNSIGNED    NOT NULL,
   `created_by`        INT UNSIGNED    DEFAULT NULL COMMENT 'User who created the task',
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `content_upload_queue_tasks` (
   `created_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_tasks_uuid` (`uuid`),
   KEY `idx_cuqt_project`            (`project_id`),
   KEY `idx_cuqt_channel`            (`channel_id`),
   KEY `idx_cuqt_created_by`         (`created_by`),

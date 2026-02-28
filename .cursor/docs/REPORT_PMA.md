@@ -1,7 +1,7 @@
 # Content Fabric — Отчёт для менеджера проекта
 
 > Период: октябрь 2025 — февраль 2026
-> Последнее обновление: 01.03.2026
+> Последнее обновление: 28.02.2026 (Phase 9)
 
 ---
 
@@ -156,6 +156,17 @@
 | **Password Change** | Смена пароля с валидацией на /app/settings | Done, задеплоен |
 | **Template CRUD** | Создание шаблонов, детальная страница, добавление/удаление слотов | Done, задеплоен |
 | **Dashboard v2** | Active/total channels, success rate %, upcoming tasks, channel names | Done, задеплоен |
+
+### Фаза 9: Безопасность и изоляция данных (28.02.2026)
+
+| Фича | Описание | Статус |
+|------|----------|--------|
+| **User-scoped data** | Обычный пользователь видит только свои каналы/задачи/шаблоны, admin — всё | Done, задеплоен |
+| **Access control** | Проверка ownership на всех detail/edit/delete маршрутах портала | Done, задеплоен |
+| **UUID URLs** | Замена числовых ID на UUID в URL для защиты от IDOR атак | Done, задеплоен |
+| **UUID колонки в БД** | `uuid VARCHAR(36) NOT NULL UNIQUE` в 3 таблицах: channels, tasks, templates | Done, задеплоен |
+| **Admin check fix** | Исправлена проверка admin — сравнение status как int (1), а не string | Done, задеплоен |
+| **Template ownership** | Добавлены проверки ownership на template detail/slots/delete | Done, задеплоен |
 
 ---
 

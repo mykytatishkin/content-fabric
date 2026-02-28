@@ -43,7 +43,7 @@
 ### Tech Stack
 
 - **Python 3.10+**, FastAPI 0.109, Pydantic 2.5
-- **MySQL** (content_fabric DB, 13 tables)
+- **MySQL** (content_fabric DB, 15 tables)
 - **Redis 7** + **rq** (task queues)
 - **SQLAlchemy Core** (connection pooling, not ORM)
 - **JWT** auth (python-jose + passlib/bcrypt)
@@ -309,8 +309,12 @@ Status codes: `0`=pending, `1`=completed, `2`=failed, `3`=processing.
 
 ## Database
 
-Uses MySQL database `content_fabric` with 13 tables. Schema managed via SQL migrations in `/database/DDL/migrations/`.
+Uses MySQL database `content_fabric` with 15 tables. Schema managed via SQL migrations in `/database/DDL/migrations/`.
 
-Key tables: `platform_channels`, `platform_oauth_credentials`, `content_upload_queue_tasks`, `users`, `projects`, `reauth_audit_log`.
+Key tables: `platform_channels`, `platform_oauth_credentials`, `content_upload_queue_tasks`, `platform_users`, `platform_projects`, `schedule_templates`, `schedule_template_slots`.
+
+**UUID columns:** `platform_channels`, `content_upload_queue_tasks`, and `schedule_templates` have a `uuid VARCHAR(36) NOT NULL UNIQUE` column used as external identifier in portal URLs (instead of integer IDs) to prevent IDOR attacks.
+
+**User-scoped data:** Portal filters data by `created_by` column — regular users see only their own channels/tasks/templates, admins see all.
 
 See [database/DDL/SCHEMA_INDEX.md](../database/DDL/SCHEMA_INDEX.md) for full schema documentation.

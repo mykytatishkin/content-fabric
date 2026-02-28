@@ -263,6 +263,40 @@ Restore from backup. This is why backup is mandatory before starting.
 
 ---
 
+## UUID Migration (applied 28.02.2026)
+
+After the main schema migration, an additional migration was applied to add UUID columns for IDOR protection in the web portal:
+
+```sql
+-- Step 1: Add nullable uuid columns
+ALTER TABLE platform_channels ADD COLUMN uuid VARCHAR(36) NULL AFTER id;
+ALTER TABLE content_upload_queue_tasks ADD COLUMN uuid VARCHAR(36) NULL AFTER id;
+ALTER TABLE schedule_templates ADD COLUMN uuid VARCHAR(36) NULL AFTER id;
+
+-- Step 2: Backfill existing rows with MySQL's UUID() function
+UPDATE platform_channels SET uuid = UUID() WHERE uuid IS NULL;
+UPDATE content_upload_queue_tasks SET uuid = UUID() WHERE uuid IS NULL;
+UPDATE schedule_templates SET uuid = UUID() WHERE uuid IS NULL;
+
+-- Step 3: Make NOT NULL and add UNIQUE index
+ALTER TABLE platform_channels MODIFY uuid VARCHAR(36) NOT NULL, ADD UNIQUE INDEX idx_channels_uuid (uuid);
+ALTER TABLE content_upload_queue_tasks MODIFY uuid VARCHAR(36) NOT NULL, ADD UNIQUE INDEX idx_tasks_uuid (uuid);
+ALTER TABLE schedule_templates MODIFY uuid VARCHAR(36) NOT NULL, ADD UNIQUE INDEX idx_templates_uuid (uuid);
+```
+
+**Verification:**
+```sql
+-- All counts should match (0 nulls, 0 duplicates, 0 bad format)
+SELECT COUNT(*) - COUNT(uuid) AS missing FROM platform_channels;
+SELECT COUNT(*) - COUNT(DISTINCT uuid) AS dupes FROM platform_channels;
+SELECT COUNT(*) FROM platform_channels WHERE LENGTH(uuid) != 36;
+-- Repeat for content_upload_queue_tasks and schedule_templates
+```
+
+**Purpose:** Portal URLs now use `/app/channels/{uuid}` instead of `/app/channels/{int_id}` to prevent sequential ID enumeration (IDOR attacks). Internal DB operations still use integer `id` columns for FK joins.
+
+---
+
 ## Production Testing Checklist
 
 - [ ] Backup taken before migration

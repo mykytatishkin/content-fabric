@@ -7,18 +7,18 @@ Database architecture for the Content Fabric SaaS platform with projects, RBAC, 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                       Content Fabric Database                                │
-├───────────────────┬──────────────────┬──────────────┬────────────┬───────────┤
-│ Identity & Access │ Channels & OAuth │ Publishing   │ Analytics  │ Streaming │
-├───────────────────┼──────────────────┼──────────────┼────────────┼───────────┤
-│ platform_users    │ platform_oauth_  │ content_     │ channel_   │ live_     │
-│ platform_projects │  credentials     │  upload_     │  daily_    │  streaming│
-│ platform_project_ │ platform_        │  queue_tasks │  statistics│  _accounts│
-│  members          │  channels        │              │ channel_   │ live_     │
-│                   │ platform_channel_│              │  reauth_   │  stream_  │
-│                   │  tokens          │              │  audit_logs│  configu- │
-│                   │ platform_channel_│              │            │  rations  │
-│                   │  login_creds     │              │            │           │
-└───────────────────┴──────────────────┴──────────────┴────────────┴───────────┘
+├───────────────────┬──────────────────┬──────────────┬────────────┬───────────┬─────────────┤
+│ Identity & Access │ Channels & OAuth │ Publishing   │ Scheduling │ Analytics │ Streaming   │
+├───────────────────┼──────────────────┼──────────────┼────────────┼───────────┼─────────────┤
+│ platform_users    │ platform_oauth_  │ content_     │ schedule_  │ channel_  │ live_       │
+│ platform_projects │  credentials     │  upload_     │  templates │  daily_   │  streaming  │
+│ platform_project_ │ platform_        │  queue_tasks │ schedule_  │  statistics  _accounts │
+│  members          │  channels        │              │  template_ │ channel_  │ live_       │
+│                   │ platform_channel_│              │  slots     │  reauth_  │  stream_    │
+│                   │  tokens          │              │            │  audit_   │  configu-   │
+│                   │ platform_channel_│              │            │  logs     │  rations    │
+│                   │  login_creds     │              │            │           │             │
+└───────────────────┴──────────────────┴──────────────┴────────────┴───────────┴─────────────┘
 ```
 
 ## Table Index
@@ -36,7 +36,7 @@ Database architecture for the Content Fabric SaaS platform with projects, RBAC, 
 | Table | Purpose |
 |-------|---------|
 | `platform_oauth_credentials` | OAuth app creds from cloud providers (Google, Meta, TikTok) |
-| `platform_channels` | Multi-platform channels (YouTube, TikTok, Instagram) |
+| `platform_channels` | Multi-platform channels (YouTube, TikTok, Instagram). Has `uuid` column for IDOR-safe portal URLs |
 | `platform_channel_tokens` | Token history and backup |
 | `platform_channel_login_credentials` | RPA login creds for automated reauth (Playwright) |
 
@@ -44,7 +44,7 @@ Database architecture for the Content Fabric SaaS platform with projects, RBAC, 
 
 | Table | Purpose |
 |-------|---------|
-| `content_upload_queue_tasks` | Video publishing task queue with retry logic |
+| `content_upload_queue_tasks` | Video publishing task queue with retry logic. Has `uuid` column for IDOR-safe portal URLs |
 
 ### 4. Analytics & Audit (`analytics/`)
 
@@ -60,7 +60,14 @@ Database architecture for the Content Fabric SaaS platform with projects, RBAC, 
 | `live_streaming_accounts` | OAuth accounts for live streaming |
 | `live_stream_configurations` | RTMP/systemd stream configurations |
 
-### 6. System
+### 6. Scheduling
+
+| Table | Purpose |
+|-------|---------|
+| `schedule_templates` | Publishing schedule templates with timezone. Has `uuid` column for IDOR-safe portal URLs |
+| `schedule_template_slots` | Time slots per template (day of week, time, optional channel) |
+
+### 7. System
 
 | Table | Purpose |
 |-------|---------|
@@ -129,6 +136,14 @@ Multi-platform support via `platform` column:
 - CASCADE DELETE for project-owned resources
 - SET NULL for optional references (console, streaming_account)
 
+### 6. UUID Columns (IDOR Protection)
+Three tables have `uuid VARCHAR(36) NOT NULL UNIQUE` columns:
+- `platform_channels.uuid`
+- `content_upload_queue_tasks.uuid`
+- `schedule_templates.uuid`
+
+These UUIDs are exposed in web portal URLs instead of sequential integer IDs to prevent IDOR attacks. Internal DB operations (JOINs, FKs) still use integer `id` columns for performance.
+
 ## Legacy Table Mapping
 
 | Legacy Table | New Table |
@@ -183,6 +198,9 @@ database/
 │   │   └── platform_channel_login_credentials.sql
 │   ├── publishing/
 │   │   └── content_upload_queue_tasks.sql
+│   ├── scheduling/
+│   │   ├── schedule_templates.sql
+│   │   └── schedule_template_slots.sql
 │   ├── analytics/
 │   │   ├── channel_daily_statistics.sql
 │   │   └── channel_reauth_audit_logs.sql
