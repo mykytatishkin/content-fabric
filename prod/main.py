@@ -63,7 +63,30 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Basic health + dependency checks."""
+    checks: dict = {"api": "ok"}
+
+    # MySQL check
+    try:
+        from shared.db.connection import get_connection
+        from sqlalchemy import text
+        with get_connection() as conn:
+            conn.execute(text("SELECT 1"))
+        checks["mysql"] = "ok"
+    except Exception:
+        checks["mysql"] = "error"
+
+    # Redis check
+    try:
+        from shared.queue.config import get_redis
+        r = get_redis()
+        r.ping()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "error"
+
+    status = "healthy" if all(v == "ok" for v in checks.values()) else "degraded"
+    return {"status": status, "checks": checks}
 
 
 if __name__ == "__main__":
