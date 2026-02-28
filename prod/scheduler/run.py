@@ -6,6 +6,8 @@ import logging
 import signal
 import time
 
+import shared.env  # noqa: F401 — load .env files before anything else
+
 from scheduler.jobs import enqueue_pending_tasks
 
 POLL_INTERVAL = 60  # seconds
