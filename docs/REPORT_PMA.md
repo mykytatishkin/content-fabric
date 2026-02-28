@@ -111,66 +111,107 @@
 
 ---
 
-## 4. Открытые задачи (backlog) — 11 из 33
+### Фаза 6: Финальная стабилизация (28.02.2026, вечер)
 
-### Требуют внешних интеграций / оплаты
-
-| # | Story | Что нужно |
-|---|-------|-----------|
-| US-010 | Watermark (бесплатные видео) | C++ video processing |
-| US-022 | Реклама (18+) | Billing + ad network |
-| US-023 | Подписки и биллинг | Payment system (Stripe/LiqPay) |
-| US-024 | Тарифные ограничения | Usage counters + billing |
-
-### Legacy features (внешние зависимости)
-
-| # | Задача | Ответственный |
-|---|--------|---------------|
-| #19 | Publish App on Google Console | — |
-| #24 | Instagram Uploads | — |
-| #25 | Модификация видео (C++) | @graf_crayt |
-| #29 | YouTube LIVE | — |
-| #30 | Транскрибатор на C++ | @graf_crayt |
-| #33 | Short story BOOK | — |
-| #35 | Voice changer improvements | — |
-| #37 | YouTube Shorts cover | — |
+| Фича | Описание | Статус |
+|------|----------|--------|
+| **Test Suite** | 91 тест (security, repos, API, upload logic) — все проходят на проде | Done |
+| **File Upload API** | `POST /uploads/video` + `POST /uploads/thumbnail` | Done, задеплоен |
+| **SSR Admin Panel** | 6 SSR-страниц: dashboard, каналы, задачи, юзеры, credentials, оплата | Done, задеплоен |
+| **Legacy убит** | task_worker + 4 зомби-процесса реавторизации — убиты на проде | Done |
+| **Анализ каналов** | Детальный анализ всех 13 проблемных каналов с логами | Done |
+| **GitHub Issues** | 9 issues создано (#96-104) с детальными описаниями и назначениями | Done |
 
 ---
 
-## 5. Очистка репозитория
+## 4. Проблемные каналы (требуют ручного вмешательства)
+
+### Категория 1: «Verify it's you» — Google security challenge (9 каналов, issue #96)
+Google не доверяет серверу (46.21.250.43). После email+пароль показывает «Verify it's you».
+**Каналы:** girl_vibestv, youtubebaza-h8s, ytub-b9i, YouTube9, YouTube11, YouTube7_0, Дитячі канали, Блог чоловіки, Блогери жінки
+**Решение:** залогиниться вручную с сервера через VNC (~5 мин/аккаунт)
+**Ответственный:** @mykytatishkin
+
+### Категория 2: OAuth app не верифицирован (1 канал, issue #97)
+**Канал:** Канали новин (kanalinovin831@gmail.com)
+**Решение:** добавить email в test users GCP Console
+
+### Категория 3: Аккаунт не найден (1 канал, issue #98)
+**Канал:** Топ шоу ру (topsooru@gmail.com) — Google не находит аккаунт
+**Решение:** проверить email с командой
+
+### Рабочие каналы: 17 из 30 enabled (15 processing + 2 исправлены)
+
+---
+
+## 5. Открытые задачи (backlog)
+
+### Ручные задачи (назначены на @mykytatishkin)
+
+| Issue | Задача | Приоритет |
+|-------|--------|-----------|
+| #105 | SSL/HTTPS сертификаты (Let's Encrypt) | Высокий |
+| #106 | Настройка доменного имени | Высокий |
+| #96 | Реавторизация 9 каналов (VNC) | Высокий |
+| #97 | Канали новин — test user в GCP | Средний |
+| #98 | Топ шоу ру — проверить email | Средний |
+| #99 | TOTP секреты от команды | Средний |
+| #19 | Верификация OAuth app в Google | Низкий (долгий процесс) |
+
+### Задачи на разработку (ответственные указаны)
+
+| Issue | Задача | Ответственный | Статус |
+|-------|--------|---------------|--------|
+| #100 | Voice worker — ML портирование | @mykytatishkin | Stub готов |
+| #101 | Подключение оплаты (LiqPay/Stripe) | @mykytatishkin | UI-заглушка готова |
+| #102 | YouTube LIVE стриминг | @mykytatishkin | Backlog |
+| #104 | C++ модуль (ватермарки, субтитры) | Дима (@graf_crayt) | В разработке |
+
+### Требуют внешних интеграций
+
+| # | Story | Что нужно |
+|---|-------|-----------|
+| US-010 | Watermark | C++ модуль (Дима) |
+| US-022 | Реклама (18+) | Billing + ad network |
+| US-023 | Подписки и биллинг | Payment system — UI-заглушка готова |
+| US-024 | Тарифные ограничения | Зависит от US-023 |
+
+---
+
+## 6. Очистка репозитория
 
 | Действие | До | После |
 |----------|-------|-------|
 | Remote branches | 17 | 1 (main) |
 | Local branches | 15 | 1 (main) |
-| Open issues | 33 | 13 |
-| Closed issues | 0 | 20 |
+| Open issues | 33 | 22 (9 новых) |
+| Closed issues | 0 | 21 |
 | Open PRs | 0 | 0 |
-
-Все feature branches удалены. Репозиторий чистый.
+| Legacy процессы | 5 | 0 (убиты) |
 
 ---
 
-## 6. Инфраструктура (прод)
+## 7. Инфраструктура (прод)
 
 **Сервер:** 46.21.250.43 (Xeon E5-2430v2, 32GB RAM, Quadro P2000)
 
 | Компонент | Статус | Порт |
 |-----------|--------|------|
 | FastAPI (uvicorn) | Running | :8000 |
+| SSR Admin Panel | Running | :8000/panel/ |
 | Scheduler | Running | — |
 | Publishing Worker | Running | — |
 | Notification Worker | Running | — |
 | Redis 7 | Running | :6379 |
 | MySQL | Running | :3306 |
-| Legacy task_worker | Running (параллельно) | — |
+| Legacy task_worker | **УБИТ** | — |
 | Nginx | Running | :80 |
 
-**Логи:** `/var/log/cff-api.log`, `cff-scheduler.log`, `cff-publishing-worker.log`, `cff-notification-worker.log`, `cff-audit.log`
+**Health check:** `GET /health` — api=ok, mysql=ok, redis=ok
 
 ---
 
-## 7. Безопасность (аудит проведён 28.02)
+## 8. Безопасность (аудит проведён 28.02)
 
 | Было | Стало |
 |------|-------|
@@ -182,19 +223,22 @@
 | Stack traces в ответах | Sanitized error messages |
 | Нет path validation | Проверка на `..` в file paths |
 | `/docs` в проде | Скрыты при `DEBUG=False` |
+| Нет тестов | **91 тест, все зелёные** |
 
 ---
 
-## 8. Риски и рекомендации
+## 9. Риски и рекомендации
 
 | Риск | Митигация |
 |------|-----------|
-| Legacy worker обрабатывает те же задачи | Scheduler помечает задачи status=3 (processing) — legacy не подхватит |
-| Файлы задач с путями `/var/www/fastuser/...` | Старые задачи зафейлились (файлы на другом сервере) — новые задачи с корректными путями |
-| Нет systemd сервисов | **Решено:** systemd unit files готовы (`prod/deploy/systemd/`), нужно установить на сервере |
-| Нет 2FA | **Решено:** TOTP 2FA с backup codes |
+| 9 каналов не работают (security challenge) | Issue #96 — ручной логин с сервера |
+| Voice worker не портирован | Stub готов, ML зависимости на @mykytatishkin |
+| Нет CI/CD | Руками справляемся, автоматизация отложена |
+| Нет HTTPS | Рекомендация: certbot/Let's Encrypt |
+| Нет backup MySQL | Рекомендация: cron + mysqldump → S3 |
 
-**Рекомендация на ближайшее время:**
-1. Установить systemd сервисы: `bash prod/deploy/install-services.sh`
-2. Настроить HTTPS (certbot/Let's Encrypt)
-3. Настроить backup MySQL → S3/external
+**Ближайший приоритет:**
+1. @mykytatishkin — настроить домен + SSL/HTTPS (issues #106, #105)
+2. @mykytatishkin — реавторизация 9 каналов через VNC (issue #96)
+3. @mykytatishkin — добавить Канали новин в GCP test users (issue #97)
+4. Дима (@graf_crayt) — C++ модуль ватермарков/субтитров (issue #104)

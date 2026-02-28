@@ -40,8 +40,10 @@
 
 ```
 prod/
-├── main.py                          # FastAPI app entry point
+├── main.py                          # FastAPI app entry point + SSR panel mount
 ├── requirements.txt
+├── requirements-test.txt            # Test dependencies (pytest, httpx, etc.)
+├── pytest.ini                       # Pytest configuration
 ├── Dockerfile
 ├── docker-compose.yml               # All services
 ├── nginx-content-fabric.conf.example
@@ -51,24 +53,37 @@ prod/
 │   │   ├── deps.py                  # get_current_user() dependency
 │   │   ├── routes.py                # Router aggregation
 │   │   └── endpoints/
-│   │       ├── auth.py              # POST /login, /register, GET /me
-│   │       ├── channels.py          # CRUD channels + OAuth
-│   │       └── tasks.py             # CRUD tasks + cancel + history
+│   │       ├── admin.py             # GET /admin/dashboard, /users, /queue
+│   │       ├── auth.py              # POST /login, /register, GET /me, 2FA
+│   │       ├── channels.py          # CRUD channels + OAuth + stats
+│   │       ├── tasks.py             # CRUD tasks + cancel + history + batch + calendar
+│   │       ├── templates.py         # CRUD schedule templates
+│   │       └── uploads.py           # POST /uploads/video, /uploads/thumbnail
 │   ├── core/
 │   │   ├── audit.py                 # JSON audit logger → /var/log/cff-audit.log
 │   │   ├── config.py                # Settings (pydantic-settings)
 │   │   ├── database.py              # Legacy DB bridge
 │   │   └── security.py              # JWT create/verify, bcrypt
-│   └── schemas/
-│       ├── auth.py                  # LoginRequest, RegisterRequest, TokenResponse
-│       ├── channel.py               # ChannelCreate, ChannelResponse
-│       └── task.py                  # TaskCreate, TaskUpdate, TaskResponse
+│   ├── schemas/
+│   │   ├── auth.py                  # LoginRequest, RegisterRequest, TokenResponse
+│   │   ├── channel.py               # ChannelCreate, ChannelResponse
+│   │   └── task.py                  # TaskCreate, TaskUpdate, TaskResponse
+│   ├── templates/                   # Jinja2 SSR templates
+│   │   ├── base.html                # Layout: sidebar + content area
+│   │   ├── dashboard.html           # System overview (channels, tasks, queue)
+│   │   ├── channels.html            # Channel list + status
+│   │   ├── tasks.html               # Task list + stats cards
+│   │   ├── users.html               # User management
+│   │   ├── credentials.html         # Login credentials + TOTP status
+│   │   └── payment.html             # Payment stub (requires Stripe/LiqPay)
+│   └── views/
+│       └── panel.py                 # SSR routes: GET /panel/{page}
 │
 ├── shared/                          # Shared between API + workers + scheduler
 │   ├── env.py                       # .env loader (import first!)
 │   ├── db/
 │   │   ├── connection.py            # SQLAlchemy engine + pool
-│   │   ├── models.py                # Table definitions (13 tables)
+│   │   ├── models.py                # Table definitions (15 tables)
 │   │   └── repositories/
 │   │       ├── channel_repo.py
 │   │       ├── console_repo.py
@@ -89,16 +104,36 @@ prod/
 │   │   ├── email.py                 # send() — lazy env reads
 │   │   └── manager.py               # Notification facade
 │   └── voice/
-│       └── changer.py               # Voice change wrapper
+│       └── changer.py               # Voice change wrapper (stub — ML deps required)
 │
 ├── scheduler/
 │   ├── run.py                       # Entry point (poll loop + signal handling)
 │   └── jobs.py                      # enqueue_pending_tasks()
 │
-└── workers/
-    ├── publishing_worker.py         # rq worker: 'publishing' queue
-    ├── notification_worker.py       # rq worker: 'notifications' queue
-    └── voice_worker.py              # rq worker: 'voice' queue
+├── workers/
+│   ├── publishing_worker.py         # rq worker: 'publishing' queue
+│   ├── notification_worker.py       # rq worker: 'notifications' queue
+│   └── voice_worker.py              # rq worker: 'voice' queue
+│
+├── tests/                           # Test suite (91 tests)
+│   ├── conftest.py                  # Shared fixtures (mock DB, mock Redis, JWT)
+│   ├── test_security.py             # JWT, password hashing, rate limits
+│   ├── test_repos.py                # Repository layer (channel, task, user, credential)
+│   ├── test_api_channels.py         # Channel endpoints
+│   ├── test_api_tasks.py            # Task CRUD + cancel + reschedule
+│   ├── test_api_auth.py             # Auth endpoints (register, login, 2FA)
+│   ├── test_api_admin.py            # Admin endpoints
+│   ├── test_api_templates.py        # Schedule template endpoints
+│   ├── test_api_uploads.py          # File upload endpoints
+│   └── test_upload_logic.py         # YouTube upload pipeline logic
+│
+└── deploy/
+    └── systemd/                     # Systemd unit files
+        ├── cff-api.service
+        ├── cff-scheduler.service
+        ├── cff-publishing-worker.service
+        ├── cff-notification-worker.service
+        └── cff-voice-worker.service
 ```
 
 ---
@@ -140,23 +175,25 @@ pool_size=5, max_overflow=10, pool_recycle=3600, pool_pre_ping=True
 
 All repositories use `get_connection()` context manager with auto-commit.
 
-### Tables (13)
+### Tables (15)
 
 | Table | Purpose |
 |-------|---------|
-| `users` | User accounts |
-| `projects` | Projects grouping |
-| `project_members` | RBAC: user ↔ project roles |
-| `invitations` | Project invitations |
+| `platform_users` | User accounts (with 2FA fields) |
+| `platform_projects` | Projects grouping |
+| `platform_project_members` | RBAC: user ↔ project roles |
+| `platform_invitations` | Project invitations |
 | `google_cloud_consoles` | OAuth client credentials |
-| `youtube_channels` | Connected channels + tokens |
-| `channel_credentials` | Extra channel creds |
+| `platform_channels` | Connected channels + tokens |
+| `platform_channel_login_credentials` | Login creds + TOTP + proxy |
 | `content_upload_queue_tasks` | Main task queue |
 | `media_library` | Uploaded media files |
-| `templates` | Publishing templates |
-| `template_items` | Template schedule items |
+| `schedule_templates` | Publishing templates |
+| `schedule_template_slots` | Template time slots by weekday |
 | `audit_log` | DB-level audit |
-| `settings` | Key-value settings |
+| `platform_settings` | Key-value settings |
+| `user_totp_backup_codes` | 2FA backup codes |
+| `channel_daily_stats` | Channel statistics by day |
 
 ### Task statuses
 
@@ -179,10 +216,14 @@ Base URL: `http://<host>:8000/api/v1`
 | Method | Path | Body | Returns |
 |--------|------|------|---------|
 | `POST` | `/auth/register` | `{username, email, password, display_name?}` | `{access_token}` |
-| `POST` | `/auth/login` | `{email, password}` | `{access_token}` |
+| `POST` | `/auth/login` | `{email, password, totp_code?}` | `{access_token}` |
 | `GET` | `/auth/me` | — | `{id, uuid, username, email, ...}` |
+| `POST` | `/auth/2fa/setup` | — | `{secret, qr_uri, backup_codes}` |
+| `POST` | `/auth/2fa/verify` | `{code}` | `{status: "enabled"}` |
+| `POST` | `/auth/2fa/disable` | `{code}` | `{status: "disabled"}` |
 
 JWT in header: `Authorization: Bearer <token>`
+Rate limits: login 10/min, register 5/min
 
 ### Channels (auth required)
 
@@ -193,24 +234,66 @@ JWT in header: `Authorization: Bearer <token>`
 | `GET` | `/channels/{id}` | Channel details |
 | `DELETE` | `/channels/{id}` | Remove channel |
 | `POST` | `/channels/{id}/refresh-token` | Refresh OAuth token |
+| `GET` | `/channels/{id}/stats` | Daily stats for channel |
 
 ### Tasks (auth required)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/tasks/` | Create upload task |
+| `POST` | `/tasks/batch` | Batch create (up to 100 tasks) |
 | `GET` | `/tasks/` | List tasks (filters: `status`, `channel_id`, `from`, `to`, `limit`, `offset`) |
 | `GET` | `/tasks/history` | Completed/failed/cancelled (same filters) |
+| `GET` | `/tasks/calendar` | Tasks grouped by day |
+| `GET` | `/tasks/stats/summary` | Aggregation by status |
 | `GET` | `/tasks/{id}` | Task details |
 | `PUT` | `/tasks/{id}` | Update (`scheduled_at`, `status`) |
 | `POST` | `/tasks/{id}/cancel` | Cancel pending/processing task |
 | `GET` | `/tasks/{id}/status` | Quick status check |
+| `GET` | `/tasks/{id}/progress` | Redis-backed upload progress (stage + %) |
+| `GET` | `/tasks/{id}/preview` | File info + YouTube URL |
+
+### Uploads (auth required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/uploads/video` | Upload video file (mp4, mkv, avi, mov, etc., max 10GB) |
+| `POST` | `/uploads/thumbnail` | Upload thumbnail (jpg, png, webp, max 50MB) |
+
+### Schedule Templates (auth required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/templates/` | Create template with time slots |
+| `GET` | `/templates/` | List templates |
+| `GET` | `/templates/{id}` | Template details |
+| `PUT` | `/templates/{id}` | Update template |
+| `DELETE` | `/templates/{id}` | Delete template |
+
+### Admin (auth required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/admin/dashboard` | System overview (counts, queue sizes) |
+| `GET` | `/admin/users` | All users with stats |
+| `GET` | `/admin/queue` | Redis queue status |
+
+### SSR Admin Panel
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/panel/` | Dashboard (channels, tasks, queue overview) |
+| `GET` | `/panel/channels` | Channel list with token status |
+| `GET` | `/panel/tasks` | Task list + stats cards |
+| `GET` | `/panel/users` | User management |
+| `GET` | `/panel/credentials` | Login credentials + TOTP |
+| `GET` | `/panel/payment` | Payment stub |
 
 ### Health
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/health` | `{"status": "ok"}` |
+| `GET` | `/health` | `{"status": "healthy", "checks": {"api", "mysql", "redis"}}` |
 
 ---
 
@@ -304,46 +387,69 @@ python -m workers.notification_worker
 ## 8. Production Deployment
 
 **Server:** 46.21.250.43 · Python 3.10 · venv (not Docker)
+**Code path:** `/opt/content-fabric`
+**Upload dirs:** `/opt/content-fabric/uploads/{videos,thumbnails}`
 
 ### Deploy changes
 
 ```bash
 ssh user@46.21.250.43
-cd /root/cff
+cd /opt/content-fabric
 git pull origin main
 
-# Restart services
-kill $(pgrep -f "uvicorn main:app")
-cd prod && source venv/bin/activate
-nohup uvicorn main:app --host 0.0.0.0 --port 8000 > /var/log/cff-api.log 2>&1 &
+# Restart services via systemd
+sudo systemctl restart cff-api
+sudo systemctl restart cff-scheduler
+sudo systemctl restart cff-publishing-worker
+sudo systemctl restart cff-notification-worker
 
-# Restart scheduler
-kill $(pgrep -f "scheduler.run")
-nohup python -m scheduler.run > /var/log/cff-scheduler.log 2>&1 &
+# Or quick restart (API only):
+sudo systemctl restart cff-api
+```
 
-# Restart workers
-kill $(pgrep -f "publishing_worker")
-nohup python -m workers.publishing_worker > /var/log/cff-publishing-worker.log 2>&1 &
+### Systemd services
 
-kill $(pgrep -f "notification_worker")
-nohup python -m workers.notification_worker > /var/log/cff-notification-worker.log 2>&1 &
+| Service | Unit File | Description |
+|---------|-----------|-------------|
+| `cff-api` | `prod/deploy/systemd/cff-api.service` | FastAPI + SSR Panel (:8000) |
+| `cff-scheduler` | `prod/deploy/systemd/cff-scheduler.service` | DB poller (60s interval) |
+| `cff-publishing-worker` | `prod/deploy/systemd/cff-publishing-worker.service` | YouTube upload worker |
+| `cff-notification-worker` | `prod/deploy/systemd/cff-notification-worker.service` | Telegram/email worker |
+| `cff-voice-worker` | `prod/deploy/systemd/cff-voice-worker.service` | Voice change worker (stub) |
+
+```bash
+# Check status
+sudo systemctl status cff-api cff-scheduler cff-publishing-worker cff-notification-worker
+
+# View logs
+sudo journalctl -u cff-api -f
+sudo journalctl -u cff-scheduler --since "1 hour ago"
 ```
 
 ### Log files
 
 | Log | Path |
 |-----|------|
-| API | `/var/log/cff-api.log` |
-| Scheduler | `/var/log/cff-scheduler.log` |
-| Publishing Worker | `/var/log/cff-publishing-worker.log` |
-| Notification Worker | `/var/log/cff-notification-worker.log` |
+| API | `journalctl -u cff-api` |
+| Scheduler | `journalctl -u cff-scheduler` |
+| Publishing Worker | `journalctl -u cff-publishing-worker` |
+| Notification Worker | `journalctl -u cff-notification-worker` |
 | Audit | `/var/log/cff-audit.log` |
 
 ### Verify deployment
 
 ```bash
-curl http://localhost:8000/api/v1/health           # → {"status":"ok"}
+curl http://localhost:8000/health                   # → {"status":"healthy","checks":{...}}
+curl http://localhost:8000/panel/                    # → SSR dashboard HTML
 curl http://localhost:8000/api/v1/channels/ -H "Authorization: Bearer <JWT>"
+```
+
+### Running tests on prod
+
+```bash
+cd /opt/content-fabric/prod
+source venv/bin/activate
+pytest tests/ -v  # 91 tests expected
 ```
 
 ---
@@ -358,19 +464,25 @@ curl http://localhost:8000/api/v1/channels/ -H "Authorization: Bearer <JWT>"
 | **Lazy env reads** in notifications | Module-level `os.environ.get()` runs at import time, before `.env` loads in workers |
 | **`SELECT FOR UPDATE SKIP LOCKED`** | Prevents double-processing when legacy and new workers coexist |
 | **Resumable uploads** | YouTube API requires chunked upload for large files; auto-retry on HTTP 5xx |
-| **nohup** (not systemd) on prod | Quick deployment; TODO: create systemd units for auto-restart |
+| **Systemd** on prod | Auto-restart, journalctl logging, proper process management |
+| **Jinja2 SSR** for admin panel | No JS build step, fast development, server-side data access |
 
 ---
 
 ## 10. Known Issues & TODOs
 
-| Issue | Priority | Notes |
-|-------|----------|-------|
-| `config.py` has debug `_log()` calls | Low | Left from Cursor agent debugging; safe to remove |
-| No systemd services | Medium | Services restart manually after server reboot |
-| JWT secret from env | Medium | Currently loaded from `JWT_SECRET_KEY` env var; ensure it's set on prod |
-| Legacy task_worker still running | Low | Will be decommissioned after 1-week parallel run |
-| Old tasks with wrong paths | None | 18 tasks failed because files reference old server; expected |
+| Issue | Priority | Assignee | Notes |
+|-------|----------|----------|-------|
+| SSL/HTTPS (certbot) | High | @mykytatishkin | No HTTPS, need Let's Encrypt certificates |
+| Domain setup | High | @mykytatishkin | Currently accessed by IP only |
+| 9 channels need VNC reauth | High | @mykytatishkin | Google "Verify it's you" security challenge (issue #96) |
+| Voice worker ML porting | Medium | @mykytatishkin | Stub ready, needs torch/librosa/so-vits-svc + models (issue #100) |
+| C++ watermark/subtitle module | Medium | @graf_crayt | Separate binary, called from API (issue #104) |
+| Payment integration | Low | @mykytatishkin | UI stub ready, needs Stripe/LiqPay (issue #101) |
+| YouTube LIVE streaming | Low | @mykytatishkin | Backlog (issue #102) |
+| MySQL backups | Medium | @mykytatishkin | Need cron + mysqldump |
+| `config.py` debug `_log()` calls | Low | — | Left from Cursor agent; safe to remove |
+| Legacy task_worker | None | — | **Killed** on 28.02.2026 |
 
 ---
 
@@ -388,3 +500,43 @@ curl http://localhost:8000/api/v1/channels/ -H "Authorization: Bearer <JWT>"
 | 008 | `add_media_library.sql` | Media library table |
 
 All migrations are idempotent (`IF NOT EXISTS`) with matching rollback scripts.
+
+---
+
+## 12. Security
+
+| Feature | Status |
+|---------|--------|
+| JWT authentication | Implemented (HS256, configurable expiry) |
+| 2FA (TOTP) | Implemented (setup/verify/disable + backup codes) |
+| Rate limiting | 10/min login, 5/min register, 120/min default |
+| Security headers | X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy |
+| CORS | Restricted methods/headers |
+| Path traversal protection | `..` blocked in file paths |
+| Swagger docs | Hidden in production (DEBUG=False) |
+| Error sanitization | No stack traces in responses |
+| Audit logging | All auth events + task operations → `/var/log/cff-audit.log` |
+
+---
+
+## 13. Test Suite
+
+**91 tests** — all passing on production.
+
+```bash
+cd prod && pytest tests/ -v
+```
+
+| Test file | Count | What it covers |
+|-----------|-------|----------------|
+| `test_security.py` | 12 | JWT, bcrypt, rate limits, security headers |
+| `test_repos.py` | 15 | All repository layer (channel, task, user, credential, console) |
+| `test_api_channels.py` | 10 | Channel CRUD, OAuth refresh, stats |
+| `test_api_tasks.py` | 14 | Task CRUD, cancel, reschedule, batch, calendar, progress |
+| `test_api_auth.py` | 12 | Register, login, 2FA setup/verify/disable |
+| `test_api_admin.py` | 6 | Admin dashboard, users, queue |
+| `test_api_templates.py` | 8 | Schedule template CRUD |
+| `test_api_uploads.py` | 5 | Video + thumbnail upload, validation |
+| `test_upload_logic.py` | 9 | YouTube upload pipeline, retry logic, token refresh |
+
+Dependencies: `pip install -r requirements-test.txt` (pytest, httpx<0.28, pytest-asyncio, pytest-mock)

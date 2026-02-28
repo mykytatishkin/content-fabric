@@ -22,6 +22,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from app.api.routes import router
+from app.views.panel import router as panel_router
 from app.core.config import settings
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
@@ -63,6 +64,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(panel_router, prefix="/panel", tags=["panel"])
 
 
 @app.get("/")

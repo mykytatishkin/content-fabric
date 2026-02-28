@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Задачи{% endblock %}
+
+{% block content %}
+<h2>Задачи ({{ tasks | length }})</h2>
+
+<div class="cards" style="margin-bottom: 1rem;">
+    <div class="card">
+        <div class="label">Pending</div>
+        <div class="value">{{ stats.pending or 0 }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Processing</div>
+        <div class="value" style="color: #0ea5e9">{{ stats.processing or 0 }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Completed</div>
+        <div class="value" style="color: #16a34a">{{ stats.completed or 0 }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Failed</div>
+        <div class="value" style="color: #dc2626">{{ stats.failed or 0 }}</div>
+    </div>
+</div>
+
+<table>
+    <tr>
+        <th>ID</th><th>Канал</th><th>Тип</th><th>Заголовок</th>
+        <th>Статус</th><th>Запланировано</th><th>Создано</th>
+    </tr>
+    {% for t in tasks %}
+    <tr>
+        <td>{{ t.id }}</td>
+        <td>{{ t.channel_id }}</td>
+        <td>{{ t.media_type or 'video' }}</td>
+        <td style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.title or '—' }}</td>
+        <td>
+            {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
+            {% elif t.status == 1 %}<span class="badge badge-green">Done</span>
+            {% elif t.status == 2 %}<span class="badge badge-red">Failed</span>
+            {% elif t.status == 3 %}<span class="badge badge-blue">Processing</span>
+            {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
+            {% endif %}
+        </td>
+        <td>{{ t.scheduled_at.strftime('%Y-%m-%d %H:%M') if t.scheduled_at else '—' }}</td>
+        <td>{{ t.created_at.strftime('%Y-%m-%d') if t.created_at else '—' }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
