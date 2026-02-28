@@ -48,7 +48,7 @@ def _require_user(request: Request):
 
 
 def _is_admin(user: dict) -> bool:
-    return user.get("status") == "admin"
+    return user.get("status") == 1  # UserStatus.ADMIN
 
 
 def _user_filter(user: dict, table_alias: str = "") -> tuple[str, dict]:
