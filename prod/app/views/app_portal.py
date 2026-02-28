@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.responses import HTMLResponse
@@ -559,5 +559,191 @@ async def settings_page(request: Request):
 
     return templates.TemplateResponse("app_settings.html", {
         "request": request, "user": user, "active": "settings",
-        "message": None,
+        "message": None, "error": None, "totp_uri": None, "backup_codes": None,
     })
+
+
+@router.post("/settings/profile", response_class=HTMLResponse)
+async def settings_update_profile(
+    request: Request,
+    display_name: str = Form(""),
+    timezone: str = Form(""),
+):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import user_repo
+    user_repo.update_profile(user["id"], display_name=display_name or None, timezone=timezone or None)
+    user = user_repo.get_user_by_id(user["id"])
+
+    return templates.TemplateResponse("app_settings.html", {
+        "request": request, "user": user, "active": "settings",
+        "message": "Profile updated successfully", "error": None,
+        "totp_uri": None, "backup_codes": None,
+    })
+
+
+@router.post("/settings/2fa/setup", response_class=HTMLResponse)
+async def settings_2fa_setup(request: Request):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    if user.get("totp_enabled"):
+        return templates.TemplateResponse("app_settings.html", {
+            "request": request, "user": user, "active": "settings",
+            "message": None, "error": "2FA is already enabled",
+            "totp_uri": None, "backup_codes": None,
+        })
+
+    import pyotp
+    from shared.db.repositories import user_repo
+
+    secret = pyotp.random_base32()
+    user_repo.set_totp_secret(user["id"], secret)
+    totp_uri = pyotp.TOTP(secret).provisioning_uri(
+        name=user["email"], issuer_name="Content Fabric",
+    )
+
+    return templates.TemplateResponse("app_settings.html", {
+        "request": request, "user": user, "active": "settings",
+        "message": None, "error": None,
+        "totp_uri": totp_uri, "totp_secret": secret, "backup_codes": None,
+    })
+
+
+@router.post("/settings/2fa/verify", response_class=HTMLResponse)
+async def settings_2fa_verify(
+    request: Request,
+    totp_code: str = Form(...),
+):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    import pyotp
+    import secrets
+    from shared.db.repositories import user_repo
+
+    user = user_repo.get_user_by_id(user["id"])
+    if not user.get("totp_secret"):
+        return templates.TemplateResponse("app_settings.html", {
+            "request": request, "user": user, "active": "settings",
+            "message": None, "error": "Run setup first",
+            "totp_uri": None, "backup_codes": None,
+        })
+
+    totp = pyotp.TOTP(user["totp_secret"])
+    if not totp.verify(totp_code, valid_window=1):
+        totp_uri = totp.provisioning_uri(name=user["email"], issuer_name="Content Fabric")
+        return templates.TemplateResponse("app_settings.html", {
+            "request": request, "user": user, "active": "settings",
+            "message": None, "error": "Invalid code, try again",
+            "totp_uri": totp_uri, "totp_secret": user["totp_secret"], "backup_codes": None,
+        })
+
+    backup_codes = [secrets.token_hex(4) for _ in range(8)]
+    user_repo.enable_totp(user["id"], backup_codes)
+    user = user_repo.get_user_by_id(user["id"])
+
+    return templates.TemplateResponse("app_settings.html", {
+        "request": request, "user": user, "active": "settings",
+        "message": "2FA enabled successfully! Save your backup codes.",
+        "error": None, "totp_uri": None, "backup_codes": backup_codes,
+    })
+
+
+@router.post("/settings/2fa/disable", response_class=HTMLResponse)
+async def settings_2fa_disable(
+    request: Request,
+    password: str = Form(...),
+):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    if not verify_password(password, user["password_hash"]):
+        return templates.TemplateResponse("app_settings.html", {
+            "request": request, "user": user, "active": "settings",
+            "message": None, "error": "Wrong password",
+            "totp_uri": None, "backup_codes": None,
+        })
+
+    from shared.db.repositories import user_repo
+    user_repo.disable_totp(user["id"])
+    user = user_repo.get_user_by_id(user["id"])
+
+    return templates.TemplateResponse("app_settings.html", {
+        "request": request, "user": user, "active": "settings",
+        "message": "2FA disabled", "error": None,
+        "totp_uri": None, "backup_codes": None,
+    })
+
+
+# ── File Upload (portal) ────────────────────────────────────────────
+
+@router.post("/upload/video", response_class=HTMLResponse)
+async def portal_upload_video(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    """Upload video via portal, return JSON with file path."""
+    import os
+    import uuid as _uuid
+    from pathlib import Path
+    from fastapi.responses import JSONResponse
+
+    user = _get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    upload_dir = Path(os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")) / "videos"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "video.mp4").suffix.lower()
+    allowed = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v"}
+    if ext not in allowed:
+        return JSONResponse({"error": f"Invalid format: {ext}"}, status_code=400)
+
+    unique_name = f"{_uuid.uuid4().hex}{ext}"
+    dest = upload_dir / unique_name
+
+    with open(dest, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            f.write(chunk)
+
+    return JSONResponse({"path": str(dest), "filename": file.filename, "size": dest.stat().st_size})
+
+
+@router.post("/upload/thumbnail", response_class=HTMLResponse)
+async def portal_upload_thumbnail(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    """Upload thumbnail via portal, return JSON with file path."""
+    import os
+    import uuid as _uuid
+    from pathlib import Path
+    from fastapi.responses import JSONResponse
+
+    user = _get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    upload_dir = Path(os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")) / "thumbnails"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "thumb.jpg").suffix.lower()
+    allowed = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+    if ext not in allowed:
+        return JSONResponse({"error": f"Invalid format: {ext}"}, status_code=400)
+
+    unique_name = f"{_uuid.uuid4().hex}{ext}"
+    dest = upload_dir / unique_name
+
+    with open(dest, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            f.write(chunk)
+
+    return JSONResponse({"path": str(dest), "filename": file.filename, "size": dest.stat().st_size})

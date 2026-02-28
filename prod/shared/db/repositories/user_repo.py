@@ -76,6 +76,23 @@ def update_last_login(user_id: int) -> None:
         conn.execute(sql, {"uid": user_id})
 
 
+def update_profile(user_id: int, display_name: str | None = None, timezone: str | None = None) -> None:
+    """Update user profile fields."""
+    parts = []
+    params: dict[str, Any] = {"uid": user_id}
+    if display_name is not None:
+        parts.append("display_name = :display_name")
+        params["display_name"] = display_name
+    if timezone is not None:
+        parts.append("timezone = :timezone")
+        params["timezone"] = timezone
+    if not parts:
+        return
+    sql = text(f"UPDATE platform_users SET {', '.join(parts)} WHERE id = :uid")
+    with get_connection() as conn:
+        conn.execute(sql, params)
+
+
 def set_totp_secret(user_id: int, secret: str) -> None:
     """Store the TOTP secret (before user confirms setup)."""
     sql = text("UPDATE platform_users SET totp_secret = :secret WHERE id = :uid")

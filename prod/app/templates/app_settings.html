@@ -6,40 +6,100 @@
 {% if message %}
 <div class="alert alert-success">{{ message }}</div>
 {% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
 
+<!-- Profile Edit -->
 <div class="form-card" style="margin-bottom:1.5rem;">
     <h3 style="font-size:1rem;margin-bottom:1rem;">Profile</h3>
-    <table style="box-shadow:none;margin-bottom:0;">
-        <tr><td style="color:#64748b;width:140px;">Username</td><td><strong>{{ user.username }}</strong></td></tr>
-        <tr><td style="color:#64748b;">Email</td><td>{{ user.email }}</td></tr>
-        <tr><td style="color:#64748b;">Display Name</td><td>{{ user.display_name or '—' }}</td></tr>
-        <tr><td style="color:#64748b;">Status</td><td>
-            {% if user.status == 'admin' %}<span class="badge badge-blue">Admin</span>
-            {% else %}<span class="badge badge-green">Active</span>{% endif %}
-        </td></tr>
-        <tr><td style="color:#64748b;">Timezone</td><td>{{ user.timezone or 'UTC' }}</td></tr>
-        <tr><td style="color:#64748b;">Registered</td><td>{{ user.created_at }}</td></tr>
-    </table>
+    <form method="POST" action="/app/settings/profile">
+        <table style="box-shadow:none;margin-bottom:1rem;">
+            <tr><td style="color:#64748b;width:140px;">Username</td><td><strong>{{ user.username }}</strong></td></tr>
+            <tr><td style="color:#64748b;">Email</td><td>{{ user.email }}</td></tr>
+            <tr><td style="color:#64748b;">Status</td><td>
+                {% if user.status == 'admin' %}<span class="badge badge-blue">Admin</span>
+                {% else %}<span class="badge badge-green">Active</span>{% endif %}
+            </td></tr>
+            <tr><td style="color:#64748b;">Registered</td><td>{{ user.created_at }}</td></tr>
+        </table>
+        <div class="form-group">
+            <label>Display Name</label>
+            <input type="text" name="display_name" value="{{ user.display_name or '' }}" placeholder="Your display name">
+        </div>
+        <div class="form-group">
+            <label>Timezone</label>
+            <select name="timezone">
+                <option value="UTC" {{ 'selected' if (user.timezone or 'UTC') == 'UTC' }}>UTC</option>
+                <option value="Europe/Kyiv" {{ 'selected' if user.timezone == 'Europe/Kyiv' }}>Europe/Kyiv (UTC+2)</option>
+                <option value="Europe/Moscow" {{ 'selected' if user.timezone == 'Europe/Moscow' }}>Europe/Moscow (UTC+3)</option>
+                <option value="Europe/London" {{ 'selected' if user.timezone == 'Europe/London' }}>Europe/London (UTC+0)</option>
+                <option value="Europe/Berlin" {{ 'selected' if user.timezone == 'Europe/Berlin' }}>Europe/Berlin (UTC+1)</option>
+                <option value="US/Eastern" {{ 'selected' if user.timezone == 'US/Eastern' }}>US/Eastern (UTC-5)</option>
+                <option value="US/Pacific" {{ 'selected' if user.timezone == 'US/Pacific' }}>US/Pacific (UTC-8)</option>
+                <option value="Asia/Tokyo" {{ 'selected' if user.timezone == 'Asia/Tokyo' }}>Asia/Tokyo (UTC+9)</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Profile</button>
+    </form>
 </div>
 
-<div class="form-card">
+<!-- 2FA Section -->
+<div class="form-card" style="margin-bottom:1.5rem;">
     <h3 style="font-size:1rem;margin-bottom:1rem;">Two-Factor Authentication (2FA)</h3>
-    {% if user.totp_enabled %}
+
+    {% if backup_codes %}
+    <!-- Show backup codes after successful 2FA enable -->
+    <div class="alert alert-success" style="margin-bottom:1rem;">
+        <strong>Save these backup codes!</strong> Each code can only be used once.
+    </div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:1rem;margin-bottom:1rem;font-family:monospace;font-size:0.9rem;">
+        {% for code in backup_codes %}
+        <div style="padding:0.2rem 0;">{{ code }}</div>
+        {% endfor %}
+    </div>
+
+    {% elif totp_uri %}
+    <!-- 2FA setup: show QR instructions and verify form -->
+    <p style="font-size:0.85rem;margin-bottom:0.75rem;">
+        Add this account to your authenticator app (Google Authenticator, Authy, etc.):
+    </p>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:1rem;margin-bottom:1rem;">
+        <p style="font-size:0.75rem;color:#64748b;margin-bottom:0.5rem;">Manual entry key:</p>
+        <code style="font-size:0.85rem;word-break:break-all;">{{ totp_secret }}</code>
+    </div>
+    <form method="POST" action="/app/settings/2fa/verify">
+        <div class="form-group">
+            <label>Enter the 6-digit code from your authenticator app</label>
+            <input type="text" name="totp_code" required placeholder="123456" maxlength="6"
+                   pattern="[0-9]{6}" style="max-width:200px;" autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary">Verify & Enable 2FA</button>
+    </form>
+
+    {% elif user.totp_enabled %}
+    <!-- 2FA is enabled — show disable form -->
     <p style="font-size:0.85rem;margin-bottom:0.75rem;">
         <span class="badge badge-green">Enabled</span>
         2FA is active on your account.
     </p>
-    <p style="font-size:0.8rem;color:#64748b;">
-        To disable 2FA, use the API: <code>POST /api/v1/auth/2fa/disable</code>
-    </p>
+    <form method="POST" action="/app/settings/2fa/disable" style="margin-top:1rem;">
+        <div class="form-group">
+            <label>Enter your password to disable 2FA</label>
+            <input type="password" name="password" required placeholder="Your password" style="max-width:300px;">
+        </div>
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Disable 2FA? This makes your account less secure.')">Disable 2FA</button>
+    </form>
+
     {% else %}
+    <!-- 2FA not enabled — show setup button -->
     <p style="font-size:0.85rem;margin-bottom:0.75rem;">
         <span class="badge badge-yellow">Not enabled</span>
         Protect your account with an authenticator app.
     </p>
-    <p style="font-size:0.8rem;color:#64748b;">
-        To enable 2FA, use the API: <code>POST /api/v1/auth/2fa/setup</code> then <code>POST /api/v1/auth/2fa/verify</code>
-    </p>
+    <form method="POST" action="/app/settings/2fa/setup">
+        <button type="submit" class="btn btn-primary">Enable 2FA</button>
+    </form>
     {% endif %}
 </div>
 {% endblock %}
