@@ -1,0 +1,36 @@
+{% extends "app_base.html" %}
+{% block title %}Create Template — Content Fabric{% endblock %}
+{% block content %}
+<h2>Create Schedule Template</h2>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="form-card">
+    <form method="POST" action="/app/templates/new">
+        <div class="form-group">
+            <label>Template Name *</label>
+            <input type="text" name="name" required placeholder="e.g. Daily Upload Schedule">
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <textarea name="description" rows="2" placeholder="What this template is for"></textarea>
+        </div>
+        <div class="form-group">
+            <label>Timezone</label>
+            <select name="timezone">
+                <option value="UTC">UTC</option>
+                <option value="Europe/Kyiv">Europe/Kyiv (UTC+2)</option>
+                <option value="Europe/Moscow">Europe/Moscow (UTC+3)</option>
+                <option value="Europe/London">Europe/London (UTC+0)</option>
+                <option value="Europe/Berlin">Europe/Berlin (UTC+1)</option>
+                <option value="US/Eastern">US/Eastern (UTC-5)</option>
+                <option value="US/Pacific">US/Pacific (UTC-8)</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Create Template</button>
+        <a href="/app/templates" style="margin-left:1rem;font-size:0.85rem;color:#64748b;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

@@ -60,10 +60,14 @@
             <td>{{ t.scheduled_at or '—' }}</td>
             <td>{{ t.created_at }}</td>
             <td style="font-size:0.75rem;color:#991b1b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:80] }}</td>
-            <td>
+            <td style="white-space:nowrap;">
                 {% if t.status == 0 %}
                 <form method="POST" action="/app/tasks/{{ t.id }}/cancel" style="display:inline;">
                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel</button>
+                </form>
+                {% elif t.status in [2, 4] %}
+                <form method="POST" action="/app/tasks/{{ t.id }}/retry" style="display:inline;">
+                    <button type="submit" class="btn btn-primary btn-sm">Retry</button>
                 </form>
                 {% endif %}
             </td>

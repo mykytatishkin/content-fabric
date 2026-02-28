@@ -10,6 +10,11 @@
             <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel Task</button>
         </form>
         {% endif %}
+        {% if task.status in [2, 4] %}
+        <form method="POST" action="/app/tasks/{{ task.id }}/retry" style="display:inline;">
+            <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Retry this task?')">Retry Task</button>
+        </form>
+        {% endif %}
     </div>
 </div>
 
