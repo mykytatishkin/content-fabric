@@ -24,7 +24,8 @@ def send_notification(payload: NotificationPayload) -> bool:
 
 
 if __name__ == "__main__":
-    from redis import Redis
+    import shared.env  # noqa: F401 — load .env files
+
     from rq import Worker
 
     from shared.queue.config import get_redis, QUEUE_NOTIFICATIONS

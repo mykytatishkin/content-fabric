@@ -18,6 +18,8 @@ def process_upload_job(payload: VideoUploadPayload) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
+    import shared.env  # noqa: F401 — load .env files
+
     from rq import Worker
 
     from shared.queue.config import get_redis, QUEUE_PUBLISHING
