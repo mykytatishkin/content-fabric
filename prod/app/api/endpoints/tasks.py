@@ -1,17 +1,14 @@
-"""Task management endpoints with dual-write (DB + Redis queue)."""
+"""Task management endpoints — creates tasks in DB, scheduler enqueues to Redis."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import get_current_user
 from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
 from shared.db.repositories import task_repo
-from shared.queue.publisher import enqueue_video_upload
-from shared.queue.types import VideoUploadPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,7 +16,7 @@ router = APIRouter()
 
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(body: TaskCreate, user: dict = Depends(get_current_user)):
-    """Create a new upload task. Dual-write: DB + Redis queue."""
+    """Create a new upload task. Scheduler picks it up and enqueues to Redis."""
     task_id = task_repo.create_task(
         channel_id=body.channel_id,
         source_file_path=body.source_file_path,
@@ -34,23 +31,6 @@ async def create_task(body: TaskCreate, user: dict = Depends(get_current_user)):
     )
     if task_id is None:
         raise HTTPException(status_code=500, detail="Failed to create task")
-
-    # Dual-write: also enqueue to Redis for the new worker
-    try:
-        enqueue_video_upload(VideoUploadPayload(
-            task_id=task_id,
-            channel_id=body.channel_id,
-            source_file_path=body.source_file_path,
-            title=body.title,
-            description=body.description,
-            keywords=body.keywords,
-            thumbnail_path=body.thumbnail_path,
-            post_comment=body.post_comment,
-            media_type=body.media_type,
-            scheduled_at=body.scheduled_at,
-        ))
-    except Exception:
-        logger.warning("Redis enqueue failed for task %d — legacy worker will pick it up", task_id)
 
     task = task_repo.get_task(task_id)
     return TaskResponse(**task)
