@@ -16,7 +16,7 @@ def enqueue_video_upload(payload: VideoUploadPayload, **kwargs) -> str:
     """Enqueue a video upload job. Returns job ID."""
     q = _get_queue(QUEUE_PUBLISHING)
     job = q.enqueue(
-        "workers.publishing_worker.process_upload",
+        "workers.publishing_worker.process_upload_job",
         payload,
         job_timeout="30m",
         **kwargs,
