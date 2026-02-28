@@ -10,6 +10,8 @@ from shared.notifications import telegram
 from shared.queue.types import VideoUploadPayload
 from shared.youtube import client as yt
 
+_audit_logger = logging.getLogger("audit.worker")
+
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_ATTEMPTS = 2  # allows one retry after token refresh
@@ -74,6 +76,7 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
                 yt.post_comment(service, video_id, payload.post_comment)
 
             logger.info("Task %d completed: video_id=%s", task_id, video_id)
+            _audit_logger.info("task.completed task_id=%d channel_id=%d video_id=%s", task_id, channel_id, video_id)
             return {"ok": True, "video_id": video_id}
 
         except Exception as exc:
@@ -92,5 +95,6 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
 
 def _fail(task_id: int, error: str) -> None:
     logger.error("Task %d failed: %s", task_id, error)
+    _audit_logger.info("task.failed task_id=%d error=%s", task_id, error[:200])
     task_repo.mark_task_failed(task_id, error)
     telegram.send(f"Upload task {task_id} failed: {error}")

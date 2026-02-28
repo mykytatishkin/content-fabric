@@ -8,6 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import get_current_user
+from app.core.audit import log as audit_log
 from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
 from shared.db.repositories import task_repo
 
@@ -34,6 +35,8 @@ async def create_task(body: TaskCreate, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to create task")
 
     task = task_repo.get_task(task_id)
+    audit_log("task.create", actor_id=user.get("id"), entity_type="task", entity_id=task_id,
+              metadata={"channel_id": body.channel_id, "title": body.title})
     return TaskResponse(**task)
 
 
@@ -130,6 +133,7 @@ async def cancel_task(task_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=409, detail="Only pending/processing tasks can be cancelled")
 
     task_repo.cancel_task(task_id)
+    audit_log("task.cancel", actor_id=user.get("id"), entity_type="task", entity_id=task_id)
     updated = task_repo.get_task(task_id)
     return TaskResponse(**updated)
 

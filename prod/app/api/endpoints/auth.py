@@ -8,6 +8,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import get_current_user
+from app.core.audit import log as audit_log
 from app.core.security import create_access_token, hash_password, verify_password
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from shared.db.repositories import user_repo
@@ -23,6 +24,7 @@ async def login(body: LoginRequest):
 
     user_repo.update_last_login(user["id"])
     token = create_access_token({"sub": user["id"]})
+    audit_log("login", actor_id=user["id"], entity_type="user", entity_id=user["id"])
     return TokenResponse(access_token=token)
 
 
@@ -42,6 +44,7 @@ async def register(body: RegisterRequest):
         display_name=body.display_name,
     )
     token = create_access_token({"sub": user_id})
+    audit_log("register", actor_id=user_id, entity_type="user", entity_id=user_id)
     return TokenResponse(access_token=token)
 
 
