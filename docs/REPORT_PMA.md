@@ -16,6 +16,9 @@
 - 15 таблиц БД (новая схема + 2FA + templates)
 - 39 каналов управляются через API
 - 0 даунтаймов при миграции
+- **User Portal** — 10 SSR-страниц с cookie auth + role-based access
+- **Admin Panel** — 6 SSR-страниц, защищён авторизацией
+- **91 тест** — все зелёные на проде
 
 ---
 
@@ -121,6 +124,20 @@
 | **Legacy убит** | task_worker + 4 зомби-процесса реавторизации — убиты на проде | Done |
 | **Анализ каналов** | Детальный анализ всех 13 проблемных каналов с логами | Done |
 | **GitHub Issues** | 9 issues создано (#96-104) с детальными описаниями и назначениями | Done |
+
+### Фаза 7: User Portal (28.02.2026, ночь)
+
+| Фича | Описание | Статус |
+|------|----------|--------|
+| **User Portal** | 10 SSR-страниц: login, register, dashboard, channels, add channel, tasks, create task, templates, settings, logout | Done, задеплоен |
+| **Cookie Auth** | JWT в HttpOnly cookie, 24h expiry, поддержка 2FA при логине | Done |
+| **Admin Protection** | Admin panel (`/panel/`) теперь требует логин + статус admin | Done |
+| **Role Separation** | Admin видит всё, обычный user — только свои данные | Done |
+| **Test Accounts** | admin@cff.local (Admin123!) + demo@cff.local (Demo123!) | Done |
+| **Swagger Docs** | `/docs` теперь доступен на проде (ранее скрыт) | Done |
+| **Bug fix** | `/tasks/history` — IntEnum не сериализовался в mysql-connector | Done |
+| **SSL + Domain issues** | #105 (SSL), #106 (домен) — созданы и назначены на @mykytatishkin | Done |
+| **Portal Guide** | `docs/PORTAL_GUIDE.md` — полная документация портала | Done |
 
 ---
 
