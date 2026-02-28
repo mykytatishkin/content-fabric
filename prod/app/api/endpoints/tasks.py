@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
 from app.schemas.task import TaskBatchCreate, TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
+from shared.db.models import TaskStatus
 from shared.db.repositories import task_repo
 
 logger = logging.getLogger(__name__)
@@ -126,7 +127,7 @@ async def task_history(
         statuses_list = None
         single_status = status_filter
     else:
-        statuses_list = [1, 2, 4]  # completed, failed, cancelled
+        statuses_list = [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]
         single_status = None
 
     tasks = task_repo.get_all_tasks(
@@ -159,7 +160,7 @@ async def update_task(task_id: int, body: TaskUpdate, user: dict = Depends(get_c
         raise HTTPException(status_code=404, detail="Task not found")
 
     if body.scheduled_at is not None:
-        if task["status"] not in (0, 3):
+        if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
             raise HTTPException(status_code=409, detail="Cannot reschedule a task that is already completed or failed")
         task_repo.update_task_scheduled_at(task_id, body.scheduled_at)
 
@@ -176,7 +177,7 @@ async def cancel_task(task_id: int, user: dict = Depends(get_current_user)):
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task["status"] not in (0, 3):
+    if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
         raise HTTPException(status_code=409, detail="Only pending/processing tasks can be cancelled")
 
     task_repo.cancel_task(task_id)
@@ -250,7 +251,7 @@ async def task_stats(user: dict = Depends(get_current_user)):
     with get_connection() as conn:
         rows = conn.execute(sql).fetchall()
 
-    status_names = {0: "pending", 1: "completed", 2: "failed", 3: "processing", 4: "cancelled"}
+    status_names = {s.value: s.name.lower() for s in TaskStatus}
     stats = {status_names.get(r[0], f"unknown_{r[0]}"): r[1] for r in rows}
     stats["total"] = sum(r[1] for r in rows)
     return stats

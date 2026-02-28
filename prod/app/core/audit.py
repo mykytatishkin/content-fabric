@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from typing import Any
 
 logger = logging.getLogger("audit")
 
-# Configure audit logger to write structured JSON
-_handler = logging.FileHandler("/var/log/cff-audit.log", encoding="utf-8")
+_log_path = os.environ.get("CFF_AUDIT_LOG", "/var/log/cff-audit.log")
+_handler = RotatingFileHandler(
+    _log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+)
 _handler.setFormatter(logging.Formatter("%(message)s"))
 logger.addHandler(_handler)
 logger.setLevel(logging.INFO)

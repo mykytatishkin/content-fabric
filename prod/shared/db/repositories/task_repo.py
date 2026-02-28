@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import select, insert, text, func, or_
 
 from shared.db.connection import get_connection
-from shared.db.models import content_upload_queue_tasks, platform_projects
+from shared.db.models import TaskStatus, content_upload_queue_tasks, platform_projects
 
 
 def get_default_project_id() -> int | None:
@@ -88,7 +88,7 @@ def get_pending_tasks(limit: int | None = None) -> list[dict[str, Any]]:
     ]
     stmt = (
         select(*cols)
-        .where(t.c.status == 0, t.c.scheduled_at <= func.now())
+        .where(t.c.status == TaskStatus.PENDING, t.c.scheduled_at <= func.now())
         .order_by(t.c.scheduled_at.asc())
     )
     if limit:
@@ -176,7 +176,7 @@ def update_task_status(
     error_message: str | None = None,
     completed_at: datetime | None = None,
 ) -> bool:
-    if completed_at is None and status == 1:
+    if completed_at is None and status == TaskStatus.COMPLETED:
         completed_at = datetime.now()
     sql = text(
         "UPDATE content_upload_queue_tasks "
@@ -194,7 +194,7 @@ def update_task_status(
 
 
 def mark_task_processing(task_id: int) -> bool:
-    return update_task_status(task_id, 3)
+    return update_task_status(task_id, TaskStatus.PROCESSING)
 
 
 def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
@@ -214,7 +214,7 @@ def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
 
 
 def mark_task_failed(task_id: int, error_message: str | None = None) -> bool:
-    return update_task_status(task_id, 2, error_message=error_message)
+    return update_task_status(task_id, TaskStatus.FAILED, error_message=error_message)
 
 
 def update_task_upload_id(task_id: int, upload_id: str) -> bool:
@@ -255,7 +255,8 @@ def create_tasks_batch(tasks: list[dict[str, Any]]) -> list[int]:
         raise ValueError("No default project found")
 
     ids: list[int] = []
-    with get_connection() as conn:
+    from shared.db.connection import get_engine
+    with get_engine().begin() as conn:
         for t in tasks:
             add_info = json.dumps(t.get("legacy_add_info")) if t.get("legacy_add_info") else None
             stmt = insert(content_upload_queue_tasks).values(

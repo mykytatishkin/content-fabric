@@ -1,5 +1,22 @@
 """SQLAlchemy Core table definitions for the new schema (13 tables)."""
 
+from enum import IntEnum
+
+
+class TaskStatus(IntEnum):
+    PENDING = 0
+    COMPLETED = 1
+    FAILED = 2
+    PROCESSING = 3
+    CANCELLED = 4
+
+
+class UserStatus(IntEnum):
+    INACTIVE = 0
+    ADMIN = 1
+    ACTIVE = 10
+
+
 from sqlalchemy import (
     BigInteger,
     Column,
