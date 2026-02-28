@@ -1,0 +1,18 @@
+[Unit]
+Description=Content Fabric Notification Worker (Telegram/Email)
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/cff/prod
+EnvironmentFile=/root/cff/.env
+EnvironmentFile=/root/cff/prod/.env/.env.db
+ExecStart=/root/cff/prod/venv/bin/python -m workers.notification_worker
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/cff-notification-worker.log
+StandardError=append:/var/log/cff-notification-worker.log
+
+[Install]
+WantedBy=multi-user.target

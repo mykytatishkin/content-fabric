@@ -1,0 +1,20 @@
+[Unit]
+Description=Content Fabric Publishing Worker (YouTube uploads)
+After=network.target mysql.service redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/cff/prod
+EnvironmentFile=/root/cff/.env
+EnvironmentFile=/root/cff/prod/.env/.env.db
+EnvironmentFile=/root/cff/prod/.env/.env.api
+ExecStart=/root/cff/prod/venv/bin/python -m workers.publishing_worker
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/cff-publishing-worker.log
+StandardError=append:/var/log/cff-publishing-worker.log
+
+[Install]
+WantedBy=multi-user.target

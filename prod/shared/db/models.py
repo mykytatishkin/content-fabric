@@ -29,6 +29,9 @@ platform_users = Table(
     Column("password_hash", String(255)),
     Column("auth_key", String(32), nullable=False),
     Column("password_reset_token", String(255)),
+    Column("totp_secret", String(64)),
+    Column("totp_enabled", TINYINT(1), nullable=False, server_default="0"),
+    Column("totp_backup_codes", JSON),
     Column("verification_token", String(255)),
     Column("display_name", String(255)),
     Column("avatar_url", Text),
@@ -244,6 +247,33 @@ live_stream_configurations = Table(
     Column("notes", Text),
     Column("created_at", TIMESTAMP, nullable=False),
     Column("updated_at", TIMESTAMP, nullable=False),
+)
+
+# ── Schedule Templates ────────────────────────────────────────────
+
+schedule_templates = Table(
+    "schedule_templates", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("project_id", Integer, ForeignKey("platform_projects.id"), nullable=False),
+    Column("created_by", Integer, ForeignKey("platform_users.id")),
+    Column("name", String(255), nullable=False),
+    Column("description", Text),
+    Column("timezone", String(64), nullable=False, server_default="UTC"),
+    Column("is_active", TINYINT(1), nullable=False, server_default="1"),
+    Column("created_at", TIMESTAMP, nullable=False),
+    Column("updated_at", TIMESTAMP, nullable=False),
+)
+
+schedule_template_slots = Table(
+    "schedule_template_slots", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("template_id", Integer, ForeignKey("schedule_templates.id"), nullable=False),
+    Column("day_of_week", TINYINT, nullable=False),
+    Column("time_utc", String(8), nullable=False),
+    Column("channel_id", Integer, ForeignKey("platform_channels.id")),
+    Column("media_type", String(20), nullable=False, server_default="video"),
+    Column("enabled", TINYINT(1), nullable=False, server_default="1"),
+    Column("created_at", TIMESTAMP, nullable=False),
 )
 
 # ── System ─────────────────────────────────────────────────────────

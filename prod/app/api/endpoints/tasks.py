@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
-from app.schemas.task import TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
+from app.schemas.task import TaskBatchCreate, TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
 from shared.db.repositories import task_repo
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,26 @@ async def create_task(body: TaskCreate, user: dict = Depends(get_current_user)):
     audit_log("task.create", actor_id=user.get("id"), entity_type="task", entity_id=task_id,
               metadata={"channel_id": body.channel_id, "title": body.title})
     return TaskResponse(**task)
+
+
+@router.post("/batch", response_model=TaskListResponse, status_code=status.HTTP_201_CREATED)
+async def create_tasks_batch(body: TaskBatchCreate, user: dict = Depends(get_current_user)):
+    """Create multiple tasks in a single transaction."""
+    if len(body.tasks) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 tasks per batch")
+
+    task_dicts = [t.model_dump() for t in body.tasks]
+    ids = task_repo.create_tasks_batch(task_dicts)
+
+    tasks = [task_repo.get_task(tid) for tid in ids]
+    tasks = [t for t in tasks if t is not None]
+
+    audit_log("task.batch_create", actor_id=user.get("id"), entity_type="task",
+              metadata={"count": len(ids), "task_ids": ids})
+    return TaskListResponse(
+        items=[TaskResponse(**t) for t in tasks],
+        total=len(tasks),
+    )
 
 
 @router.get("/", response_model=TaskListResponse)
@@ -150,3 +170,35 @@ async def get_task_status(task_id: int, user: dict = Depends(get_current_user)):
         "error_message": task.get("error_message"),
         "completed_at": task.get("completed_at"),
     }
+
+
+@router.get("/{task_id}/progress")
+async def get_task_progress(task_id: int, user: dict = Depends(get_current_user)):
+    """Get upload progress from Redis (set by publishing worker)."""
+    task = task_repo.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    progress = _get_progress_from_redis(task_id)
+    return {
+        "task_id": task["id"],
+        "status": task["status"],
+        "progress_pct": progress.get("pct", 0),
+        "bytes_uploaded": progress.get("bytes_uploaded", 0),
+        "total_bytes": progress.get("total_bytes", 0),
+        "stage": progress.get("stage", "unknown"),
+    }
+
+
+def _get_progress_from_redis(task_id: int) -> dict:
+    """Read progress data from Redis hash."""
+    import json as _json
+    try:
+        from shared.queue.config import get_redis
+        r = get_redis()
+        raw = r.get(f"task:{task_id}:progress")
+        if raw:
+            return _json.loads(raw)
+    except Exception:
+        pass
+    return {}

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import Any
 
 from shared.db.repositories import channel_repo, console_repo, task_repo
@@ -15,6 +17,17 @@ _audit_logger = logging.getLogger("audit.worker")
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_ATTEMPTS = 2  # allows one retry after token refresh
+
+
+def _set_progress(task_id: int, stage: str, pct: int = 0, **extra: Any) -> None:
+    """Write upload progress to Redis for polling by API."""
+    try:
+        from shared.queue.config import get_redis
+        r = get_redis()
+        data = {"stage": stage, "pct": pct, **extra}
+        r.set(f"task:{task_id}:progress", json.dumps(data), ex=3600)
+    except Exception:
+        pass  # non-critical
 
 
 def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
@@ -30,6 +43,7 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
     channel_id = payload.channel_id
 
     task_repo.mark_task_processing(task_id)
+    _set_progress(task_id, "preparing", 0)
 
     channel = channel_repo.get_channel_by_id(channel_id)
     if not channel:
@@ -41,6 +55,13 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
         _fail(task_id, f"OAuth console not found for channel {channel_id}")
         return {"ok": False, "error": "console_not_found"}
 
+    # File size for progress tracking
+    total_bytes = 0
+    try:
+        total_bytes = os.path.getsize(payload.source_file_path)
+    except OSError:
+        pass
+
     # Build tags list from comma-separated keywords
     tags: list[str] = []
     if payload.keywords:
@@ -49,6 +70,8 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
     last_error = ""
     for attempt in range(MAX_UPLOAD_ATTEMPTS):
         try:
+            _set_progress(task_id, "authenticating", 10)
+
             service, creds = yt.create_service(
                 access_token=channel["access_token"],
                 refresh_token=channel["refresh_token"],
@@ -57,6 +80,8 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
                 token_expires_at=channel.get("token_expires_at"),
                 channel_id=channel_id,
             )
+
+            _set_progress(task_id, "uploading", 20, total_bytes=total_bytes)
 
             response = yt.upload_video(
                 service=service,
@@ -68,12 +93,16 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
             )
 
             video_id = response.get("id", "")
+            _set_progress(task_id, "post_processing", 80, bytes_uploaded=total_bytes, total_bytes=total_bytes)
+
             task_repo.mark_task_completed(task_id, upload_id=video_id)
 
             # post-upload actions
             yt.like_video(service, video_id)
             if payload.post_comment and video_id:
                 yt.post_comment(service, video_id, payload.post_comment)
+
+            _set_progress(task_id, "completed", 100, bytes_uploaded=total_bytes, total_bytes=total_bytes)
 
             logger.info("Task %d completed: video_id=%s", task_id, video_id)
             _audit_logger.info("task.completed task_id=%d channel_id=%d video_id=%s", task_id, channel_id, video_id)
@@ -85,6 +114,7 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
                 "Upload attempt %d/%d failed for task %d: %s",
                 attempt + 1, MAX_UPLOAD_ATTEMPTS, task_id, last_error,
             )
+            _set_progress(task_id, "retrying", 0)
             # If token error, reload channel from DB for retry
             if attempt < MAX_UPLOAD_ATTEMPTS - 1:
                 channel = channel_repo.get_channel_by_id(channel_id) or channel
@@ -96,5 +126,6 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
 def _fail(task_id: int, error: str) -> None:
     logger.error("Task %d failed: %s", task_id, error)
     _audit_logger.info("task.failed task_id=%d error=%s", task_id, error[:200])
+    _set_progress(task_id, "failed", 0)
     task_repo.mark_task_failed(task_id, error)
     telegram.send(f"Upload task {task_id} failed: {error}")
