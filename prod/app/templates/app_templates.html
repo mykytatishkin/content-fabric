@@ -1,0 +1,32 @@
+{% extends "app_base.html" %}
+{% block title %}Templates — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Schedule Templates</h2>
+</div>
+
+{% if templates_list %}
+<table>
+    <thead>
+        <tr><th>ID</th><th>Name</th><th>Description</th><th>Timezone</th><th>Slots</th><th>Active</th></tr>
+    </thead>
+    <tbody>
+        {% for t in templates_list %}
+        <tr>
+            <td>{{ t.id }}</td>
+            <td><strong>{{ t.name }}</strong></td>
+            <td>{{ t.description or '—' }}</td>
+            <td>{{ t.timezone }}</td>
+            <td>{{ t.slot_count }}</td>
+            <td>
+                {% if t.is_active %}<span class="badge badge-green">Active</span>
+                {% else %}<span class="badge badge-gray">Inactive</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;">No schedule templates yet. Use the <a href="/docs#/templates" style="color:#0ea5e9;">API</a> to create one.</p>
+{% endif %}
+{% endblock %}

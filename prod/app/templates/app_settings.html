@@ -1,0 +1,45 @@
+{% extends "app_base.html" %}
+{% block title %}Settings — Content Fabric{% endblock %}
+{% block content %}
+<h2>Account Settings</h2>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:1rem;margin-bottom:1rem;">Profile</h3>
+    <table style="box-shadow:none;margin-bottom:0;">
+        <tr><td style="color:#64748b;width:140px;">Username</td><td><strong>{{ user.username }}</strong></td></tr>
+        <tr><td style="color:#64748b;">Email</td><td>{{ user.email }}</td></tr>
+        <tr><td style="color:#64748b;">Display Name</td><td>{{ user.display_name or '—' }}</td></tr>
+        <tr><td style="color:#64748b;">Status</td><td>
+            {% if user.status == 'admin' %}<span class="badge badge-blue">Admin</span>
+            {% else %}<span class="badge badge-green">Active</span>{% endif %}
+        </td></tr>
+        <tr><td style="color:#64748b;">Timezone</td><td>{{ user.timezone or 'UTC' }}</td></tr>
+        <tr><td style="color:#64748b;">Registered</td><td>{{ user.created_at }}</td></tr>
+    </table>
+</div>
+
+<div class="form-card">
+    <h3 style="font-size:1rem;margin-bottom:1rem;">Two-Factor Authentication (2FA)</h3>
+    {% if user.totp_enabled %}
+    <p style="font-size:0.85rem;margin-bottom:0.75rem;">
+        <span class="badge badge-green">Enabled</span>
+        2FA is active on your account.
+    </p>
+    <p style="font-size:0.8rem;color:#64748b;">
+        To disable 2FA, use the API: <code>POST /api/v1/auth/2fa/disable</code>
+    </p>
+    {% else %}
+    <p style="font-size:0.85rem;margin-bottom:0.75rem;">
+        <span class="badge badge-yellow">Not enabled</span>
+        Protect your account with an authenticator app.
+    </p>
+    <p style="font-size:0.8rem;color:#64748b;">
+        To enable 2FA, use the API: <code>POST /api/v1/auth/2fa/setup</code> then <code>POST /api/v1/auth/2fa/verify</code>
+    </p>
+    {% endif %}
+</div>
+{% endblock %}

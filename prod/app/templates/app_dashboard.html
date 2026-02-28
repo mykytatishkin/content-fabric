@@ -1,0 +1,61 @@
+{% extends "app_base.html" %}
+{% block title %}Dashboard — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Dashboard</h2>
+    <div>
+        <a href="/app/channels/add" class="btn btn-primary btn-sm">+ Add Channel</a>
+        <a href="/app/tasks/new" class="btn btn-primary btn-sm">+ Create Task</a>
+    </div>
+</div>
+
+<div class="cards">
+    <div class="card">
+        <div class="label">Channels</div>
+        <div class="value">{{ channels_total }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Pending Tasks</div>
+        <div class="value" style="color:#d97706;">{{ tasks_pending }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Completed</div>
+        <div class="value" style="color:#16a34a;">{{ tasks_completed }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Failed</div>
+        <div class="value" style="color:#dc2626;">{{ tasks_failed }}</div>
+    </div>
+</div>
+
+<h2>Recent Tasks</h2>
+{% if recent_tasks %}
+<table>
+    <thead>
+        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+        {% for t in recent_tasks %}
+        <tr>
+            <td>{{ t.id }}</td>
+            <td>{{ t.channel_id }}</td>
+            <td>{{ t.title or '—' }}</td>
+            <td>
+                {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
+                {% elif t.status == 1 %}<span class="badge badge-green">Completed</span>
+                {% elif t.status == 2 %}<span class="badge badge-red">Failed</span>
+                {% elif t.status == 3 %}<span class="badge badge-blue">Processing</span>
+                {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
+                {% else %}<span class="badge badge-gray">{{ t.status }}</span>
+                {% endif %}
+            </td>
+            <td>{{ t.scheduled_at or '—' }}</td>
+            <td>{{ t.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;">No tasks yet. <a href="/app/tasks/new" style="color:#0ea5e9;">Create your first task</a></p>
+{% endif %}
+{% endblock %}

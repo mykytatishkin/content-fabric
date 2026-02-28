@@ -1,0 +1,40 @@
+{% extends "app_base.html" %}
+{% block title %}Channels — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Channels ({{ channels|length }})</h2>
+    <a href="/app/channels/add" class="btn btn-primary btn-sm">+ Add Channel</a>
+</div>
+
+{% if channels %}
+<table>
+    <thead>
+        <tr><th>ID</th><th>Name</th><th>YouTube ID</th><th>Enabled</th><th>Processing</th><th>Tokens</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+        {% for ch in channels %}
+        <tr>
+            <td>{{ ch.id }}</td>
+            <td><strong>{{ ch.name }}</strong></td>
+            <td style="font-size:0.75rem;color:#64748b;">{{ ch.platform_channel_id }}</td>
+            <td>
+                {% if ch.enabled %}<span class="badge badge-green">Yes</span>
+                {% else %}<span class="badge badge-gray">No</span>{% endif %}
+            </td>
+            <td>
+                {% if ch.processing_status %}<span class="badge badge-green">Active</span>
+                {% else %}<span class="badge badge-yellow">Inactive</span>{% endif %}
+            </td>
+            <td>
+                {% if ch.has_tokens %}<span class="badge badge-green">OK</span>
+                {% else %}<span class="badge badge-red">Missing</span>{% endif %}
+            </td>
+            <td>{{ ch.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;">No channels yet. <a href="/app/channels/add" style="color:#0ea5e9;">Add your first channel</a></p>
+{% endif %}
+{% endblock %}

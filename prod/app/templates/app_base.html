@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Content Fabric{% endblock %}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; color: #1e293b; }
+        .layout { display: flex; min-height: 100vh; }
+        .sidebar { width: 220px; background: #0f172a; color: #e2e8f0; padding: 1rem 0; flex-shrink: 0; }
+        .sidebar h1 { font-size: 1rem; padding: 0 1rem 1rem; border-bottom: 1px solid #1e293b; }
+        .sidebar nav { padding-top: 0.5rem; }
+        .sidebar a { display: block; padding: 0.6rem 1rem; color: #94a3b8; text-decoration: none; font-size: 0.875rem; }
+        .sidebar a:hover, .sidebar a.active { background: #1e293b; color: #f8fafc; }
+        .sidebar .user-info { padding: 1rem; border-top: 1px solid #1e293b; margin-top: auto; font-size: 0.8rem; color: #64748b; }
+        .sidebar .user-info strong { color: #e2e8f0; display: block; }
+        .sidebar-bottom { margin-top: auto; border-top: 1px solid #1e293b; padding-top: 0.5rem; }
+        .main { flex: 1; padding: 1.5rem 2rem; overflow-x: auto; }
+        .main h2 { font-size: 1.25rem; margin-bottom: 1rem; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .card { background: #fff; border-radius: 8px; padding: 1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .card .label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .card .value { font-size: 1.5rem; font-weight: 600; margin-top: 0.25rem; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        th, td { text-align: left; padding: 0.6rem 0.8rem; font-size: 0.85rem; }
+        th { background: #f8fafc; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+        tr:hover { background: #f1f5f9; }
+        td { border-bottom: 1px solid #f1f5f9; }
+        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 500; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-red { background: #fee2e2; color: #991b1b; }
+        .badge-yellow { background: #fef9c3; color: #854d0e; }
+        .badge-blue { background: #dbeafe; color: #1e40af; }
+        .badge-gray { background: #f1f5f9; color: #475569; }
+        .btn { display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 500; text-decoration: none; border: none; cursor: pointer; }
+        .btn-primary { background: #0ea5e9; color: #fff; }
+        .btn-primary:hover { background: #0284c7; }
+        .btn-danger { background: #ef4444; color: #fff; }
+        .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.3rem; color: #334155; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.875rem; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,0.15); }
+        .form-card { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); max-width: 600px; }
+        .alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; }
+        .alert-error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .alert-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+        .filter-bar { display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: end; }
+        .filter-bar .form-group { margin-bottom: 0; }
+        .filter-bar select { min-width: 150px; }
+        @media (max-width: 768px) {
+            .sidebar { width: 60px; }
+            .sidebar span, .sidebar h1, .sidebar .user-info { display: none; }
+            .main { padding: 1rem; }
+            .cards { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <div class="sidebar" style="display: flex; flex-direction: column;">
+            <h1>Content Fabric</h1>
+            <nav>
+                <a href="/app/" class="{{ 'active' if active == 'dashboard' }}">&#127968; <span>Dashboard</span></a>
+                <a href="/app/channels" class="{{ 'active' if active == 'channels' }}">&#128250; <span>Channels</span></a>
+                <a href="/app/tasks" class="{{ 'active' if active == 'tasks' }}">&#128203; <span>Tasks</span></a>
+                <a href="/app/templates" class="{{ 'active' if active == 'templates' }}">&#128197; <span>Templates</span></a>
+                <a href="/app/settings" class="{{ 'active' if active == 'settings' }}">&#9881; <span>Settings</span></a>
+            </nav>
+            <div class="sidebar-bottom">
+                {% if user and user.status == 'admin' %}
+                <a href="/panel/">&#128272; <span>Admin Panel</span></a>
+                {% endif %}
+                <a href="/docs">&#128214; <span>API Docs</span></a>
+                <a href="/health">&#128154; <span>Health</span></a>
+            </div>
+            <div class="user-info">
+                <strong>{{ user.display_name if user else 'Guest' }}</strong>
+                {{ user.email if user else '' }}
+                <br><a href="/app/logout" style="color:#94a3b8;font-size:0.75rem;">Logout</a>
+            </div>
+        </div>
+        <div class="main">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</body>
+</html>
