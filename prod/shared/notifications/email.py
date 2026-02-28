@@ -11,18 +11,16 @@ from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
-SMTP_SERVER = os.environ.get("EMAIL_SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("EMAIL_SMTP_PORT", "587"))
-USERNAME = os.environ.get("EMAIL_USERNAME", "")
-PASSWORD = os.environ.get("EMAIL_PASSWORD", "")
-
-
 def send(
     recipients: list[str],
     subject: str,
     body: str,
 ) -> bool:
     """Send an email. Returns True on success."""
+    SMTP_SERVER = os.environ.get("EMAIL_SMTP_SERVER", "smtp.gmail.com")
+    SMTP_PORT = int(os.environ.get("EMAIL_SMTP_PORT", "587"))
+    USERNAME = os.environ.get("EMAIL_USERNAME", "")
+    PASSWORD = os.environ.get("EMAIL_PASSWORD", "")
     if not USERNAME or not PASSWORD:
         logger.warning("Email credentials not configured")
         return False

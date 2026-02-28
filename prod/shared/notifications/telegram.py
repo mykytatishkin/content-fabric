@@ -9,14 +9,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-
-
 def send(message: str, chat_id: str | None = None) -> bool:
     """Send a Telegram message. Returns True on success."""
-    token = BOT_TOKEN
-    target = chat_id or CHAT_ID
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    target = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not target:
         logger.warning("Telegram credentials not configured")
         return False
