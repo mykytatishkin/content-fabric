@@ -23,6 +23,7 @@ class TaskCreate(BaseModel):
 
 class TaskUpdate(BaseModel):
     status: int | None = None
+    scheduled_at: datetime | None = None
     error_message: str | None = None
 
 
