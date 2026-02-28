@@ -1,7 +1,5 @@
 """Authentication endpoints — login, register, me, 2FA."""
 
-from __future__ import annotations
-
 import secrets
 import uuid
 
