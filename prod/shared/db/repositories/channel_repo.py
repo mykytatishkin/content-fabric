@@ -194,6 +194,52 @@ def update_channel_tokens(
         return result.rowcount > 0
 
 
+def update_channel(channel_id: int, name: str | None = None, enabled: bool | None = None) -> bool:
+    """Update channel fields."""
+    parts = []
+    params: dict[str, Any] = {"cid": channel_id}
+    if name is not None:
+        parts.append("name = :name")
+        params["name"] = name
+    if enabled is not None:
+        parts.append("enabled = :enabled")
+        params["enabled"] = int(enabled)
+    if not parts:
+        return False
+    sql = text(f"UPDATE platform_channels SET {', '.join(parts)} WHERE id = :cid")
+    with get_connection() as conn:
+        result = conn.execute(sql, params)
+        return result.rowcount > 0
+
+
+def update_login_credentials(
+    channel_id: int,
+    login_email: str | None = None,
+    login_password: str | None = None,
+    totp_secret: str | None = None,
+) -> bool:
+    """Update existing login credentials for a channel."""
+    parts = []
+    params: dict[str, Any] = {"cid": channel_id}
+    if login_email is not None:
+        parts.append("login_email = :email")
+        params["email"] = login_email
+    if login_password is not None:
+        parts.append("login_password = :pwd")
+        params["pwd"] = login_password
+    if totp_secret is not None:
+        parts.append("totp_secret = :totp")
+        params["totp"] = totp_secret
+    if not parts:
+        return False
+    sql = text(
+        f"UPDATE platform_channel_login_credentials SET {', '.join(parts)} WHERE channel_id = :cid"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, params)
+        return result.rowcount > 0
+
+
 def delete_channel(channel_id: int) -> bool:
     """Delete channel and its login credentials."""
     with get_connection() as conn:

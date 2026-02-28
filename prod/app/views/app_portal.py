@@ -373,6 +373,79 @@ async def channel_delete(request: Request, channel_id: int):
     return RedirectResponse("/app/channels", status_code=302)
 
 
+@router.get("/channels/{channel_id}/edit", response_class=HTMLResponse)
+async def channel_edit_page(request: Request, channel_id: int):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from shared.db.repositories import channel_repo, console_repo
+    from sqlalchemy import text
+
+    channel = channel_repo.get_channel_by_id(channel_id)
+    if not channel:
+        return RedirectResponse("/app/channels", status_code=302)
+
+    consoles = console_repo.list_consoles_brief(enabled_only=True)
+
+    credentials = None
+    try:
+        with get_connection() as conn:
+            row = conn.execute(text(
+                "SELECT login_email, login_password, totp_secret, proxy_host, enabled "
+                "FROM platform_channel_login_credentials WHERE channel_id = :cid"
+            ), {"cid": channel_id}).fetchone()
+            if row:
+                credentials = {
+                    "login_email": row[0], "login_password": row[1],
+                    "totp_secret": row[2], "proxy_host": row[3], "enabled": bool(row[4]),
+                }
+    except Exception as e:
+        logger.error("Channel edit load error: %s", e)
+
+    return templates.TemplateResponse("app_channel_edit.html", {
+        "request": request, "user": user, "active": "channels",
+        "channel": channel, "consoles": consoles, "credentials": credentials,
+        "error": None, "message": None,
+    })
+
+
+@router.post("/channels/{channel_id}/edit", response_class=HTMLResponse)
+async def channel_edit_submit(
+    request: Request,
+    channel_id: int,
+    name: str = Form(...),
+    enabled: bool = Form(False),
+    login_email: str = Form(""),
+    login_password: str = Form(""),
+    totp_secret: str = Form(""),
+):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import channel_repo
+
+    channel_repo.update_channel(channel_id, name=name.strip(), enabled=enabled)
+
+    if login_email:
+        updated = channel_repo.update_login_credentials(
+            channel_id, login_email=login_email,
+            login_password=login_password or None,
+            totp_secret=totp_secret or None,
+        )
+        if not updated:
+            channel_repo.add_login_credentials(
+                channel_id=channel_id,
+                login_email=login_email,
+                login_password=login_password,
+                totp_secret=totp_secret or None,
+            )
+
+    return RedirectResponse(f"/app/channels/{channel_id}", status_code=302)
+
+
 # ── Tasks ────────────────────────────────────────────────────────────
 
 @router.get("/tasks", response_class=HTMLResponse)
@@ -512,6 +585,60 @@ async def task_cancel(request: Request, task_id: int):
     from shared.db.repositories import task_repo
     task_repo.cancel_task(task_id)
     return RedirectResponse("/app/tasks", status_code=302)
+
+
+@router.get("/tasks/{task_id}", response_class=HTMLResponse)
+async def task_detail(request: Request, task_id: int):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from shared.db.repositories import task_repo
+    from sqlalchemy import text
+
+    task = task_repo.get_task(task_id)
+    if not task:
+        return RedirectResponse("/app/tasks", status_code=302)
+
+    channel_name = "?"
+    try:
+        with get_connection() as conn:
+            row = conn.execute(text(
+                "SELECT name FROM platform_channels WHERE id = :cid"
+            ), {"cid": task["channel_id"]}).fetchone()
+            if row:
+                channel_name = row[0]
+    except Exception:
+        pass
+    task["channel_name"] = channel_name
+
+    return templates.TemplateResponse("app_task_detail.html", {
+        "request": request, "user": user, "active": "tasks",
+        "task": task, "error": None, "message": None,
+    })
+
+
+@router.post("/tasks/{task_id}/reschedule", response_class=HTMLResponse)
+async def task_reschedule(
+    request: Request,
+    task_id: int,
+    scheduled_at: str = Form(...),
+):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from datetime import datetime
+    from shared.db.repositories import task_repo
+
+    try:
+        new_time = datetime.fromisoformat(scheduled_at)
+    except ValueError:
+        return RedirectResponse(f"/app/tasks/{task_id}", status_code=302)
+
+    task_repo.update_task_scheduled_at(task_id, new_time)
+    return RedirectResponse(f"/app/tasks/{task_id}", status_code=302)
 
 
 # ── Templates ────────────────────────────────────────────────────────
@@ -679,6 +806,41 @@ async def settings_2fa_disable(
         "message": "2FA disabled", "error": None,
         "totp_uri": None, "backup_codes": None,
     })
+
+
+@router.post("/settings/password", response_class=HTMLResponse)
+async def settings_change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    ctx = {
+        "request": request, "user": user, "active": "settings",
+        "message": None, "error": None, "totp_uri": None, "backup_codes": None,
+    }
+
+    if not verify_password(current_password, user["password_hash"]):
+        ctx["error"] = "Current password is incorrect"
+        return templates.TemplateResponse("app_settings.html", ctx)
+
+    if len(new_password) < 6:
+        ctx["error"] = "New password must be at least 6 characters"
+        return templates.TemplateResponse("app_settings.html", ctx)
+
+    if new_password != confirm_password:
+        ctx["error"] = "Passwords do not match"
+        return templates.TemplateResponse("app_settings.html", ctx)
+
+    from shared.db.repositories import user_repo
+    user_repo.change_password(user["id"], hash_password(new_password))
+
+    ctx["message"] = "Password changed successfully"
+    return templates.TemplateResponse("app_settings.html", ctx)
 
 
 # ── File Upload (portal) ────────────────────────────────────────────

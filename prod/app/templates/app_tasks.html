@@ -48,7 +48,7 @@
         <tr>
             <td>{{ t.id }}</td>
             <td><a href="/app/channels/{{ t.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
-            <td>{{ (t.title or '—')[:50] }}</td>
+            <td><a href="/app/tasks/{{ t.id }}" style="color:#0ea5e9;text-decoration:none;">{{ (t.title or '—')[:50] }}</a></td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
                 {% elif t.status == 1 %}<span class="badge badge-green">Completed</span>

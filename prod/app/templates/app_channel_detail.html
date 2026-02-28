@@ -5,6 +5,7 @@
     <h2>{{ channel.name }}</h2>
     <div>
         <a href="/app/channels" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back to Channels</a>
+        <a href="/app/channels/{{ channel.id }}/edit" class="btn btn-primary btn-sm">Edit Channel</a>
         <form method="POST" action="/app/channels/{{ channel.id }}/delete" style="display:inline;"
               onsubmit="return confirm('Delete channel {{ channel.name }}? This cannot be undone.')">
             <button type="submit" class="btn btn-danger btn-sm">Delete Channel</button>

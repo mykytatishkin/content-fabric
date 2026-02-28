@@ -93,6 +93,13 @@ def update_profile(user_id: int, display_name: str | None = None, timezone: str 
         conn.execute(sql, params)
 
 
+def change_password(user_id: int, new_password_hash: str) -> None:
+    """Update user password hash."""
+    sql = text("UPDATE platform_users SET password_hash = :hash WHERE id = :uid")
+    with get_connection() as conn:
+        conn.execute(sql, {"hash": new_password_hash, "uid": user_id})
+
+
 def set_totp_secret(user_id: int, secret: str) -> None:
     """Store the TOTP secret (before user confirms setup)."""
     sql = text("UPDATE platform_users SET totp_secret = :secret WHERE id = :uid")
