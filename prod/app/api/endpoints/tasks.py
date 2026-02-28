@@ -1,7 +1,5 @@
 """Task management endpoints — creates tasks in DB, scheduler enqueues to Redis."""
 
-from __future__ import annotations
-
 import logging
 from datetime import datetime
 

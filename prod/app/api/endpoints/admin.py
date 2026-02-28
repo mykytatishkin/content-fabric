@@ -1,7 +1,5 @@
 """Admin endpoints — system overview, user management, queue status."""
 
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_current_user
