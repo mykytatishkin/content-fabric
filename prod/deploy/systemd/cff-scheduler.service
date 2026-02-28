@@ -6,11 +6,11 @@ Wants=redis.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/cff/prod
-EnvironmentFile=/root/cff/.env
-EnvironmentFile=/root/cff/prod/.env/.env.db
-EnvironmentFile=/root/cff/prod/.env/.env.api
-ExecStart=/root/cff/prod/venv/bin/python -m scheduler.run
+WorkingDirectory=/opt/content-fabric/prod
+EnvironmentFile=/opt/content-fabric/.env
+EnvironmentFile=/opt/content-fabric/prod/.env/.env.db
+EnvironmentFile=/opt/content-fabric/prod/.env/.env.api
+ExecStart=/opt/content-fabric/prod/venv/bin/python -m scheduler.run
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/cff-scheduler.log

@@ -5,10 +5,11 @@ After=network.target redis.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/cff/prod
-EnvironmentFile=/root/cff/.env
-EnvironmentFile=/root/cff/prod/.env/.env.db
-ExecStart=/root/cff/prod/venv/bin/python -m workers.voice_worker
+WorkingDirectory=/opt/content-fabric/prod
+EnvironmentFile=/opt/content-fabric/.env
+EnvironmentFile=/opt/content-fabric/prod/.env/.env.db
+EnvironmentFile=/opt/content-fabric/prod/.env/.env.api
+ExecStart=/opt/content-fabric/prod/venv/bin/python -m workers.voice_worker
 Restart=always
 RestartSec=5
 StandardOutput=append:/var/log/cff-voice-worker.log
