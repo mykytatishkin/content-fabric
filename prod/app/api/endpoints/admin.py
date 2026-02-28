@@ -113,3 +113,64 @@ async def update_user_status(user_id: int, new_status: int, user: dict = Depends
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"ok": True, "user_id": user_id, "new_status": new_status}
+
+
+# ── Credential / TOTP management ──────────────────────────────────
+
+
+@router.get("/credentials")
+async def list_credentials(user: dict = Depends(get_current_user)):
+    """List all channel login credentials (passwords masked)."""
+    _require_admin(user)
+
+    from shared.db.repositories import credential_repo
+    creds = credential_repo.list_credentials()
+    for c in creds:
+        c["login_password"] = "***"  # never expose
+        if c.get("proxy_password"):
+            c["proxy_password"] = "***"
+    return {"credentials": creds}
+
+
+@router.post("/credentials/{channel_id}/totp")
+async def set_totp_secret(
+    channel_id: int,
+    totp_secret: str,
+    user: dict = Depends(get_current_user),
+):
+    """Set TOTP secret for a channel's RPA credentials."""
+    _require_admin(user)
+
+    from shared.db.repositories import credential_repo
+    existing = credential_repo.get_credentials(channel_id, include_disabled=True)
+    if not existing:
+        raise HTTPException(status_code=404, detail="No credentials for this channel")
+
+    credential_repo.update_totp_secret(channel_id, totp_secret)
+    return {"ok": True, "channel_id": channel_id, "totp_set": True}
+
+
+@router.get("/reauth-status")
+async def reauth_status(user: dict = Depends(get_current_user)):
+    """Show channels needing re-auth (expired/revoked tokens) and MFA status."""
+    _require_admin(user)
+
+    sql = text(
+        "SELECT c.id, c.name, c.enabled, c.token_expires_at, "
+        "cl.login_email, "
+        "IF(cl.totp_secret IS NOT NULL AND cl.totp_secret != '', 1, 0) as has_totp, "
+        "cl.last_success_at, cl.last_error "
+        "FROM platform_channels c "
+        "LEFT JOIN platform_channel_login_credentials cl ON cl.channel_id = c.id "
+        "WHERE cl.id IS NOT NULL "
+        "ORDER BY c.id"
+    )
+    with get_connection() as conn:
+        rows = conn.execute(sql).mappings().fetchall()
+
+    channels = []
+    for r in rows:
+        d = dict(r)
+        d["has_totp"] = bool(d.get("has_totp"))
+        channels.append(d)
+    return {"channels": channels}

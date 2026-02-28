@@ -196,6 +196,27 @@ def mark_attempt(
         return result.rowcount > 0
 
 
+def update_totp_secret(
+    channel_id: int,
+    totp_secret: str | None,
+    backup_codes: list[str] | None = None,
+) -> bool:
+    """Set or clear the TOTP secret for a channel's credentials."""
+    backup_codes_json = json.dumps(backup_codes) if backup_codes else None
+    sql = text(
+        "UPDATE platform_channel_login_credentials "
+        "SET totp_secret = :secret, backup_codes = :codes, updated_at = CURRENT_TIMESTAMP "
+        "WHERE channel_id = :cid"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {
+            "secret": totp_secret,
+            "codes": backup_codes_json,
+            "cid": channel_id,
+        })
+        return result.rowcount > 0
+
+
 def update_profile_path(channel_id: int, profile_path: str) -> bool:
     sql = text(
         "UPDATE platform_channel_login_credentials "
