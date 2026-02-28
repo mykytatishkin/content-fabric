@@ -1,13 +1,8 @@
 """Channel schemas for platform_channels and platform_oauth_credentials."""
 
-import re
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
-
-# Latin letters, digits, spaces, underscore, hyphen
-LATIN_PATTERN = re.compile(r"^[a-zA-Z0-9\s_\-]+$")
-
 
 class OAuthCredential(BaseModel):
     """OAuth credential (platform_oauth_credentials) for dropdown."""
@@ -26,19 +21,16 @@ class ChannelBase(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def name_latin_only(cls, v: str) -> str:
+    def name_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("Название не может быть пустым")
-        v = v.strip()
-        if not LATIN_PATTERN.match(v):
-            raise ValueError("Название только латиницей (a-z, 0-9, пробел, _ -)")
-        return v
+        return v.strip()
 
     @field_validator("platform_channel_id")
     @classmethod
     def platform_channel_id_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError("Channel ID не может быть пустым")
+            raise ValueError("Channel ID не може бути порожнім")
         return v.strip()
 
 
