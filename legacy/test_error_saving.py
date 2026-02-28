@@ -45,11 +45,11 @@ def main():
         week_ago = datetime.now() - timedelta(days=7)
         
         query = """
-            SELECT id, account_id, status, error_message, date_post, date_done
-            FROM tasks 
-            WHERE status = 2 
-            AND date_done >= %s
-            ORDER BY date_done DESC
+            SELECT id, channel_id, status, error_message, scheduled_at, completed_at
+            FROM content_upload_queue_tasks
+            WHERE status = 2
+            AND completed_at >= %s
+            ORDER BY completed_at DESC
             LIMIT 20
         """
         

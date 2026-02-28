@@ -76,7 +76,7 @@ def cmd_list_channels(args):
         token_status = "🔑" if channel.access_token else "🔒"
         expired = "⚠️" if db.is_token_expired(channel.name) else "✅"
         
-        print(f"  {i}. {status} {channel.name} (ID: {channel.channel_id})")
+        print(f"  {i}. {status} {channel.name} (ID: {channel.platform_channel_id})")
         print(f"     Токен: {token_status} {expired}")
         if channel.token_expires_at:
             print(f"     Истекает: {channel.token_expires_at}")
@@ -119,7 +119,7 @@ def cmd_show_channel(args):
         return
     
     print(f"📺 Канал: {channel.name}")
-    print(f"   ID: {channel.channel_id}")
+    print(f"   ID: {channel.platform_channel_id}")
     # Get client_id from console
     credentials = db.get_console_credentials_for_channel(channel.name)
     if credentials:

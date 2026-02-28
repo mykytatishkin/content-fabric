@@ -66,7 +66,7 @@ class YouTubeReauthService:
         LOGGER.info("Navigate browser to: %s", url)
 
     def _load_credential(self, channel_name: str) -> Optional[AutomationCredential]:
-        record = self.db.get_account_credentials(channel_name, include_disabled=False)
+        record = self.db.get_account_credentials_by_name(channel_name, include_disabled=False)
         if not record:
             LOGGER.error("No automation credentials configured for %s", channel_name)
             return None
@@ -76,10 +76,9 @@ class YouTubeReauthService:
             LOGGER.error("Channel configuration not found for %s", channel_name)
             return None
 
-        # Get client credentials from google_consoles table via console_name or console_id
-        # Fallback to environment variables if no console assigned
+        # Get client credentials from platform_oauth_credentials via console_id
         credentials = self.db.get_console_credentials_for_channel(channel_name)
-        
+
         if credentials:
             client_id = credentials['client_id']
             client_secret = credentials['client_secret']
@@ -87,9 +86,9 @@ class YouTubeReauthService:
             # Fallback to environment variables
             client_id = os.getenv('YOUTUBE_MAIN_CLIENT_ID')
             client_secret = os.getenv('YOUTUBE_MAIN_CLIENT_SECRET')
-        
+
         if not client_id or not client_secret:
-            LOGGER.error("Missing client credentials for %s (not in google_consoles, not in channel, and not in env vars)", channel_name)
+            LOGGER.error("Missing client credentials for %s (not in platform_oauth_credentials and not in env vars)", channel_name)
             return None
 
         proxy = None
@@ -102,13 +101,13 @@ class YouTubeReauthService:
             )
 
         return AutomationCredential(
-            channel_name=record.channel_name,
+            channel_name=channel_name,
             login_email=record.login_email,
             login_password=record.login_password,
             profile_path=record.profile_path or "",
             client_id=client_id,
             client_secret=client_secret,
-            channel_id=channel.channel_id,  # Add channel_id for YouTube channel selection
+            channel_id=channel.platform_channel_id,  # Platform channel ID for YouTube channel selection
             totp_secret=record.totp_secret,
             backup_codes=record.backup_codes,
             proxy=proxy,

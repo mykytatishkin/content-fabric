@@ -128,16 +128,16 @@ class TaskManagerCLI:
             # Print tasks
             for task in tasks:
                 # Get channel name
-                channel = self._get_channel_by_id(task.account_id)
-                account_name = channel.name if channel else f"ID:{task.account_id}"
-                
+                channel = self.db.get_channel_by_id(task.channel_id)
+                account_name = channel.name if channel else f"ID:{task.channel_id}"
+
                 # Get status text
                 status_text = ['Pending', 'Completed', 'Failed', 'Processing'][task.status]
-                
+
                 # Truncate title if too long
                 title = task.title[:37] + "..." if len(task.title) > 40 else task.title
-                
-                print(f"{task.id:<6} {account_name:<15} {task.media_type:<10} {status_text:<12} {title:<40} {task.date_post.strftime('%Y-%m-%d %H:%M'):<20}")
+
+                print(f"{task.id:<6} {account_name:<15} {task.media_type:<10} {status_text:<12} {title:<40} {task.scheduled_at.strftime('%Y-%m-%d %H:%M'):<20}")
             
             print(f"\nTotal: {len(tasks)} task(s)")
             
@@ -153,28 +153,28 @@ class TaskManagerCLI:
                 return
             
             # Get channel info
-            channel = self._get_channel_by_id(task.account_id)
-            account_name = channel.name if channel else f"ID:{task.account_id}"
-            
+            channel = self.db.get_channel_by_id(task.channel_id)
+            account_name = channel.name if channel else f"ID:{task.channel_id}"
+
             # Get status text
             status_text = ['Pending', 'Completed', 'Failed', 'Processing'][task.status]
-            
+
             print(f"\n{'='*60}")
             print(f"Task #{task.id} Details")
             print(f"{'='*60}")
-            print(f"Account:        {account_name} (ID: {task.account_id})")
+            print(f"Channel:        {account_name} (ID: {task.channel_id})")
             print(f"Media Type:     {task.media_type}")
             print(f"Status:         {status_text}")
             print(f"Title:          {task.title}")
             print(f"Description:    {task.description or 'N/A'}")
             print(f"Keywords:       {task.keywords or 'N/A'}")
-            print(f"Video Path:     {task.att_file_path}")
-            print(f"Cover:          {task.cover or 'N/A'}")
+            print(f"Video Path:     {task.source_file_path}")
+            print(f"Thumbnail:      {task.thumbnail_path or 'N/A'}")
             print(f"Comment:        {task.post_comment or 'N/A'}")
-            print(f"Additional:     {json.dumps(task.add_info) if task.add_info else 'N/A'}")
-            print(f"Scheduled:      {task.date_post}")
-            print(f"Created:        {task.date_add}")
-            print(f"Completed:      {task.date_done or 'N/A'}")
+            print(f"Additional:     {json.dumps(task.legacy_add_info) if task.legacy_add_info else 'N/A'}")
+            print(f"Scheduled:      {task.scheduled_at}")
+            print(f"Created:        {task.created_at}")
+            print(f"Completed:      {task.completed_at or 'N/A'}")
             print(f"{'='*60}\n")
             
         except Exception as e:
@@ -223,39 +223,6 @@ class TaskManagerCLI:
         except Exception as e:
             print(f"❌ Error getting stats: {str(e)}")
     
-    def _get_channel_by_id(self, channel_id: int):
-        """Get channel by ID."""
-        try:
-            query = """
-                SELECT id, name, channel_id, client_id, client_secret,
-                       access_token, refresh_token, token_expires_at,
-                       enabled, created_at, updated_at
-                FROM youtube_channels WHERE id = %s
-            """
-            self.db._ensure_connection()
-            cursor = self.db.connection.cursor()
-            cursor.execute(query, (channel_id,))
-            row = cursor.fetchone()
-            cursor.close()
-            
-            if row:
-                from core.database.mysql_db import YouTubeChannel
-                return YouTubeChannel(
-                    id=row[0],
-                    name=row[1],
-                    channel_id=row[2],
-                    client_id=row[3],
-                    client_secret=row[4],
-                    access_token=row[5],
-                    refresh_token=row[6],
-                    token_expires_at=row[7],
-                    enabled=bool(row[8]),
-                    created_at=row[9],
-                    updated_at=row[10]
-                )
-            return None
-        except:
-            return None
 
 
 def main():

@@ -37,14 +37,14 @@ def check_reauth_logic():
     week_ago = datetime.now() - timedelta(days=7)
     
     query = """
-        SELECT t.id, t.account_id, t.status, t.error_message, t.date_post,
-               yc.name as channel_name
-        FROM tasks t
-        JOIN youtube_channels yc ON t.account_id = yc.id
+        SELECT t.id, t.channel_id, t.status, t.error_message, t.scheduled_at,
+               c.name as channel_name
+        FROM content_upload_queue_tasks t
+        JOIN platform_channels c ON t.channel_id = c.id
         WHERE t.status = 2
-          AND t.date_post >= %s
-          AND t.date_post <= %s
-        ORDER BY t.date_post DESC
+          AND t.scheduled_at >= %s
+          AND t.scheduled_at <= %s
+        ORDER BY t.scheduled_at DESC
         LIMIT 100
     """
     
@@ -145,10 +145,11 @@ def check_reauth_logic():
         # Проверить таблицу reauth_audit
         try:
             reauth_query = """
-                SELECT channel_name, status, date_add, error_message
-                FROM youtube_reauth_audit
-                WHERE channel_name IN (%s)
-                ORDER BY date_add DESC
+                SELECT c.name, a.status, a.created_at, a.error_message
+                FROM channel_reauth_audit_logs a
+                JOIN platform_channels c ON a.channel_id = c.id
+                WHERE c.name IN (%s)
+                ORDER BY a.created_at DESC
                 LIMIT 50
             """
             

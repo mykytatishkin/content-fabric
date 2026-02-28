@@ -68,7 +68,7 @@ def main():
             for channel in channels:
                 status = "✅ Включен" if channel.enabled else "❌ Отключен"
                 print(f"{status} | {channel.name}")
-                print(f"   Channel ID: {channel.channel_id}")
+                print(f"   Channel ID: {channel.platform_channel_id}")
                 
                 # Get REAL credentials that will be used (same as in task_worker.py line 190)
                 credentials = db.get_console_credentials_for_channel(channel.name)
@@ -87,16 +87,16 @@ def main():
                         if console and console.description:
                             print(f"      Описание: {console.description}")
                         print(f"      Client ID: {real_client_id[:50]}...")
-                    elif channel.console_name:
-                        # Channel has console_name but client_id doesn't match - possible mismatch
-                        console = db.get_google_console(channel.console_name)
+                    elif channel.console_id:
+                        # Channel has console_id but client_id doesn't match - possible mismatch
+                        console = db.get_console(channel.console_id)
                         if console and console.client_id != real_client_id:
-                            print(f"   ⚠️  КОНФЛИКТ: У канала указана консоль '{channel.console_name}'")
+                            print(f"   ⚠️  КОНФЛИКТ: У канала указана консоль ID={channel.console_id}")
                             print("      Но реально используется другой client_id!")
                             print(f"      Ожидалось: {console.client_id[:50]}...")
                             print(f"      Используется: {real_client_id[:50]}...")
                         else:
-                            print(f"   🎯 РЕАЛЬНО ИСПОЛЬЗУЕТСЯ КОНСОЛЬ: {channel.console_name}")
+                            print(f"   🎯 РЕАЛЬНО ИСПОЛЬЗУЕТСЯ КОНСОЛЬ: {console.name if console else channel.console_id}")
                             print(f"      Client ID: {real_client_id[:50]}...")
                     else:
                         # Fallback - using channel's own credentials
@@ -105,7 +105,7 @@ def main():
                         print("      ⚠️  Это означает, что у канала нет назначенной консоли")
                 else:
                     print("   ❌ ОШИБКА: Credentials НЕ найдены - публикация НЕВОЗМОЖНА!")
-                    if not channel.console_name and not channel.console_id:
+                    if not channel.console_id:
                         print("      У канала нет ни console_name, ни console_id")
                 
                 print()
