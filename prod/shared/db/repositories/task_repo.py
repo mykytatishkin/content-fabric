@@ -248,6 +248,34 @@ def update_task_scheduled_at(task_id: int, scheduled_at: datetime) -> bool:
         return result.rowcount > 0
 
 
+def create_tasks_batch(tasks: list[dict[str, Any]]) -> list[int]:
+    """Create multiple tasks in a single transaction. Returns list of IDs."""
+    project_id = get_default_project_id()
+    if project_id is None:
+        raise ValueError("No default project found")
+
+    ids: list[int] = []
+    with get_connection() as conn:
+        for t in tasks:
+            add_info = json.dumps(t.get("legacy_add_info")) if t.get("legacy_add_info") else None
+            stmt = insert(content_upload_queue_tasks).values(
+                project_id=project_id,
+                channel_id=t["channel_id"],
+                media_type=t.get("media_type", "video"),
+                source_file_path=t["source_file_path"],
+                thumbnail_path=t.get("thumbnail_path"),
+                title=t["title"],
+                description=t.get("description"),
+                keywords=t.get("keywords"),
+                post_comment=t.get("post_comment"),
+                legacy_add_info=add_info,
+                scheduled_at=t["scheduled_at"],
+            )
+            result = conn.execute(stmt)
+            ids.append(result.lastrowid)
+    return ids
+
+
 def delete_task(task_id: int) -> bool:
     sql = text("DELETE FROM content_upload_queue_tasks WHERE id = :tid")
     with get_connection() as conn:

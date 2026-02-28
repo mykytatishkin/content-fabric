@@ -91,11 +91,11 @@ async def create_channel(data: ChannelCreate):
         except Exception as e:
             logger.error(
                 "Channel %s created (id=%s) but credentials insert failed: %s",
-                data.name, channel_id, e,
+                data.name, channel_id, e, exc_info=True,
             )
             raise HTTPException(
                 status_code=500,
-                detail=f"Канал создан (id={channel_id}), но не удалось сохранить креды: {e}",
+                detail=f"Канал создан (id={channel_id}), но не удалось сохранить креды. Проверьте логи.",
             )
 
     channel = get_channel_by_id(channel_id)

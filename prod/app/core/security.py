@@ -9,7 +9,11 @@ from typing import Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "")
+if not SECRET_KEY:
+    import warnings
+    warnings.warn("JWT_SECRET_KEY not set — using insecure default. Set it in production!", stacklevel=1)
+    SECRET_KEY = "insecure-dev-only-key-do-not-use-in-prod"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))  # 24h
 
