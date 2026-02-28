@@ -1,7 +1,7 @@
 # Content Fabric — Отчёт для менеджера проекта
 
 > Период: октябрь 2025 — февраль 2026
-> Последнее обновление: 28.02.2026
+> Последнее обновление: 01.03.2026
 
 ---
 
@@ -16,9 +16,10 @@
 - 15 таблиц БД (новая схема + 2FA + templates)
 - 39 каналов управляются через API
 - 0 даунтаймов при миграции
-- **User Portal** — 10 SSR-страниц с cookie auth + role-based access
+- **User Portal** — 16 SSR-страниц с cookie auth + role-based access
 - **Admin Panel** — 6 SSR-страниц, защищён авторизацией
 - **91 тест** — все зелёные на проде
+- **Полный CRUD** — каналы, задачи, шаблоны через веб-портал
 
 ---
 
@@ -138,6 +139,23 @@
 | **Bug fix** | `/tasks/history` — IntEnum не сериализовался в mysql-connector | Done |
 | **SSL + Domain issues** | #105 (SSL), #106 (домен) — созданы и назначены на @mykytatishkin | Done |
 | **Portal Guide** | `docs/PORTAL_GUIDE.md` — полная документация портала | Done |
+
+### Фаза 8: Расширение портала (01.03.2026)
+
+| Фича | Описание | Статус |
+|------|----------|--------|
+| **Channel Detail** | `/app/channels/{id}` — per-channel stats, credentials, recent tasks | Done, задеплоен |
+| **Channel Edit** | `/app/channels/{id}/edit` — rename, toggle enabled, update RPA credentials | Done, задеплоен |
+| **Delete Channel** | Кнопка удаления на списке каналов и на детальной странице | Done, задеплоен |
+| **Task Detail** | `/app/tasks/{id}` — полная информация, reschedule, retry | Done, задеплоен |
+| **Retry Tasks** | Кнопка retry для failed/cancelled задач (reset to pending) | Done, задеплоен |
+| **Cancel Tasks** | Кнопка cancel для pending задач на списке и детальной странице | Done, задеплоен |
+| **File Upload** | AJAX-загрузка видео и thumbnail прямо из формы создания задачи | Done, задеплоен |
+| **Profile Edit** | Редактирование display name и timezone на /app/settings | Done, задеплоен |
+| **2FA UI** | Полный flow: setup → verify → backup codes → disable через портал | Done, задеплоен |
+| **Password Change** | Смена пароля с валидацией на /app/settings | Done, задеплоен |
+| **Template CRUD** | Создание шаблонов, детальная страница, добавление/удаление слотов | Done, задеплоен |
+| **Dashboard v2** | Active/total channels, success rate %, upcoming tasks, channel names | Done, задеплоен |
 
 ---
 

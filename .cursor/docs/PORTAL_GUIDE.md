@@ -1,6 +1,6 @@
 # Content Fabric — Web Portal Guide
 
-> Последнее обновление: 28.02.2026
+> Последнее обновление: 01.03.2026
 
 ---
 
@@ -62,49 +62,72 @@
 - После регистрации — автоматический логин
 
 ### 4.3 Dashboard (`/app/`)
-- **Карточки:** количество каналов, pending/completed/failed задачи
-- **Таблица:** 10 последних задач (id, channel, title, status, scheduled, created)
+- **Карточки:** каналы (active/total), total tasks, pending, completed, failed, success rate %
+- **Upcoming Tasks:** ближайшие запланированные задачи (до 5)
+- **Recent Tasks:** 10 последних задач с именами каналов и кликабельными ссылками
 - **Quick actions:** кнопки "Add Channel" и "Create Task"
 
 ### 4.4 Channels (`/app/channels`)
 - Таблица всех каналов: ID, name, YouTube ID, enabled, processing status, token status, created
-- Кнопка "Add Channel"
-- Статусы токенов: OK (зелёный) / Missing (красный)
+- Имена каналов — кликабельные ссылки на детальную страницу
+- Кнопки "Add Channel" и "Delete" для каждого канала
 
-### 4.5 Add Channel (`/app/channels/add`)
-- **Основные поля:**
-  - Channel Name (латиница)
-  - YouTube Channel ID или @Handle
-  - OAuth Console (выпадающий список из GCP credentials)
-  - Checkbox: Enabled
-- **RPA Credentials** (раскрывающийся блок):
-  - Login email, password
-  - TOTP secret (base32)
+### 4.5 Channel Detail (`/app/channels/{id}`)
+- **Информация о канале:** YouTube ID, enabled, tokens, дата создания
+- **Task Statistics:** total / pending / processing / completed / failed / cancelled
+- **Login Credentials:** email, TOTP status, proxy, last success/error
+- **Recent Tasks:** последние 20 задач канала с кнопками Cancel/Retry
+- **Действия:** Edit Channel, Delete Channel
+
+### 4.6 Channel Edit (`/app/channels/{id}/edit`)
+- Изменение имени канала, toggle enabled
+- Обновление RPA credentials (email, password, TOTP secret)
+
+### 4.7 Add Channel (`/app/channels/add`)
+- **Основные поля:** Channel Name, YouTube Channel ID/@Handle, OAuth Console, Enabled
+- **RPA Credentials:** Login email, password, TOTP secret (base32)
 - После создания → редирект на список каналов
 
-### 4.6 Tasks (`/app/tasks`)
+### 4.8 Tasks (`/app/tasks`)
 - **Карточки статистики:** pending, processing, completed, failed
 - **Фильтры:** по статусу, по каналу (dropdown с auto-submit)
-- **Таблица:** ID, channel name, title, status badge, scheduled, created, error message
-- Кнопка "Create Task"
+- **Таблица:** ID, channel (ссылка), title (ссылка на детали), status, scheduled, created, error
+- **Действия:** Cancel (pending), Retry (failed/cancelled)
 
-### 4.7 Create Task (`/app/tasks/new`)
-- **Обязательные поля:**
-  - Channel (dropdown enabled каналов)
-  - Title
-  - Source File Path (путь к видео на сервере)
-- **Опциональные поля:**
-  - Scheduled At (datetime-local picker)
-  - Description, Keywords, Thumbnail Path, Post Comment
+### 4.9 Task Detail (`/app/tasks/{id}`)
+- **Полная информация:** статус, канал, даты, файл, описание, keywords, thumbnail, upload ID, retries
+- **Блок ошибки** для failed задач
+- **Reschedule:** форма перепланирования для pending задач
+- **Действия:** Cancel Task, Retry Task
+
+### 4.10 Create Task (`/app/tasks/new`)
+- **Обязательные поля:** Channel, Title, Source File Path
+- **Загрузка файлов:** AJAX-загрузка видео и thumbnail прямо из браузера
+  - Выбор файла → загрузка на сервер → автозаполнение пути
+  - Поддержка: mp4, mkv, avi, mov, webm, flv, wmv, m4v (видео), jpg, png, webp (thumbnail)
+- **Опциональные поля:** Scheduled At, Description, Keywords, Thumbnail, Post Comment
 - Если scheduled_at не указано — задача создаётся на текущее время
 
-### 4.8 Schedule Templates (`/app/templates`)
+### 4.11 Schedule Templates (`/app/templates`)
 - Таблица шаблонов: ID, name, description, timezone, slots count, active/inactive
-- Создание шаблонов — через API (`POST /api/v1/templates/`)
+- Кликабельные имена → детальная страница
+- Кнопки "Create Template" и "Delete" для каждого
 
-### 4.9 Account Settings (`/app/settings`)
-- **Профиль:** username, email, display name, status, timezone, дата регистрации
-- **2FA секция:** статус (enabled/not enabled), инструкции по API для включения/отключения
+### 4.12 Template Detail (`/app/templates/{id}`)
+- **Информация:** timezone, количество слотов, статус (active/inactive)
+- **Time Slots:** таблица слотов (день недели, время, канал, тип медиа)
+- **Add Slot:** форма добавления (день, время, канал опционально)
+- **Действия:** удаление отдельных слотов, удаление всего шаблона
+
+### 4.13 Create Template (`/app/templates/new`)
+- Поля: имя, описание, timezone (UTC, Europe/Kyiv, US/Eastern и др.)
+
+### 4.14 Account Settings (`/app/settings`)
+- **Профиль:** редактирование display name и timezone, сохранение
+- **2FA:** полный UI-flow:
+  - "Enable 2FA" → показ TOTP secret → ввод кода → backup codes
+  - "Disable 2FA" с подтверждением пароля
+- **Смена пароля:** текущий пароль, новый пароль, подтверждение
 
 ---
 
@@ -181,19 +204,24 @@ Logout         → /app/logout
 ```
 prod/app/
 ├── views/
-│   ├── app_portal.py          # User portal routes (login, register, dashboard, etc.)
+│   ├── app_portal.py          # User portal routes (30+ routes)
 │   └── panel.py               # Admin panel routes (with admin auth check)
 ├── templates/
 │   ├── app_base.html          # User portal layout (sidebar + content)
 │   ├── app_login.html         # Login page (standalone)
 │   ├── app_register.html      # Register page (standalone)
-│   ├── app_dashboard.html     # User dashboard
-│   ├── app_channels.html      # Channel list
+│   ├── app_dashboard.html     # User dashboard (stats + upcoming + recent)
+│   ├── app_channels.html      # Channel list with delete buttons
 │   ├── app_channel_add.html   # Add channel form
-│   ├── app_tasks.html         # Task list with filters
-│   ├── app_task_new.html      # Create task form
-│   ├── app_templates.html     # Schedule templates
-│   ├── app_settings.html      # Account settings
+│   ├── app_channel_detail.html # Channel detail with stats & credentials
+│   ├── app_channel_edit.html  # Edit channel form
+│   ├── app_tasks.html         # Task list with filters, cancel & retry
+│   ├── app_task_new.html      # Create task with file upload
+│   ├── app_task_detail.html   # Task detail with reschedule & retry
+│   ├── app_templates.html     # Schedule templates list
+│   ├── app_template_new.html  # Create template form
+│   ├── app_template_detail.html # Template detail with slot management
+│   ├── app_settings.html      # Profile edit, 2FA UI, password change
 │   ├── base.html              # Admin panel layout
 │   ├── dashboard.html         # Admin dashboard
 │   ├── channels.html          # Admin channels
