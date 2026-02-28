@@ -21,8 +21,6 @@ def list_oauth_credentials(enabled_only: bool = True) -> list[dict]:
     return console_repo.list_consoles_brief(enabled_only=enabled_only)
 
 
-# backward-compat alias used by some endpoints
-list_google_consoles = list_oauth_credentials
 
 
 def get_console_by_id(console_id: int) -> dict | None:

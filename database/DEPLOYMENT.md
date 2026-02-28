@@ -18,10 +18,9 @@ The refactoring includes:
 |---|---|---|---|
 | 1 | [#69](https://github.com/mykytatishkin/content-fabric/pull/69) | `feature/db-refactoring` | Migration scripts 001-008, rollbacks, DDL |
 | 2 | [#70](https://github.com/mykytatishkin/content-fabric/pull/70) | `feature/update-prod-schema` | Prod API code (FastAPI repositories/schemas) |
-| 3 | [#71](https://github.com/mykytatishkin/content-fabric/pull/71) | `feature/update-legacy-schema` | Legacy Python code (50+ SQL queries, dataclasses) |
-| 4 | [#72](https://github.com/mykytatishkin/content-fabric/pull/72) | `feature/local-dev-compatible` | Docker local dev auto-setup |
+| 3 | [#72](https://github.com/mykytatishkin/content-fabric/pull/72) | `feature/local-dev-compatible` | Docker local dev auto-setup |
 
-**PRs #70 and #71 are based on #69** — merge #69 first.
+**PRs #70 is based on #69** — merge #69 first.
 
 ---
 
@@ -44,10 +43,9 @@ This starts:
 - **phpMyAdmin** on port `8080` (http://localhost:8080)
 
 Docker auto-runs init scripts in order:
-1. `docker/init/01-legacy-schema.sql` — creates legacy tables with test data
-2. `docker/init/02-new-schema-migration.sql` — runs all migrations 001-007
+1. `docker/init/02-new-schema-migration.sql` — creates new schema and runs all migrations
 
-After startup you'll have **24 tables**: 11 legacy + 13 new.
+After startup you'll have **15 tables** (new schema).
 
 ### Step 2: Verify locally
 
@@ -180,8 +178,7 @@ The 1 missing task is an orphan record (references non-existent channel) — thi
 
 After migration is verified:
 1. Deploy prod code changes (PR #70)
-2. Deploy legacy code changes (PR #71)
-3. Restart application services
+2. Restart application services
 
 ### Step 5: Monitor
 
@@ -243,26 +240,6 @@ Restore from backup. This is why backup is mandatory before starting.
 
 ---
 
-## Table Mapping Reference
-
-| New Table | Old Table | Records (approx) |
-|---|---|---|
-| `platform_users` | `user` | 1 |
-| `platform_projects` | *(new)* | 1 |
-| `platform_project_members` | *(new)* | 1 |
-| `platform_oauth_credentials` | `google_consoles` | 11 |
-| `platform_channels` | `youtube_channels` | 34 |
-| `platform_channel_tokens` | `youtube_tokens` | 34 |
-| `platform_channel_login_credentials` | `youtube_account_credentials` | 34 |
-| `content_upload_queue_tasks` | `tasks` | ~5078 |
-| `channel_daily_statistics` | `youtube_channel_daily` | ~2050 |
-| `channel_reauth_audit_logs` | `youtube_reauth_audit` | ~3550 |
-| `live_streaming_accounts` | `youtube_account` | varies |
-| `live_stream_configurations` | `stream` | varies |
-| `platform_schema_migrations` | `migration` | auto |
-
----
-
 ## UUID Migration (applied 28.02.2026)
 
 After the main schema migration, an additional migration was applied to add UUID columns for IDOR protection in the web portal:
@@ -303,7 +280,7 @@ SELECT COUNT(*) FROM platform_channels WHERE LENGTH(uuid) != 36;
 - [ ] Migrations 001-006 applied without errors
 - [ ] 007 verification — all rows show OK
 - [ ] FK integrity — all checks show 0
-- [ ] Application code deployed (PRs #70, #71)
+- [ ] Application code deployed (PR #70)
 - [ ] Task processing works on new tables
 - [ ] Reauth service works
 - [ ] Daily report generates correctly

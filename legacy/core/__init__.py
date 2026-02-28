@@ -1,3 +1,0 @@
-"""
-Content Fabric Core Module
-"""

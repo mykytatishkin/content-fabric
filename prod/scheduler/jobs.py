@@ -24,7 +24,7 @@ def enqueue_pending_tasks() -> int:
     count = 0
     for t in tasks:
         try:
-            # Mark as processing to prevent double-pickup by legacy worker
+            # Mark as processing to prevent double-pickup
             task_repo.mark_task_processing(t["id"])
 
             enqueue_video_upload(VideoUploadPayload(

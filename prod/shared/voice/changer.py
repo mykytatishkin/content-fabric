@@ -4,13 +4,13 @@ The heavy ML dependencies (torch, librosa, pyworld, etc.) live in the legacy
 module.  This file provides a clean interface for the queue worker.
 
 TODO (manual porting required):
-    1. Copy legacy/core/voice/voice_changer.py into prod/shared/voice/
+    Voice ML module not yet ported to prod. See unported/core/voice/ for reference.
+    1. Port unported/core/voice/voice_changer.py into prod/shared/voice/
     2. Install ML dependencies: torch, librosa, pyworld, soundfile, so-vits-svc
-    3. Download voice models to prod server (see legacy/data/voice_models/)
+    3. Download voice models to prod server
     4. Set VOICE_MODELS_DIR env var pointing to models directory
     5. Test with: rq worker voice --url redis://localhost:6379
     6. The GPU (Quadro P2000) is available on prod server for inference
-    Source: legacy/app/task_worker.py lines 527-628 (_process_voice_change_task)
 """
 
 from __future__ import annotations

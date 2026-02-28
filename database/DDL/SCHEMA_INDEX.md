@@ -144,22 +144,6 @@ Three tables have `uuid VARCHAR(36) NOT NULL UNIQUE` columns:
 
 These UUIDs are exposed in web portal URLs instead of sequential integer IDs to prevent IDOR attacks. Internal DB operations (JOINs, FKs) still use integer `id` columns for performance.
 
-## Legacy Table Mapping
-
-| Legacy Table | New Table |
-|---|---|
-| `user` | `platform_users` |
-| `google_consoles` | `platform_oauth_credentials` |
-| `youtube_channels` | `platform_channels` |
-| `youtube_tokens` | `platform_channel_tokens` |
-| `youtube_account_credentials` | `platform_channel_login_credentials` |
-| `tasks` | `content_upload_queue_tasks` |
-| `youtube_channel_daily` | `channel_daily_statistics` |
-| `youtube_reauth_audit` | `channel_reauth_audit_logs` |
-| `youtube_account` | `live_streaming_accounts` |
-| `stream` | `live_stream_configurations` |
-| `migration` | `platform_schema_migrations` |
-
 ## Migrations
 
 All migration scripts are in `database/migrations/`:
