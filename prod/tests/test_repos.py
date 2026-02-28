@@ -115,7 +115,7 @@ class TestChannelRepo:
             assert channel_repo.get_channel_by_id(999) is None
 
     def test_get_channel_found(self):
-        row = (1, "Ch", "UC123", 5, 1, 1, "at", "rt", None, datetime(2026, 1, 1), datetime(2026, 1, 1))
+        row = (1, "Ch", "UC123", 5, 1, 1, "at", "rt", None, 9, datetime(2026, 1, 1), datetime(2026, 1, 1))
         conn = _make_conn(fetchone=row)
         with _patch_repo(CH_MOD, conn):
             from shared.db.repositories import channel_repo

@@ -55,6 +55,7 @@ def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
         platform_channels.c.access_token,
         platform_channels.c.refresh_token,
         platform_channels.c.token_expires_at,
+        platform_channels.c.created_by,
         platform_channels.c.created_at,
         platform_channels.c.updated_at,
     ]
@@ -67,7 +68,8 @@ def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
         "id": row[0], "name": row[1], "platform_channel_id": row[2],
         "console_id": row[3], "enabled": bool(row[4]), "project_id": row[5],
         "access_token": row[6], "refresh_token": row[7],
-        "token_expires_at": row[8], "created_at": row[9], "updated_at": row[10],
+        "token_expires_at": row[8], "created_by": row[9],
+        "created_at": row[10], "updated_at": row[11],
     }
 
 
@@ -154,15 +156,19 @@ def add_channel(
     platform_channel_id: str,
     console_id: int | None = None,
     enabled: bool = True,
+    created_by: int | None = None,
 ) -> int | None:
     """Insert channel. Returns new id or None on duplicate."""
-    stmt = insert(platform_channels).values(
+    values = dict(
         project_id=project_id,
         name=name.strip(),
         platform_channel_id=platform_channel_id.strip(),
         console_id=console_id,
         enabled=int(enabled),
     )
+    if created_by is not None:
+        values["created_by"] = created_by
+    stmt = insert(platform_channels).values(**values)
     try:
         with get_connection() as conn:
             result = conn.execute(stmt)

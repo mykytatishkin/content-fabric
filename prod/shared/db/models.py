@@ -113,6 +113,7 @@ platform_channels = Table(
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("project_id", Integer, ForeignKey("platform_projects.id"), nullable=False),
     Column("console_id", Integer, ForeignKey("platform_oauth_credentials.id")),
+    Column("created_by", Integer, ForeignKey("platform_users.id")),
     Column("platform", String(50), nullable=False, server_default="youtube"),
     Column("name", String(255), nullable=False),
     Column("platform_channel_id", String(255), nullable=False),
