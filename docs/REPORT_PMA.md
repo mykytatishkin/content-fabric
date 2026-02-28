@@ -11,9 +11,9 @@
 
 **Ключевые цифры:**
 - 30 Pull Request'ов смерджено
-- 15 user stories закрыты
+- 22 user stories закрыты (из 33)
 - 6 микросервисов в проде
-- 13 таблиц БД (новая схема)
+- 15 таблиц БД (новая схема + 2FA + templates)
 - 39 каналов управляются через API
 - 0 даунтаймов при миграции
 
@@ -62,6 +62,22 @@
 | История задач | `GET /tasks/history` | Фильтрация по дате, каналу, статусу |
 | Аудит | `/var/log/cff-audit.log` | Логины, регистрации, создание/отмена задач |
 
+### Фаза 5: Расширение функциональности (28.02.2026)
+
+| Фича | Endpoint | Описание |
+|------|----------|----------|
+| 2FA (TOTP) | `POST /auth/2fa/setup,verify,disable` | Двухфакторная аутентификация + backup codes |
+| Шаблоны расписаний | `CRUD /templates/` | Шаблоны с time slots по дням недели |
+| Пакетная загрузка | `POST /tasks/batch` | До 100 задач за один запрос |
+| Прогресс загрузки | `GET /tasks/{id}/progress` | Redis-backed polling (stage + percentage) |
+| Календарь | `GET /tasks/calendar` | Задачи сгруппированные по дням |
+| Превью файлов | `GET /tasks/{id}/preview` | Инфо о файле + YouTube URL |
+| Статистика | `GET /tasks/stats/summary` | Агрегация задач по статусам |
+| Admin API | `GET /admin/dashboard,users,queue` | Обзор системы, управление юзерами |
+| Channel Stats | `GET /channels/{id}/stats` | Ежедневная статистика каналов |
+| Systemd | `prod/deploy/systemd/` | Unit files для всех 5 сервисов |
+| Security | Rate limiting, headers, validation | Полный аудит и хардинг |
+
 ---
 
 ## 3. Закрытые user stories
@@ -83,40 +99,30 @@
 | US-026 | Аудит и логи | Done |
 | #34 | Multiple GCC (мульти-консоль) | Done |
 | #15 | Clean up project files | Done |
+| US-003 | 2FA (TOTP) | Done |
+| US-011 | Прогресс обработки | Done |
+| US-012 | Предпросмотр видео | Done |
+| US-013 | Пакетная загрузка | Done |
+| US-015 | Шаблоны расписаний | Done |
+| US-016 | Календарь публикаций | Done |
+| US-025 | Admin Panel (API) | Done |
 
-**Итого: 15 задач закрыто из 33**
+**Итого: 22 задачи закрыто из 33**
 
 ---
 
-## 4. Открытые задачи (backlog)
+## 4. Открытые задачи (backlog) — 11 из 33
 
-### Высокий приоритет (backend-ready, нужен frontend)
-
-| # | Story | Блокер |
-|---|-------|--------|
-| US-015 | Шаблоны расписаний | Frontend UI |
-| US-016 | Календарь публикаций | Frontend UI |
-
-### Средний приоритет (нужна разработка)
+### Требуют внешних интеграций / оплаты
 
 | # | Story | Что нужно |
 |---|-------|-----------|
-| US-003 | 2FA (TOTP) | Backend + Frontend |
-| US-011 | Прогресс обработки | WebSocket / polling |
-| US-012 | Предпросмотр видео | Video player + signed URLs |
-| US-013 | Пакетная загрузка | Multipart upload API |
+| US-010 | Watermark (бесплатные видео) | C++ video processing |
+| US-022 | Реклама (18+) | Billing + ad network |
+| US-023 | Подписки и биллинг | Payment system (Stripe/LiqPay) |
+| US-024 | Тарифные ограничения | Usage counters + billing |
 
-### Низкий приоритет / future
-
-| # | Story | Что нужно |
-|---|-------|-----------|
-| US-010 | Watermark (бесплатные видео) | Video processing pipeline |
-| US-022 | Реклама (18+) | Billing integration |
-| US-023 | Подписки и биллинг | Payment system |
-| US-024 | Тарифные ограничения | Usage counters |
-| US-025 | Admin Panel | Full admin UI |
-
-### Legacy features
+### Legacy features (внешние зависимости)
 
 | # | Задача | Ответственный |
 |---|--------|---------------|
@@ -136,10 +142,12 @@
 | Действие | До | После |
 |----------|-------|-------|
 | Remote branches | 17 | 1 (main) |
-| Open issues | 33 | 18 |
+| Local branches | 15 | 1 (main) |
+| Open issues | 33 | 13 |
+| Closed issues | 0 | 20 |
 | Open PRs | 0 | 0 |
 
-Все feature branches удалены после merge. Репозиторий чистый.
+Все feature branches удалены. Репозиторий чистый.
 
 ---
 
@@ -162,13 +170,31 @@
 
 ---
 
-## 7. Риски и рекомендации
+## 7. Безопасность (аудит проведён 28.02)
+
+| Было | Стало |
+|------|-------|
+| JWT секрет hardcoded | Warning при отсутствии env var |
+| `reload=True` в проде | Отключено (ENV-based) |
+| CORS `*` | Ограничены методы и заголовки |
+| Нет rate limiting | 10 req/min логин, 5 req/min регистрация |
+| Нет security headers | X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
+| Stack traces в ответах | Sanitized error messages |
+| Нет path validation | Проверка на `..` в file paths |
+| `/docs` в проде | Скрыты при `DEBUG=False` |
+
+---
+
+## 8. Риски и рекомендации
 
 | Риск | Митигация |
 |------|-----------|
 | Legacy worker обрабатывает те же задачи | Scheduler помечает задачи status=3 (processing) — legacy не подхватит |
 | Файлы задач с путями `/var/www/fastuser/...` | Старые задачи зафейлились (файлы на другом сервере) — новые задачи с корректными путями |
-| JWT секрет hardcoded | Использовать `JWT_SECRET_KEY` из env переменных |
-| Нет systemd сервисов | Процессы запущены через nohup — при перезагрузке сервера нужно перезапускать |
+| Нет systemd сервисов | **Решено:** systemd unit files готовы (`prod/deploy/systemd/`), нужно установить на сервере |
+| Нет 2FA | **Решено:** TOTP 2FA с backup codes |
 
-**Рекомендация:** создать systemd unit files для автозапуска всех сервисов.
+**Рекомендация на ближайшее время:**
+1. Установить systemd сервисы: `bash prod/deploy/install-services.sh`
+2. Настроить HTTPS (certbot/Let's Encrypt)
+3. Настроить backup MySQL → S3/external
