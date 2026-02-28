@@ -1,0 +1,70 @@
+{% extends "app_base.html" %}
+{% block title %}Tasks — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Tasks</h2>
+    <a href="/app/tasks/new" class="btn btn-primary btn-sm">+ Create Task</a>
+</div>
+
+<div class="cards">
+    <div class="card"><div class="label">Pending</div><div class="value" style="color:#d97706;">{{ stats.get('pending', 0) }}</div></div>
+    <div class="card"><div class="label">Processing</div><div class="value" style="color:#2563eb;">{{ stats.get('processing', 0) }}</div></div>
+    <div class="card"><div class="label">Completed</div><div class="value" style="color:#16a34a;">{{ stats.get('completed', 0) }}</div></div>
+    <div class="card"><div class="label">Failed</div><div class="value" style="color:#dc2626;">{{ stats.get('failed', 0) }}</div></div>
+</div>
+
+<form method="GET" action="/app/tasks">
+<div class="filter-bar">
+    <div class="form-group">
+        <label>Status</label>
+        <select name="status" onchange="this.form.submit()">
+            <option value="">All</option>
+            <option value="0" {{ 'selected' if status_filter == '0' }}>Pending</option>
+            <option value="3" {{ 'selected' if status_filter == '3' }}>Processing</option>
+            <option value="1" {{ 'selected' if status_filter == '1' }}>Completed</option>
+            <option value="2" {{ 'selected' if status_filter == '2' }}>Failed</option>
+            <option value="4" {{ 'selected' if status_filter == '4' }}>Cancelled</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Channel</label>
+        <select name="channel_id" onchange="this.form.submit()">
+            <option value="">All</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {{ 'selected' if channel_filter == ch.id|string }}>{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+</form>
+
+{% if tasks %}
+<table>
+    <thead>
+        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th></tr>
+    </thead>
+    <tbody>
+        {% for t in tasks %}
+        <tr>
+            <td>{{ t.id }}</td>
+            <td>{{ t.channel_name }}</td>
+            <td>{{ (t.title or '—')[:50] }}</td>
+            <td>
+                {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
+                {% elif t.status == 1 %}<span class="badge badge-green">Completed</span>
+                {% elif t.status == 2 %}<span class="badge badge-red">Failed</span>
+                {% elif t.status == 3 %}<span class="badge badge-blue">Processing</span>
+                {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
+                {% endif %}
+            </td>
+            <td>{{ t.scheduled_at or '—' }}</td>
+            <td>{{ t.created_at }}</td>
+            <td style="font-size:0.75rem;color:#991b1b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:80] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;">No tasks found.</p>
+{% endif %}
+{% endblock %}
