@@ -69,15 +69,26 @@ prod/
 │   │   ├── channel.py               # ChannelCreate, ChannelResponse
 │   │   └── task.py                  # TaskCreate, TaskUpdate, TaskResponse
 │   ├── templates/                   # Jinja2 SSR templates
-│   │   ├── base.html                # Layout: sidebar + content area
-│   │   ├── dashboard.html           # System overview (channels, tasks, queue)
-│   │   ├── channels.html            # Channel list + status
-│   │   ├── tasks.html               # Task list + stats cards
-│   │   ├── users.html               # User management
-│   │   ├── credentials.html         # Login credentials + TOTP status
-│   │   └── payment.html             # Payment stub (requires Stripe/LiqPay)
+│   │   ├── base.html                # Admin panel layout (sidebar + content)
+│   │   ├── dashboard.html           # Admin: system overview
+│   │   ├── channels.html            # Admin: channel list
+│   │   ├── tasks.html               # Admin: task list + stats
+│   │   ├── users.html               # Admin: user management
+│   │   ├── credentials.html         # Admin: login credentials + TOTP
+│   │   ├── payment.html             # Admin: payment stub
+│   │   ├── app_base.html            # User portal layout (sidebar + content)
+│   │   ├── app_login.html           # User: login page (standalone)
+│   │   ├── app_register.html        # User: register page (standalone)
+│   │   ├── app_dashboard.html       # User: dashboard (stats + recent tasks)
+│   │   ├── app_channels.html        # User: channel list
+│   │   ├── app_channel_add.html     # User: add channel form
+│   │   ├── app_tasks.html           # User: task list + filters
+│   │   ├── app_task_new.html        # User: create task form
+│   │   ├── app_templates.html       # User: schedule templates
+│   │   └── app_settings.html        # User: profile + 2FA
 │   └── views/
-│       └── panel.py                 # SSR routes: GET /panel/{page}
+│       ├── app_portal.py            # User portal routes: /app/*
+│       └── panel.py                 # Admin panel routes: /panel/* (admin-only)
 │
 ├── shared/                          # Shared between API + workers + scheduler
 │   ├── env.py                       # .env loader (import first!)
@@ -278,7 +289,26 @@ Rate limits: login 10/min, register 5/min
 | `GET` | `/admin/users` | All users with stats |
 | `GET` | `/admin/queue` | Redis queue status |
 
-### SSR Admin Panel
+### User Portal (cookie auth required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/app/login` | Login page |
+| `POST` | `/app/login` | Login submit (email + password + optional TOTP) |
+| `GET` | `/app/register` | Register page |
+| `POST` | `/app/register` | Register submit |
+| `GET` | `/app/logout` | Clear cookie, redirect to login |
+| `GET` | `/app/` | User dashboard (stats + recent tasks) |
+| `GET` | `/app/channels` | User's channel list |
+| `GET` | `/app/channels/add` | Add channel form |
+| `POST` | `/app/channels/add` | Add channel submit |
+| `GET` | `/app/tasks` | Task list (filter by status/channel) |
+| `GET` | `/app/tasks/new` | Create task form |
+| `POST` | `/app/tasks/new` | Create task submit |
+| `GET` | `/app/templates` | Schedule templates list |
+| `GET` | `/app/settings` | Account settings (profile + 2FA) |
+
+### SSR Admin Panel (cookie auth + admin role required)
 
 | Method | Path | Description |
 |--------|------|-------------|
