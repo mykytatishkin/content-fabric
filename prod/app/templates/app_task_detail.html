@@ -1,0 +1,103 @@
+{% extends "app_base.html" %}
+{% block title %}Task #{{ task.id }} — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Task #{{ task.id }}</h2>
+    <div>
+        <a href="/app/tasks" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back to Tasks</a>
+        {% if task.status == 0 %}
+        <form method="POST" action="/app/tasks/{{ task.id }}/cancel" style="display:inline;">
+            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel Task</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<!-- Status & Info -->
+<div class="cards" style="margin-bottom:1.5rem;">
+    <div class="card">
+        <div class="label">Status</div>
+        <div class="value">
+            {% if task.status == 0 %}<span class="badge badge-yellow">Pending</span>
+            {% elif task.status == 1 %}<span class="badge badge-green">Completed</span>
+            {% elif task.status == 2 %}<span class="badge badge-red">Failed</span>
+            {% elif task.status == 3 %}<span class="badge badge-blue">Processing</span>
+            {% elif task.status == 4 %}<span class="badge badge-gray">Cancelled</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">Channel</div>
+        <div class="value" style="font-size:0.9rem;">
+            <a href="/app/channels/{{ task.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ task.channel_name }}</a>
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">Scheduled</div>
+        <div class="value" style="font-size:0.85rem;">{{ task.scheduled_at or '—' }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Created</div>
+        <div class="value" style="font-size:0.85rem;">{{ task.created_at }}</div>
+    </div>
+</div>
+
+<!-- Details -->
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:1rem;margin-bottom:1rem;">Details</h3>
+    <table style="box-shadow:none;">
+        <tr><td style="font-weight:600;width:150px;">Title</td><td>{{ task.title or '—' }}</td></tr>
+        <tr><td style="font-weight:600;">Media Type</td><td>{{ task.media_type or 'video' }}</td></tr>
+        <tr><td style="font-weight:600;">Source File</td><td style="font-size:0.8rem;word-break:break-all;">{{ task.source_file_path or '—' }}</td></tr>
+        {% if task.thumbnail_path %}
+        <tr><td style="font-weight:600;">Thumbnail</td><td style="font-size:0.8rem;word-break:break-all;">{{ task.thumbnail_path }}</td></tr>
+        {% endif %}
+        {% if task.description %}
+        <tr><td style="font-weight:600;">Description</td><td style="font-size:0.8rem;">{{ task.description }}</td></tr>
+        {% endif %}
+        {% if task.keywords %}
+        <tr><td style="font-weight:600;">Keywords</td><td style="font-size:0.8rem;">{{ task.keywords }}</td></tr>
+        {% endif %}
+        {% if task.post_comment %}
+        <tr><td style="font-weight:600;">Post Comment</td><td style="font-size:0.8rem;">{{ task.post_comment }}</td></tr>
+        {% endif %}
+        {% if task.upload_id %}
+        <tr><td style="font-weight:600;">Upload ID</td><td><code>{{ task.upload_id }}</code></td></tr>
+        {% endif %}
+        {% if task.completed_at %}
+        <tr><td style="font-weight:600;">Completed At</td><td>{{ task.completed_at }}</td></tr>
+        {% endif %}
+        <tr><td style="font-weight:600;">Retry Count</td><td>{{ task.retry_count or 0 }}</td></tr>
+    </table>
+</div>
+
+{% if task.error_message %}
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:1rem;margin-bottom:0.75rem;color:#dc2626;">Error</h3>
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:0.75rem;font-size:0.8rem;color:#991b1b;word-break:break-all;">
+        {{ task.error_message }}
+    </div>
+</div>
+{% endif %}
+
+<!-- Reschedule (only for pending tasks) -->
+{% if task.status == 0 %}
+<div class="form-card">
+    <h3 style="font-size:1rem;margin-bottom:1rem;">Reschedule</h3>
+    <form method="POST" action="/app/tasks/{{ task.id }}/reschedule">
+        <div class="form-group">
+            <label>New date & time</label>
+            <input type="datetime-local" name="scheduled_at" required style="max-width:300px;">
+        </div>
+        <button type="submit" class="btn btn-primary">Reschedule</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}
