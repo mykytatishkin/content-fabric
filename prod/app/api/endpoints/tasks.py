@@ -84,6 +84,35 @@ async def list_tasks(
     )
 
 
+@router.get("/calendar")
+async def task_calendar(
+    date_from: datetime = Query(..., alias="from"),
+    date_to: datetime = Query(..., alias="to"),
+    channel_id: int | None = None,
+    user: dict = Depends(get_current_user),
+):
+    """Tasks grouped by day for calendar view."""
+    from collections import defaultdict
+    tasks = task_repo.get_all_tasks(
+        channel_id=channel_id,
+        date_from=date_from,
+        date_to=date_to,
+        limit=500,
+    )
+    by_day: dict[str, list] = defaultdict(list)
+    for t in tasks:
+        day = t["scheduled_at"].strftime("%Y-%m-%d") if t.get("scheduled_at") else "unscheduled"
+        by_day[day].append({
+            "id": t["id"],
+            "title": t.get("title"),
+            "channel_id": t["channel_id"],
+            "status": t["status"],
+            "scheduled_at": t.get("scheduled_at"),
+            "media_type": t.get("media_type"),
+        })
+    return {"days": dict(sorted(by_day.items())), "total": len(tasks)}
+
+
 @router.get("/history", response_model=TaskListResponse)
 async def task_history(
     channel_id: int | None = None,
@@ -187,6 +216,59 @@ async def get_task_progress(task_id: int, user: dict = Depends(get_current_user)
         "bytes_uploaded": progress.get("bytes_uploaded", 0),
         "total_bytes": progress.get("total_bytes", 0),
         "stage": progress.get("stage", "unknown"),
+    }
+
+
+@router.get("/{task_id}/preview")
+async def get_task_preview(task_id: int, user: dict = Depends(get_current_user)):
+    """Get file info for task preview (file existence, size, type)."""
+    import os
+    task = task_repo.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    source = task.get("source_file_path", "")
+    thumb = task.get("thumbnail_path", "")
+
+    source_info = _file_info(source) if source else None
+    thumb_info = _file_info(thumb) if thumb else None
+
+    return {
+        "task_id": task["id"],
+        "source_file": source_info,
+        "thumbnail": thumb_info,
+        "upload_url": f"https://www.youtube.com/watch?v={task['upload_id']}" if task.get("upload_id") else None,
+    }
+
+
+@router.get("/stats/summary")
+async def task_stats(user: dict = Depends(get_current_user)):
+    """Aggregate task statistics."""
+    from shared.db.connection import get_connection
+    from sqlalchemy import text
+    sql = text(
+        "SELECT status, COUNT(*) as cnt FROM content_upload_queue_tasks GROUP BY status"
+    )
+    with get_connection() as conn:
+        rows = conn.execute(sql).fetchall()
+
+    status_names = {0: "pending", 1: "completed", 2: "failed", 3: "processing", 4: "cancelled"}
+    stats = {status_names.get(r[0], f"unknown_{r[0]}"): r[1] for r in rows}
+    stats["total"] = sum(r[1] for r in rows)
+    return stats
+
+
+def _file_info(path: str) -> dict | None:
+    """Get basic file info without reading content."""
+    import os
+    if not path or not os.path.exists(path):
+        return {"path": path, "exists": False}
+    stat = os.stat(path)
+    return {
+        "path": path,
+        "exists": True,
+        "size_bytes": stat.st_size,
+        "size_mb": round(stat.st_size / (1024 * 1024), 2),
     }
 
 

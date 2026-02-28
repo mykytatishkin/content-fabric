@@ -111,3 +111,14 @@ async def get_channel(channel_id: int):
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
     return Channel(**channel)
+
+
+@router.get("/{channel_id}/stats")
+async def get_channel_stats(channel_id: int, days: int = 30):
+    """Get daily statistics for a channel."""
+    from shared.db.repositories import stats_repo
+    channel = get_channel_by_id(channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    stats = stats_repo.get_channel_stats(channel_id, days=days)
+    return {"channel_id": channel_id, "days": days, "stats": stats}
