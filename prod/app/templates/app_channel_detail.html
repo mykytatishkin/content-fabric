@@ -5,8 +5,8 @@
     <h2>{{ channel.name }}</h2>
     <div>
         <a href="/app/channels" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back to Channels</a>
-        <a href="/app/channels/{{ channel.id }}/edit" class="btn btn-primary btn-sm">Edit Channel</a>
-        <form method="POST" action="/app/channels/{{ channel.id }}/delete" style="display:inline;"
+        <a href="/app/channels/{{ channel.uuid }}/edit" class="btn btn-primary btn-sm">Edit Channel</a>
+        <form method="POST" action="/app/channels/{{ channel.uuid }}/delete" style="display:inline;"
               onsubmit="return confirm('Delete channel {{ channel.name }}? This cannot be undone.')">
             <button type="submit" class="btn btn-danger btn-sm">Delete Channel</button>
         </form>
@@ -110,7 +110,7 @@
             <td style="font-size:0.75rem;color:#991b1b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:80] }}</td>
             <td>
                 {% if t.status == 0 %}
-                <form method="POST" action="/app/tasks/{{ t.id }}/cancel" style="display:inline;">
+                <form method="POST" action="/app/tasks/{{ t.uuid }}/cancel" style="display:inline;">
                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel</button>
                 </form>
                 {% endif %}

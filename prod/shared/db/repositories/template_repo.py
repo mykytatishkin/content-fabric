@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid as _uuid
 from typing import Any
 
 from sqlalchemy import text
@@ -16,22 +17,30 @@ def create_template(
     description: str | None = None,
     timezone: str = "UTC",
 ) -> int:
+    new_uuid = str(_uuid.uuid4())
     sql = text(
-        "INSERT INTO schedule_templates (project_id, created_by, name, description, timezone, created_at, updated_at) "
-        "VALUES (:pid, :uid, :name, :desc, :tz, NOW(), NOW())"
+        "INSERT INTO schedule_templates (uuid, project_id, created_by, name, description, timezone, created_at, updated_at) "
+        "VALUES (:uuid, :pid, :uid, :name, :desc, :tz, NOW(), NOW())"
     )
     with get_connection() as conn:
         result = conn.execute(sql, {
-            "pid": project_id, "uid": created_by, "name": name,
-            "desc": description, "tz": timezone,
+            "uuid": new_uuid, "pid": project_id, "uid": created_by,
+            "name": name, "desc": description, "tz": timezone,
         })
-        return result.lastrowid
+        return new_uuid
 
 
 def get_template(template_id: int) -> dict[str, Any] | None:
     sql = text("SELECT * FROM schedule_templates WHERE id = :tid")
     with get_connection() as conn:
         row = conn.execute(sql, {"tid": template_id}).mappings().fetchone()
+    return dict(row) if row else None
+
+
+def get_template_by_uuid(uuid: str) -> dict[str, Any] | None:
+    sql = text("SELECT * FROM schedule_templates WHERE uuid = :uuid")
+    with get_connection() as conn:
+        row = conn.execute(sql, {"uuid": uuid}).mappings().fetchone()
     return dict(row) if row else None
 
 
@@ -93,7 +102,10 @@ def add_slot(template_id: int, day_of_week: int, time_utc: str,
 
 def get_slots(template_id: int) -> list[dict[str, Any]]:
     sql = text(
-        "SELECT * FROM schedule_template_slots WHERE template_id = :tid ORDER BY day_of_week, time_utc"
+        "SELECT s.*, pc.uuid AS channel_uuid, pc.name AS channel_name "
+        "FROM schedule_template_slots s "
+        "LEFT JOIN platform_channels pc ON pc.id = s.channel_id "
+        "WHERE s.template_id = :tid ORDER BY s.day_of_week, s.time_utc"
     )
     with get_connection() as conn:
         rows = conn.execute(sql, {"tid": template_id}).mappings().fetchall()

@@ -5,7 +5,7 @@
     <h2>{{ template.name }}</h2>
     <div>
         <a href="/app/templates" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back</a>
-        <form method="POST" action="/app/templates/{{ template.id }}/delete" style="display:inline;"
+        <form method="POST" action="/app/templates/{{ template.uuid }}/delete" style="display:inline;"
               onsubmit="return confirm('Delete this template and all its slots?')">
             <button type="submit" class="btn btn-danger btn-sm">Delete Template</button>
         </form>
@@ -52,15 +52,17 @@
             <td><strong>{{ day_names.get(s.day_of_week, s.day_of_week) }}</strong></td>
             <td>{{ s.time_utc }}</td>
             <td>
-                {% if s.channel_id %}
-                <a href="/app/channels/{{ s.channel_id }}" style="color:#0ea5e9;text-decoration:none;">Channel #{{ s.channel_id }}</a>
+                {% if s.channel_id and s.channel_uuid %}
+                <a href="/app/channels/{{ s.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ s.channel_name }}</a>
+                {% elif s.channel_id %}
+                <span>Channel #{{ s.channel_id }}</span>
                 {% else %}
                 <span style="color:#64748b;">Any</span>
                 {% endif %}
             </td>
             <td>{{ s.media_type or 'video' }}</td>
             <td>
-                <form method="POST" action="/app/templates/{{ template.id }}/slots/{{ s.id }}/delete" style="display:inline;">
+                <form method="POST" action="/app/templates/{{ template.uuid }}/slots/{{ s.id }}/delete" style="display:inline;">
                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Remove this slot?')">Remove</button>
                 </form>
             </td>
@@ -75,7 +77,7 @@
 <!-- Add Slot Form -->
 <div class="form-card">
     <h3 style="font-size:1rem;margin-bottom:1rem;">Add Slot</h3>
-    <form method="POST" action="/app/templates/{{ template.id }}/slots">
+    <form method="POST" action="/app/templates/{{ template.uuid }}/slots">
         <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap;">
             <div class="form-group" style="margin-bottom:0;">
                 <label>Day of Week *</label>

@@ -15,7 +15,7 @@
         {% for ch in channels %}
         <tr>
             <td>{{ ch.id }}</td>
-            <td><a href="/app/channels/{{ ch.id }}" style="color:#0ea5e9;font-weight:600;text-decoration:none;">{{ ch.name }}</a></td>
+            <td><a href="/app/channels/{{ ch.uuid }}" style="color:#0ea5e9;font-weight:600;text-decoration:none;">{{ ch.name }}</a></td>
             <td style="font-size:0.75rem;color:#64748b;">{{ ch.platform_channel_id }}</td>
             <td>
                 {% if ch.enabled %}<span class="badge badge-green">Yes</span>
@@ -31,7 +31,7 @@
             </td>
             <td>{{ ch.created_at }}</td>
             <td>
-                <form method="POST" action="/app/channels/{{ ch.id }}/delete" style="display:inline;"
+                <form method="POST" action="/app/channels/{{ ch.uuid }}/delete" style="display:inline;"
                       onsubmit="return confirm('Delete {{ ch.name }}?')">
                     <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                 </form>

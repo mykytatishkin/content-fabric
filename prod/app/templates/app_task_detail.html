@@ -6,12 +6,12 @@
     <div>
         <a href="/app/tasks" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back to Tasks</a>
         {% if task.status == 0 %}
-        <form method="POST" action="/app/tasks/{{ task.id }}/cancel" style="display:inline;">
+        <form method="POST" action="/app/tasks/{{ task.uuid }}/cancel" style="display:inline;">
             <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel Task</button>
         </form>
         {% endif %}
         {% if task.status in [2, 4] %}
-        <form method="POST" action="/app/tasks/{{ task.id }}/retry" style="display:inline;">
+        <form method="POST" action="/app/tasks/{{ task.uuid }}/retry" style="display:inline;">
             <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Retry this task?')">Retry Task</button>
         </form>
         {% endif %}
@@ -41,7 +41,7 @@
     <div class="card">
         <div class="label">Channel</div>
         <div class="value" style="font-size:0.9rem;">
-            <a href="/app/channels/{{ task.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ task.channel_name }}</a>
+            <a href="/app/channels/{{ task.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ task.channel_name }}</a>
         </div>
     </div>
     <div class="card">
@@ -96,7 +96,7 @@
 {% if task.status == 0 %}
 <div class="form-card">
     <h3 style="font-size:1rem;margin-bottom:1rem;">Reschedule</h3>
-    <form method="POST" action="/app/tasks/{{ task.id }}/reschedule">
+    <form method="POST" action="/app/tasks/{{ task.uuid }}/reschedule">
         <div class="form-group">
             <label>New date & time</label>
             <input type="datetime-local" name="scheduled_at" required style="max-width:300px;">

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid as _uuid
 from datetime import datetime
 from typing import Any
 
@@ -43,6 +44,7 @@ def create_task(
 
     add_info_json = json.dumps(legacy_add_info) if legacy_add_info else None
     values = dict(
+        uuid=str(_uuid.uuid4()),
         project_id=project_id,
         channel_id=channel_id,
         media_type=media_type,
@@ -63,17 +65,31 @@ def create_task(
         return result.lastrowid
 
 
-def get_task(task_id: int) -> dict[str, Any] | None:
+def _task_cols():
     t = content_upload_queue_tasks
-    cols = [
+    return [
         t.c.id, t.c.channel_id, t.c.media_type, t.c.status,
         t.c.created_at, t.c.source_file_path, t.c.thumbnail_path,
         t.c.title, t.c.description, t.c.keywords, t.c.post_comment,
         t.c.legacy_add_info, t.c.scheduled_at, t.c.completed_at,
         t.c.upload_id, t.c.error_message, t.c.retry_count,
-        t.c.created_by,
+        t.c.created_by, t.c.uuid,
     ]
-    stmt = select(*cols).where(t.c.id == task_id)
+
+
+def get_task(task_id: int) -> dict[str, Any] | None:
+    t = content_upload_queue_tasks
+    stmt = select(*_task_cols()).where(t.c.id == task_id)
+    with get_connection() as conn:
+        row = conn.execute(stmt).fetchone()
+    if not row:
+        return None
+    return _row_to_dict(row)
+
+
+def get_task_by_uuid(uuid: str) -> dict[str, Any] | None:
+    t = content_upload_queue_tasks
+    stmt = select(*_task_cols()).where(t.c.uuid == uuid)
     with get_connection() as conn:
         row = conn.execute(stmt).fetchone()
     if not row:
@@ -277,6 +293,7 @@ def create_tasks_batch(tasks: list[dict[str, Any]]) -> list[int]:
         for t in tasks:
             add_info = json.dumps(t.get("legacy_add_info")) if t.get("legacy_add_info") else None
             stmt = insert(content_upload_queue_tasks).values(
+                uuid=str(_uuid.uuid4()),
                 project_id=project_id,
                 channel_id=t["channel_id"],
                 media_type=t.get("media_type", "video"),
@@ -330,4 +347,6 @@ def _row_to_dict(row) -> dict[str, Any]:
     }
     if len(row) > 17:
         d["created_by"] = row[17]
+    if len(row) > 18:
+        d["uuid"] = row[18]
     return d

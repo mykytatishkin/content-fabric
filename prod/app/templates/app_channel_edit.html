@@ -3,7 +3,7 @@
 {% block content %}
 <div class="header-row">
     <h2>Edit Channel</h2>
-    <a href="/app/channels/{{ channel.id }}" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back</a>
+    <a href="/app/channels/{{ channel.uuid }}" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back</a>
 </div>
 
 {% if message %}
@@ -14,7 +14,7 @@
 {% endif %}
 
 <div class="form-card" style="margin-bottom:1.5rem;">
-    <form method="POST" action="/app/channels/{{ channel.id }}/edit">
+    <form method="POST" action="/app/channels/{{ channel.uuid }}/edit">
         <div class="form-group">
             <label>Channel Name *</label>
             <input type="text" name="name" required value="{{ channel.name }}">
@@ -48,7 +48,7 @@
         </div>
 
         <button type="submit" class="btn btn-primary">Save Changes</button>
-        <a href="/app/channels/{{ channel.id }}" style="margin-left:1rem;font-size:0.85rem;color:#64748b;">Cancel</a>
+        <a href="/app/channels/{{ channel.uuid }}" style="margin-left:1rem;font-size:0.85rem;color:#64748b;">Cancel</a>
     </form>
 </div>
 {% endblock %}

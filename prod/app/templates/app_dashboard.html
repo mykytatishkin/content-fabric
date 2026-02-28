@@ -45,8 +45,8 @@
     <tbody>
         {% for t in upcoming_tasks %}
         <tr>
-            <td><a href="/app/tasks/{{ t.id }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
-            <td><a href="/app/channels/{{ t.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
+            <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
+            <td><a href="/app/channels/{{ t.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
             <td>{{ (t.title or '—')[:50] }}</td>
             <td>{{ t.scheduled_at }}</td>
         </tr>
@@ -64,8 +64,8 @@
     <tbody>
         {% for t in recent_tasks %}
         <tr>
-            <td><a href="/app/tasks/{{ t.id }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
-            <td><a href="/app/channels/{{ t.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
+            <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
+            <td><a href="/app/channels/{{ t.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
             <td>{{ (t.title or '—')[:50] }}</td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
