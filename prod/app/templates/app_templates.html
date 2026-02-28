@@ -15,7 +15,7 @@
         {% for t in templates_list %}
         <tr>
             <td>{{ t.id }}</td>
-            <td><a href="/app/templates/{{ t.id }}" style="color:#0ea5e9;font-weight:600;text-decoration:none;">{{ t.name }}</a></td>
+            <td><a href="/app/templates/{{ t.uuid }}" style="color:#0ea5e9;font-weight:600;text-decoration:none;">{{ t.name }}</a></td>
             <td>{{ t.description or '—' }}</td>
             <td>{{ t.timezone }}</td>
             <td>{{ t.slot_count }}</td>
@@ -24,7 +24,7 @@
                 {% else %}<span class="badge badge-gray">Inactive</span>{% endif %}
             </td>
             <td>
-                <form method="POST" action="/app/templates/{{ t.id }}/delete" style="display:inline;"
+                <form method="POST" action="/app/templates/{{ t.uuid }}/delete" style="display:inline;"
                       onsubmit="return confirm('Delete this template?')">
                     <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                 </form>

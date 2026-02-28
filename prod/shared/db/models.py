@@ -111,6 +111,7 @@ platform_oauth_credentials = Table(
 platform_channels = Table(
     "platform_channels", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("uuid", String(36), nullable=False, unique=True),
     Column("project_id", Integer, ForeignKey("platform_projects.id"), nullable=False),
     Column("console_id", Integer, ForeignKey("platform_oauth_credentials.id")),
     Column("created_by", Integer, ForeignKey("platform_users.id")),
@@ -164,6 +165,7 @@ platform_channel_login_credentials = Table(
 content_upload_queue_tasks = Table(
     "content_upload_queue_tasks", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("uuid", String(36), nullable=False, unique=True),
     Column("project_id", Integer, ForeignKey("platform_projects.id"), nullable=False),
     Column("channel_id", Integer, ForeignKey("platform_channels.id"), nullable=False),
     Column("created_by", Integer, ForeignKey("platform_users.id")),
@@ -272,6 +274,7 @@ live_stream_configurations = Table(
 schedule_templates = Table(
     "schedule_templates", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("uuid", String(36), nullable=False, unique=True),
     Column("project_id", Integer, ForeignKey("platform_projects.id"), nullable=False),
     Column("created_by", Integer, ForeignKey("platform_users.id")),
     Column("name", String(255), nullable=False),

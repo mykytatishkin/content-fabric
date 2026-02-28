@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid as _uuid
 from typing import Any
 
 from sqlalchemy import select, insert, text
@@ -70,6 +71,36 @@ def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
         "access_token": row[6], "refresh_token": row[7],
         "token_expires_at": row[8], "created_by": row[9],
         "created_at": row[10], "updated_at": row[11],
+    }
+
+
+def get_channel_by_uuid(uuid: str) -> dict[str, Any] | None:
+    cols = [
+        platform_channels.c.id,
+        platform_channels.c.uuid,
+        platform_channels.c.name,
+        platform_channels.c.platform_channel_id,
+        platform_channels.c.console_id,
+        platform_channels.c.enabled,
+        platform_channels.c.project_id,
+        platform_channels.c.access_token,
+        platform_channels.c.refresh_token,
+        platform_channels.c.token_expires_at,
+        platform_channels.c.created_by,
+        platform_channels.c.created_at,
+        platform_channels.c.updated_at,
+    ]
+    stmt = select(*cols).where(platform_channels.c.uuid == uuid)
+    with get_connection() as conn:
+        row = conn.execute(stmt).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0], "uuid": row[1], "name": row[2], "platform_channel_id": row[3],
+        "console_id": row[4], "enabled": bool(row[5]), "project_id": row[6],
+        "access_token": row[7], "refresh_token": row[8],
+        "token_expires_at": row[9], "created_by": row[10],
+        "created_at": row[11], "updated_at": row[12],
     }
 
 
@@ -160,6 +191,7 @@ def add_channel(
 ) -> int | None:
     """Insert channel. Returns new id or None on duplicate."""
     values = dict(
+        uuid=str(_uuid.uuid4()),
         project_id=project_id,
         name=name.strip(),
         platform_channel_id=platform_channel_id.strip(),

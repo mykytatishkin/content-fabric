@@ -47,8 +47,8 @@
         {% for t in tasks %}
         <tr>
             <td>{{ t.id }}</td>
-            <td><a href="/app/channels/{{ t.channel_id }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
-            <td><a href="/app/tasks/{{ t.id }}" style="color:#0ea5e9;text-decoration:none;">{{ (t.title or '—')[:50] }}</a></td>
+            <td><a href="/app/channels/{{ t.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
+            <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ (t.title or '—')[:50] }}</a></td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
                 {% elif t.status == 1 %}<span class="badge badge-green">Completed</span>
@@ -62,11 +62,11 @@
             <td style="font-size:0.75rem;color:#991b1b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:80] }}</td>
             <td style="white-space:nowrap;">
                 {% if t.status == 0 %}
-                <form method="POST" action="/app/tasks/{{ t.id }}/cancel" style="display:inline;">
+                <form method="POST" action="/app/tasks/{{ t.uuid }}/cancel" style="display:inline;">
                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel</button>
                 </form>
                 {% elif t.status in [2, 4] %}
-                <form method="POST" action="/app/tasks/{{ t.id }}/retry" style="display:inline;">
+                <form method="POST" action="/app/tasks/{{ t.uuid }}/retry" style="display:inline;">
                     <button type="submit" class="btn btn-primary btn-sm">Retry</button>
                 </form>
                 {% endif %}

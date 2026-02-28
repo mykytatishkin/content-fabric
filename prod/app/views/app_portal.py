@@ -209,28 +209,29 @@ async def dashboard(request: Request):
             ctx["success_rate"] = round(ctx["tasks_completed"] / done * 100) if done > 0 else 0
 
             recent = conn.execute(text(
-                f"SELECT t.id, t.channel_id, pc.name, t.title, t.status, t.scheduled_at, t.created_at "
+                f"SELECT t.id, t.uuid, t.channel_id, pc.name, pc.uuid, t.title, t.status, t.scheduled_at, t.created_at "
                 f"FROM content_upload_queue_tasks t "
                 f"LEFT JOIN platform_channels pc ON t.channel_id = pc.id "
                 f"WHERE {t_where} "
                 f"ORDER BY t.created_at DESC LIMIT 10"
             ), t_params).fetchall()
             ctx["recent_tasks"] = [
-                {"id": r[0], "channel_id": r[1], "channel_name": r[2] or "?",
-                 "title": r[3], "status": r[4], "scheduled_at": r[5], "created_at": r[6]}
+                {"id": r[0], "uuid": r[1], "channel_id": r[2], "channel_name": r[3] or "?",
+                 "channel_uuid": r[4] or "", "title": r[5], "status": r[6],
+                 "scheduled_at": r[7], "created_at": r[8]}
                 for r in recent
             ]
 
             upcoming = conn.execute(text(
-                f"SELECT t.id, t.channel_id, pc.name, t.title, t.scheduled_at "
+                f"SELECT t.id, t.uuid, t.channel_id, pc.name, pc.uuid, t.title, t.scheduled_at "
                 f"FROM content_upload_queue_tasks t "
                 f"LEFT JOIN platform_channels pc ON t.channel_id = pc.id "
                 f"WHERE t.status = 0 AND t.scheduled_at > NOW() AND {t_where} "
                 f"ORDER BY t.scheduled_at ASC LIMIT 5"
             ), t_params).fetchall()
             ctx["upcoming_tasks"] = [
-                {"id": r[0], "channel_id": r[1], "channel_name": r[2] or "?",
-                 "title": r[3], "scheduled_at": r[4]}
+                {"id": r[0], "uuid": r[1], "channel_id": r[2], "channel_name": r[3] or "?",
+                 "channel_uuid": r[4] or "", "title": r[5], "scheduled_at": r[6]}
                 for r in upcoming
             ]
     except Exception as e:
@@ -255,14 +256,14 @@ async def channels_page(request: Request):
     try:
         with get_connection() as conn:
             rows = conn.execute(text(f"""
-                SELECT id, name, platform_channel_id, enabled, processing_status,
+                SELECT id, uuid, name, platform_channel_id, enabled, processing_status,
                        access_token IS NOT NULL as has_tokens, created_at
                 FROM platform_channels WHERE {ch_where} ORDER BY id
             """), ch_params).fetchall()
             channels = [
-                {"id": r[0], "name": r[1], "platform_channel_id": r[2],
-                 "enabled": bool(r[3]), "processing_status": bool(r[4]),
-                 "has_tokens": bool(r[5]), "created_at": r[6]}
+                {"id": r[0], "uuid": r[1], "name": r[2], "platform_channel_id": r[3],
+                 "enabled": bool(r[4]), "processing_status": bool(r[5]),
+                 "has_tokens": bool(r[6]), "created_at": r[7]}
                 for r in rows
             ]
     except Exception as e:
@@ -339,8 +340,8 @@ async def channel_add_submit(
     return RedirectResponse("/app/channels", status_code=302)
 
 
-@router.get("/channels/{channel_id}", response_class=HTMLResponse)
-async def channel_detail(request: Request, channel_id: int):
+@router.get("/channels/{channel_uuid}", response_class=HTMLResponse)
+async def channel_detail(request: Request, channel_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
@@ -349,12 +350,13 @@ async def channel_detail(request: Request, channel_id: int):
     from shared.db.repositories import channel_repo
     from sqlalchemy import text
 
-    channel = channel_repo.get_channel_by_id(channel_id)
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
     if not channel:
         return RedirectResponse("/app/channels", status_code=302)
     if not _is_admin(user) and channel.get("created_by") != user["id"]:
         return RedirectResponse("/app/channels", status_code=302)
 
+    channel_id = channel["id"]
     stats = {}
     recent_tasks = []
     credentials = None
@@ -371,13 +373,13 @@ async def channel_detail(request: Request, channel_id: int):
 
             # Recent tasks
             task_rows = conn.execute(text(
-                "SELECT id, title, status, scheduled_at, created_at, error_message "
+                "SELECT id, uuid, title, status, scheduled_at, created_at, error_message "
                 "FROM content_upload_queue_tasks WHERE channel_id = :cid "
                 "ORDER BY created_at DESC LIMIT 20"
             ), {"cid": channel_id}).fetchall()
             recent_tasks = [
-                {"id": r[0], "title": r[1], "status": r[2],
-                 "scheduled_at": r[3], "created_at": r[4], "error_message": r[5]}
+                {"id": r[0], "uuid": r[1], "title": r[2], "status": r[3],
+                 "scheduled_at": r[4], "created_at": r[5], "error_message": r[6]}
                 for r in task_rows
             ]
 
@@ -403,22 +405,22 @@ async def channel_detail(request: Request, channel_id: int):
     })
 
 
-@router.post("/channels/{channel_id}/delete")
-async def channel_delete(request: Request, channel_id: int):
+@router.post("/channels/{channel_uuid}/delete")
+async def channel_delete(request: Request, channel_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import channel_repo
-    channel = channel_repo.get_channel_by_id(channel_id)
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
     if not channel or (not _is_admin(user) and channel.get("created_by") != user["id"]):
         return RedirectResponse("/app/channels", status_code=302)
-    channel_repo.delete_channel(channel_id)
+    channel_repo.delete_channel(channel["id"])
     return RedirectResponse("/app/channels", status_code=302)
 
 
-@router.get("/channels/{channel_id}/edit", response_class=HTMLResponse)
-async def channel_edit_page(request: Request, channel_id: int):
+@router.get("/channels/{channel_uuid}/edit", response_class=HTMLResponse)
+async def channel_edit_page(request: Request, channel_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
@@ -427,7 +429,7 @@ async def channel_edit_page(request: Request, channel_id: int):
     from shared.db.repositories import channel_repo, console_repo
     from sqlalchemy import text
 
-    channel = channel_repo.get_channel_by_id(channel_id)
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
     if not channel:
         return RedirectResponse("/app/channels", status_code=302)
     if not _is_admin(user) and channel.get("created_by") != user["id"]:
@@ -441,7 +443,7 @@ async def channel_edit_page(request: Request, channel_id: int):
             row = conn.execute(text(
                 "SELECT login_email, login_password, totp_secret, proxy_host, enabled "
                 "FROM platform_channel_login_credentials WHERE channel_id = :cid"
-            ), {"cid": channel_id}).fetchone()
+            ), {"cid": channel["id"]}).fetchone()
             if row:
                 credentials = {
                     "login_email": row[0], "login_password": row[1],
@@ -457,10 +459,10 @@ async def channel_edit_page(request: Request, channel_id: int):
     })
 
 
-@router.post("/channels/{channel_id}/edit", response_class=HTMLResponse)
+@router.post("/channels/{channel_uuid}/edit", response_class=HTMLResponse)
 async def channel_edit_submit(
     request: Request,
-    channel_id: int,
+    channel_uuid: str,
     name: str = Form(...),
     enabled: bool = Form(False),
     login_email: str = Form(""),
@@ -473,10 +475,11 @@ async def channel_edit_submit(
 
     from shared.db.repositories import channel_repo
 
-    channel = channel_repo.get_channel_by_id(channel_id)
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
     if not channel or (not _is_admin(user) and channel.get("created_by") != user["id"]):
         return RedirectResponse("/app/channels", status_code=302)
 
+    channel_id = channel["id"]
     channel_repo.update_channel(channel_id, name=name.strip(), enabled=enabled)
 
     if login_email:
@@ -493,7 +496,7 @@ async def channel_edit_submit(
                 totp_secret=totp_secret or None,
             )
 
-    return RedirectResponse(f"/app/channels/{channel_id}", status_code=302)
+    return RedirectResponse(f"/app/channels/{channel_uuid}", status_code=302)
 
 
 # ── Tasks ────────────────────────────────────────────────────────────
@@ -541,7 +544,7 @@ async def tasks_page(request: Request):
                 params["channel_id"] = int(channel_filter)
 
             rows = conn.execute(text(f"""
-                SELECT t.id, t.channel_id, pc.name, t.media_type, t.title,
+                SELECT t.id, t.uuid, t.channel_id, pc.name, pc.uuid, t.media_type, t.title,
                        t.status, t.scheduled_at, t.created_at, t.error_message
                 FROM content_upload_queue_tasks t
                 LEFT JOIN platform_channels pc ON t.channel_id = pc.id
@@ -549,9 +552,9 @@ async def tasks_page(request: Request):
                 ORDER BY t.created_at DESC LIMIT 100
             """), params).fetchall()
             tasks = [
-                {"id": r[0], "channel_id": r[1], "channel_name": r[2] or "?",
-                 "media_type": r[3], "title": r[4], "status": r[5],
-                 "scheduled_at": r[6], "created_at": r[7], "error_message": r[8]}
+                {"id": r[0], "uuid": r[1], "channel_id": r[2], "channel_name": r[3] or "?",
+                 "channel_uuid": r[4] or "", "media_type": r[5], "title": r[6], "status": r[7],
+                 "scheduled_at": r[8], "created_at": r[9], "error_message": r[10]}
                 for r in rows
             ]
     except Exception as e:
@@ -630,36 +633,36 @@ async def task_new_submit(
     return RedirectResponse("/app/tasks", status_code=302)
 
 
-@router.post("/tasks/{task_id}/cancel")
-async def task_cancel(request: Request, task_id: int):
+@router.post("/tasks/{task_uuid}/cancel")
+async def task_cancel(request: Request, task_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import task_repo
-    task = task_repo.get_task(task_id)
+    task = task_repo.get_task_by_uuid(task_uuid)
     if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
         return RedirectResponse("/app/tasks", status_code=302)
-    task_repo.cancel_task(task_id)
+    task_repo.cancel_task(task["id"])
     return RedirectResponse("/app/tasks", status_code=302)
 
 
-@router.post("/tasks/{task_id}/retry")
-async def task_retry(request: Request, task_id: int):
+@router.post("/tasks/{task_uuid}/retry")
+async def task_retry(request: Request, task_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import task_repo
-    task = task_repo.get_task(task_id)
+    task = task_repo.get_task_by_uuid(task_uuid)
     if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
         return RedirectResponse("/app/tasks", status_code=302)
-    task_repo.retry_task(task_id)
-    return RedirectResponse(f"/app/tasks/{task_id}", status_code=302)
+    task_repo.retry_task(task["id"])
+    return RedirectResponse(f"/app/tasks/{task_uuid}", status_code=302)
 
 
-@router.get("/tasks/{task_id}", response_class=HTMLResponse)
-async def task_detail(request: Request, task_id: int):
+@router.get("/tasks/{task_uuid}", response_class=HTMLResponse)
+async def task_detail(request: Request, task_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
@@ -668,23 +671,26 @@ async def task_detail(request: Request, task_id: int):
     from shared.db.repositories import task_repo
     from sqlalchemy import text
 
-    task = task_repo.get_task(task_id)
+    task = task_repo.get_task_by_uuid(task_uuid)
     if not task:
         return RedirectResponse("/app/tasks", status_code=302)
     if not _is_admin(user) and task.get("created_by") != user["id"]:
         return RedirectResponse("/app/tasks", status_code=302)
 
     channel_name = "?"
+    channel_uuid = ""
     try:
         with get_connection() as conn:
             row = conn.execute(text(
-                "SELECT name FROM platform_channels WHERE id = :cid"
+                "SELECT name, uuid FROM platform_channels WHERE id = :cid"
             ), {"cid": task["channel_id"]}).fetchone()
             if row:
                 channel_name = row[0]
+                channel_uuid = row[1]
     except Exception:
         pass
     task["channel_name"] = channel_name
+    task["channel_uuid"] = channel_uuid
 
     return templates.TemplateResponse("app_task_detail.html", {
         "request": request, "user": user, "active": "tasks",
@@ -692,10 +698,10 @@ async def task_detail(request: Request, task_id: int):
     })
 
 
-@router.post("/tasks/{task_id}/reschedule", response_class=HTMLResponse)
+@router.post("/tasks/{task_uuid}/reschedule", response_class=HTMLResponse)
 async def task_reschedule(
     request: Request,
-    task_id: int,
+    task_uuid: str,
     scheduled_at: str = Form(...),
 ):
     user, redirect = _require_user(request)
@@ -705,17 +711,17 @@ async def task_reschedule(
     from datetime import datetime
     from shared.db.repositories import task_repo
 
-    task = task_repo.get_task(task_id)
+    task = task_repo.get_task_by_uuid(task_uuid)
     if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
         return RedirectResponse("/app/tasks", status_code=302)
 
     try:
         new_time = datetime.fromisoformat(scheduled_at)
     except ValueError:
-        return RedirectResponse(f"/app/tasks/{task_id}", status_code=302)
+        return RedirectResponse(f"/app/tasks/{task_uuid}", status_code=302)
 
-    task_repo.update_task_scheduled_at(task_id, new_time)
-    return RedirectResponse(f"/app/tasks/{task_id}", status_code=302)
+    task_repo.update_task_scheduled_at(task["id"], new_time)
+    return RedirectResponse(f"/app/tasks/{task_uuid}", status_code=302)
 
 
 # ── Templates ────────────────────────────────────────────────────────
@@ -734,7 +740,7 @@ async def templates_page(request: Request):
     try:
         with get_connection() as conn:
             rows = conn.execute(text(f"""
-                SELECT st.id, st.name, st.description, st.timezone, st.is_active,
+                SELECT st.id, st.uuid, st.name, st.description, st.timezone, st.is_active,
                        COUNT(ss.id) as slot_count
                 FROM schedule_templates st
                 LEFT JOIN schedule_template_slots ss ON st.id = ss.template_id
@@ -743,8 +749,8 @@ async def templates_page(request: Request):
                 ORDER BY st.created_at DESC
             """), st_params).fetchall()
             tpls = [
-                {"id": r[0], "name": r[1], "description": r[2],
-                 "timezone": r[3], "is_active": bool(r[4]), "slot_count": r[5]}
+                {"id": r[0], "uuid": r[1], "name": r[2], "description": r[3],
+                 "timezone": r[4], "is_active": bool(r[5]), "slot_count": r[6]}
                 for r in rows
             ]
     except Exception as e:
@@ -790,8 +796,8 @@ async def template_new_submit(
     return RedirectResponse(f"/app/templates/{tid}", status_code=302)
 
 
-@router.get("/templates/{template_id}", response_class=HTMLResponse)
-async def template_detail(request: Request, template_id: int):
+@router.get("/templates/{template_uuid}", response_class=HTMLResponse)
+async def template_detail(request: Request, template_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
@@ -800,11 +806,13 @@ async def template_detail(request: Request, template_id: int):
     from shared.db.repositories import template_repo
     from sqlalchemy import text
 
-    tpl = template_repo.get_template(template_id)
+    tpl = template_repo.get_template_by_uuid(template_uuid)
     if not tpl:
         return RedirectResponse("/app/templates", status_code=302)
+    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+        return RedirectResponse("/app/templates", status_code=302)
 
-    slots = template_repo.get_slots(template_id)
+    slots = template_repo.get_slots(tpl["id"])
 
     channels = []
     ch_where, ch_params = _user_filter(user)
@@ -827,10 +835,10 @@ async def template_detail(request: Request, template_id: int):
     })
 
 
-@router.post("/templates/{template_id}/slots", response_class=HTMLResponse)
+@router.post("/templates/{template_uuid}/slots", response_class=HTMLResponse)
 async def template_add_slot(
     request: Request,
-    template_id: int,
+    template_uuid: str,
     day_of_week: int = Form(...),
     time_utc: str = Form(...),
     channel_id: int = Form(0),
@@ -840,35 +848,50 @@ async def template_add_slot(
         return redirect
 
     from shared.db.repositories import template_repo
+    tpl = template_repo.get_template_by_uuid(template_uuid)
+    if not tpl:
+        return RedirectResponse("/app/templates", status_code=302)
+    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+        return RedirectResponse("/app/templates", status_code=302)
     template_repo.add_slot(
-        template_id=template_id,
+        template_id=tpl["id"],
         day_of_week=day_of_week,
         time_utc=time_utc,
         channel_id=channel_id if channel_id else None,
     )
-    return RedirectResponse(f"/app/templates/{template_id}", status_code=302)
+    return RedirectResponse(f"/app/templates/{template_uuid}", status_code=302)
 
 
-@router.post("/templates/{template_id}/slots/{slot_id}/delete")
-async def template_delete_slot(request: Request, template_id: int, slot_id: int):
+@router.post("/templates/{template_uuid}/slots/{slot_id}/delete")
+async def template_delete_slot(request: Request, template_uuid: str, slot_id: int):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import template_repo
+    tpl = template_repo.get_template_by_uuid(template_uuid)
+    if not tpl:
+        return RedirectResponse("/app/templates", status_code=302)
+    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+        return RedirectResponse("/app/templates", status_code=302)
     template_repo.delete_slot(slot_id)
-    return RedirectResponse(f"/app/templates/{template_id}", status_code=302)
+    return RedirectResponse(f"/app/templates/{template_uuid}", status_code=302)
 
 
-@router.post("/templates/{template_id}/delete")
-async def template_delete(request: Request, template_id: int):
+@router.post("/templates/{template_uuid}/delete")
+async def template_delete(request: Request, template_uuid: str):
     user, redirect = _require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import template_repo
-    template_repo.clear_slots(template_id)
-    template_repo.delete_template(template_id)
+    tpl = template_repo.get_template_by_uuid(template_uuid)
+    if not tpl:
+        return RedirectResponse("/app/templates", status_code=302)
+    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+        return RedirectResponse("/app/templates", status_code=302)
+    template_repo.clear_slots(tpl["id"])
+    template_repo.delete_template(tpl["id"])
     return RedirectResponse("/app/templates", status_code=302)
 
 
