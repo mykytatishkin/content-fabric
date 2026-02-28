@@ -1,6 +1,6 @@
 # Content Fabric — Technical Reference (Developer)
 
-> Last updated: 28.02.2026
+> Last updated: 28.02.2026 (Phase 9 — UUID migration + user-scoped data)
 
 ---
 
@@ -82,10 +82,15 @@ prod/
 │   │   ├── app_dashboard.html       # User: dashboard (stats + recent tasks)
 │   │   ├── app_channels.html        # User: channel list
 │   │   ├── app_channel_add.html     # User: add channel form
+│   │   ├── app_channel_detail.html  # User: channel detail + stats + creds
+│   │   ├── app_channel_edit.html    # User: edit channel form
 │   │   ├── app_tasks.html           # User: task list + filters
-│   │   ├── app_task_new.html        # User: create task form
+│   │   ├── app_task_new.html        # User: create task with file upload
+│   │   ├── app_task_detail.html     # User: task detail + reschedule + retry
 │   │   ├── app_templates.html       # User: schedule templates
-│   │   └── app_settings.html        # User: profile + 2FA
+│   │   ├── app_template_new.html   # User: create template form
+│   │   ├── app_template_detail.html # User: template detail + slots
+│   │   └── app_settings.html        # User: profile + 2FA + password
 │   └── views/
 │       ├── app_portal.py            # User portal routes: /app/*
 │       └── panel.py                 # Admin panel routes: /panel/* (admin-only)
@@ -100,6 +105,7 @@ prod/
 │   │       ├── console_repo.py
 │   │       ├── credential_repo.py
 │   │       ├── task_repo.py
+│   │       ├── template_repo.py
 │   │       ├── user_repo.py
 │   │       └── audit_repo.py
 │   ├── queue/
@@ -195,11 +201,11 @@ All repositories use `get_connection()` context manager with auto-commit.
 | `platform_project_members` | RBAC: user ↔ project roles |
 | `platform_invitations` | Project invitations |
 | `google_cloud_consoles` | OAuth client credentials |
-| `platform_channels` | Connected channels + tokens |
+| `platform_channels` | Connected channels + tokens (has `uuid` column) |
 | `platform_channel_login_credentials` | Login creds + TOTP + proxy |
-| `content_upload_queue_tasks` | Main task queue |
+| `content_upload_queue_tasks` | Main task queue (has `uuid` column) |
 | `media_library` | Uploaded media files |
-| `schedule_templates` | Publishing templates |
+| `schedule_templates` | Publishing templates (has `uuid` column) |
 | `schedule_template_slots` | Template time slots by weekday |
 | `audit_log` | DB-level audit |
 | `platform_settings` | Key-value settings |
@@ -291,6 +297,9 @@ Rate limits: login 10/min, register 5/min
 
 ### User Portal (cookie auth required)
 
+All detail/edit/delete routes use **UUID** in URL (not integer ID) to prevent IDOR.
+Data is **user-scoped**: regular users see only their own channels/tasks/templates, admins see all.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/app/login` | Login page |
@@ -302,11 +311,25 @@ Rate limits: login 10/min, register 5/min
 | `GET` | `/app/channels` | User's channel list |
 | `GET` | `/app/channels/add` | Add channel form |
 | `POST` | `/app/channels/add` | Add channel submit |
+| `GET` | `/app/channels/{uuid}` | Channel detail (stats, creds, tasks) |
+| `GET` | `/app/channels/{uuid}/edit` | Edit channel form |
+| `POST` | `/app/channels/{uuid}/edit` | Edit channel submit |
+| `POST` | `/app/channels/{uuid}/delete` | Delete channel |
 | `GET` | `/app/tasks` | Task list (filter by status/channel) |
 | `GET` | `/app/tasks/new` | Create task form |
 | `POST` | `/app/tasks/new` | Create task submit |
+| `GET` | `/app/tasks/{uuid}` | Task detail (info, reschedule, retry) |
+| `POST` | `/app/tasks/{uuid}/cancel` | Cancel pending task |
+| `POST` | `/app/tasks/{uuid}/retry` | Retry failed/cancelled task |
+| `POST` | `/app/tasks/{uuid}/reschedule` | Reschedule pending task |
 | `GET` | `/app/templates` | Schedule templates list |
-| `GET` | `/app/settings` | Account settings (profile + 2FA) |
+| `GET` | `/app/templates/new` | Create template form |
+| `POST` | `/app/templates/new` | Create template submit |
+| `GET` | `/app/templates/{uuid}` | Template detail (slots management) |
+| `POST` | `/app/templates/{uuid}/slots` | Add time slot |
+| `POST` | `/app/templates/{uuid}/slots/{id}/delete` | Delete time slot |
+| `POST` | `/app/templates/{uuid}/delete` | Delete template |
+| `GET` | `/app/settings` | Account settings (profile + 2FA + password) |
 
 ### SSR Admin Panel (cookie auth + admin role required)
 
@@ -496,6 +519,8 @@ pytest tests/ -v  # 91 tests expected
 | **Resumable uploads** | YouTube API requires chunked upload for large files; auto-retry on HTTP 5xx |
 | **Systemd** on prod | Auto-restart, journalctl logging, proper process management |
 | **Jinja2 SSR** for admin panel | No JS build step, fast development, server-side data access |
+| **UUID in portal URLs** | Prevent IDOR enumeration; internal DB operations still use int IDs for FK joins |
+| **`created_by` filtering** | User-scoped data via `_user_filter()` helper; admin bypass returns all rows |
 
 ---
 
@@ -546,6 +571,9 @@ All migrations are idempotent (`IF NOT EXISTS`) with matching rollback scripts.
 | Swagger docs | Hidden in production (DEBUG=False) |
 | Error sanitization | No stack traces in responses |
 | Audit logging | All auth events + task operations → `/var/log/cff-audit.log` |
+| UUID-based URLs | Portal uses UUIDs instead of integer IDs to prevent IDOR |
+| User-scoped data | Regular users see only own channels/tasks/templates; admins see all |
+| Access control | Ownership check on every detail/edit/delete route |
 
 ---
 

@@ -4,6 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS `platform_channels` (
   `id`                    INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+  `uuid`                  VARCHAR(36)     NOT NULL COMMENT 'External identifier for portal URLs (IDOR protection)',
   `project_id`            INT UNSIGNED    NOT NULL,
   `console_id`            INT UNSIGNED    DEFAULT NULL,
   `platform`              VARCHAR(50)     NOT NULL DEFAULT 'youtube'
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS `platform_channels` (
   `created_at`            TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`            TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_channels_uuid` (`uuid`),
   UNIQUE KEY `uniq_pc_project_platform_name` (`project_id`, `platform`, `name`),
   KEY `idx_pc_project`          (`project_id`),
   KEY `idx_pc_console`          (`console_id`),

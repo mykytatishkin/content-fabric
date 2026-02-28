@@ -1,6 +1,6 @@
 # Content Fabric — Web Portal Guide
 
-> Последнее обновление: 01.03.2026
+> Последнее обновление: 28.02.2026 (Phase 9 — UUID migration + user-scoped data)
 
 ---
 
@@ -47,6 +47,20 @@
 - Без cookie → редирект на `/app/login`
 - User без admin → `/panel/` редиректит на `/app/`
 
+### UUID-based URLs (IDOR protection)
+- Все detail/edit/delete страницы используют **UUID** вместо числового ID
+- Пример: `/app/channels/4518a200-14e3-11f1-a29f-d89d67657108` вместо `/app/channels/1`
+- Старые числовые URL (`/app/channels/1`) возвращают 302 redirect
+- UUID генерируется автоматически при создании записи
+- В URL нигде не видно внутренний int ID
+
+### User-scoped data (data isolation)
+- Обычный пользователь видит **только свои** каналы, задачи, шаблоны
+- Admin видит **все данные** всех пользователей
+- Фильтрация по полю `created_by` в БД
+- Access control на каждом detail/edit/delete маршруте: проверка ownership
+- Попытка открыть чужой ресурс по UUID → 302 redirect
+
 ---
 
 ## 4. User Portal — Страницы
@@ -72,14 +86,14 @@
 - Имена каналов — кликабельные ссылки на детальную страницу
 - Кнопки "Add Channel" и "Delete" для каждого канала
 
-### 4.5 Channel Detail (`/app/channels/{id}`)
+### 4.5 Channel Detail (`/app/channels/{uuid}`)
 - **Информация о канале:** YouTube ID, enabled, tokens, дата создания
 - **Task Statistics:** total / pending / processing / completed / failed / cancelled
 - **Login Credentials:** email, TOTP status, proxy, last success/error
 - **Recent Tasks:** последние 20 задач канала с кнопками Cancel/Retry
 - **Действия:** Edit Channel, Delete Channel
 
-### 4.6 Channel Edit (`/app/channels/{id}/edit`)
+### 4.6 Channel Edit (`/app/channels/{uuid}/edit`)
 - Изменение имени канала, toggle enabled
 - Обновление RPA credentials (email, password, TOTP secret)
 
@@ -94,7 +108,7 @@
 - **Таблица:** ID, channel (ссылка), title (ссылка на детали), status, scheduled, created, error
 - **Действия:** Cancel (pending), Retry (failed/cancelled)
 
-### 4.9 Task Detail (`/app/tasks/{id}`)
+### 4.9 Task Detail (`/app/tasks/{uuid}`)
 - **Полная информация:** статус, канал, даты, файл, описание, keywords, thumbnail, upload ID, retries
 - **Блок ошибки** для failed задач
 - **Reschedule:** форма перепланирования для pending задач
@@ -113,7 +127,7 @@
 - Кликабельные имена → детальная страница
 - Кнопки "Create Template" и "Delete" для каждого
 
-### 4.12 Template Detail (`/app/templates/{id}`)
+### 4.12 Template Detail (`/app/templates/{uuid}`)
 - **Информация:** timezone, количество слотов, статус (active/inactive)
 - **Time Slots:** таблица слотов (день недели, время, канал, тип медиа)
 - **Add Slot:** форма добавления (день, время, канал опционально)
