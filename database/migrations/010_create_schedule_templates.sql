@@ -2,9 +2,9 @@
 -- Idempotent: safe to run multiple times
 
 CREATE TABLE IF NOT EXISTS schedule_templates (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    project_id INT NOT NULL,
-    created_by INT,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    project_id INT UNSIGNED NOT NULL,
+    created_by INT UNSIGNED,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
@@ -16,11 +16,11 @@ CREATE TABLE IF NOT EXISTS schedule_templates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS schedule_template_slots (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    template_id INT NOT NULL,
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    template_id INT UNSIGNED NOT NULL,
     day_of_week TINYINT NOT NULL COMMENT '0=Monday, 6=Sunday',
     time_utc TIME NOT NULL,
-    channel_id INT,
+    channel_id INT UNSIGNED,
     media_type VARCHAR(20) NOT NULL DEFAULT 'video',
     enabled TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
