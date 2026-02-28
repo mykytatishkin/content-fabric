@@ -2,8 +2,7 @@
 
 Краткий гайд по поднятию сервера с графическим доступом (VNC) и веб-доступом к prod API через Nginx.
 
-**Подробные гайды:**  
-- VNC и SSH-туннель — [legacy/docs/troubleshooting/SSH_TUNNEL_VNC_FIX.md](legacy/docs/troubleshooting/SSH_TUNNEL_VNC_FIX.md)  
+**Подробные гайды:**
 - Nginx — [docs/NGINX_SETUP.md](docs/NGINX_SETUP.md)
 
 ---
@@ -99,7 +98,7 @@ sudo ufw status
 ## 4. Автозапуск (опционально)
 
 - **Nginx:** обычно уже включён в systemd: `sudo systemctl enable nginx`
-- **VNC:** см. [SSH_TUNNEL_VNC_FIX.md](legacy/docs/troubleshooting/SSH_TUNNEL_VNC_FIX.md) — раздел «Решение 1: Вариант C (systemd)»
+- **VNC:** systemd unit для автозапуска (раздел «Решение 1: Вариант C»)
 - **uvicorn:** создать unit в `/etc/systemd/system/` с `ExecStart=uvicorn main:app --host 127.0.0.1 --port 8000` и `WorkingDirectory=/path/to/prod`
 
 ---
