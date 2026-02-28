@@ -22,10 +22,23 @@
             <label>Title *</label>
             <input type="text" name="title" required placeholder="Video title" maxlength="500">
         </div>
+
+        <!-- File Upload -->
+        <div class="form-group">
+            <label>Video File</label>
+            <div style="display:flex;gap:0.5rem;align-items:end;">
+                <input type="file" id="video_file" accept=".mp4,.mkv,.avi,.mov,.webm,.flv,.wmv,.m4v"
+                       style="flex:1;" onchange="uploadFile(this, 'video')">
+                <span id="video_status" style="font-size:0.8rem;color:#64748b;"></span>
+            </div>
+        </div>
         <div class="form-group">
             <label>Source File Path *</label>
-            <input type="text" name="source_file_path" required placeholder="/opt/content-fabric/uploads/videos/file.mp4">
+            <input type="text" name="source_file_path" id="source_file_path" required
+                   placeholder="/opt/content-fabric/uploads/videos/file.mp4">
+            <p style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Upload a file above or enter the server path manually</p>
         </div>
+
         <div class="form-group">
             <label>Scheduled At</label>
             <input type="datetime-local" name="scheduled_at">
@@ -38,17 +51,65 @@
             <label>Keywords</label>
             <input type="text" name="keywords" placeholder="tag1, tag2, tag3">
         </div>
+
+        <!-- Thumbnail Upload -->
+        <div class="form-group">
+            <label>Thumbnail</label>
+            <div style="display:flex;gap:0.5rem;align-items:end;">
+                <input type="file" id="thumb_file" accept=".jpg,.jpeg,.png,.webp,.bmp"
+                       style="flex:1;" onchange="uploadFile(this, 'thumbnail')">
+                <span id="thumb_status" style="font-size:0.8rem;color:#64748b;"></span>
+            </div>
+        </div>
         <div class="form-group">
             <label>Thumbnail Path</label>
-            <input type="text" name="thumbnail_path" placeholder="/opt/content-fabric/uploads/thumbnails/thumb.jpg">
+            <input type="text" name="thumbnail_path" id="thumbnail_path"
+                   placeholder="/opt/content-fabric/uploads/thumbnails/thumb.jpg">
+            <p style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Upload above or enter path manually</p>
         </div>
+
         <div class="form-group">
             <label>Post Comment</label>
             <input type="text" name="post_comment" placeholder="Comment to post after upload">
         </div>
 
-        <button type="submit" class="btn btn-primary">Create Task</button>
+        <button type="submit" class="btn btn-primary" id="submit_btn">Create Task</button>
         <a href="/app/tasks" style="margin-left:1rem;font-size:0.85rem;color:#64748b;">Cancel</a>
     </form>
 </div>
+
+<script>
+async function uploadFile(input, type) {
+    if (!input.files || !input.files[0]) return;
+
+    const file = input.files[0];
+    const statusEl = document.getElementById(type === 'video' ? 'video_status' : 'thumb_status');
+    const pathEl = document.getElementById(type === 'video' ? 'source_file_path' : 'thumbnail_path');
+
+    statusEl.textContent = 'Uploading...';
+    statusEl.style.color = '#d97706';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const url = type === 'video' ? '/app/upload/video' : '/app/upload/thumbnail';
+        const resp = await fetch(url, { method: 'POST', body: formData });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            pathEl.value = data.path;
+            const sizeMB = (data.size / 1024 / 1024).toFixed(1);
+            statusEl.textContent = data.filename + ' (' + sizeMB + ' MB)';
+            statusEl.style.color = '#16a34a';
+        } else {
+            statusEl.textContent = data.error || 'Upload failed';
+            statusEl.style.color = '#dc2626';
+        }
+    } catch (e) {
+        statusEl.textContent = 'Upload error: ' + e.message;
+        statusEl.style.color = '#dc2626';
+    }
+}
+</script>
 {% endblock %}
