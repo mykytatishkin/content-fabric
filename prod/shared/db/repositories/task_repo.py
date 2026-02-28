@@ -33,6 +33,7 @@ def create_task(
     post_comment: str | None = None,
     legacy_add_info: dict[str, Any] | None = None,
     project_id: int | None = None,
+    created_by: int | None = None,
 ) -> int | None:
     """Insert a new upload task. Returns new id or None on error."""
     if project_id is None:
@@ -41,7 +42,7 @@ def create_task(
         raise ValueError("No project_id provided and no default project found")
 
     add_info_json = json.dumps(legacy_add_info) if legacy_add_info else None
-    stmt = insert(content_upload_queue_tasks).values(
+    values = dict(
         project_id=project_id,
         channel_id=channel_id,
         media_type=media_type,
@@ -54,6 +55,9 @@ def create_task(
         legacy_add_info=add_info_json,
         scheduled_at=scheduled_at,
     )
+    if created_by is not None:
+        values["created_by"] = created_by
+    stmt = insert(content_upload_queue_tasks).values(**values)
     with get_connection() as conn:
         result = conn.execute(stmt)
         return result.lastrowid
@@ -67,6 +71,7 @@ def get_task(task_id: int) -> dict[str, Any] | None:
         t.c.title, t.c.description, t.c.keywords, t.c.post_comment,
         t.c.legacy_add_info, t.c.scheduled_at, t.c.completed_at,
         t.c.upload_id, t.c.error_message, t.c.retry_count,
+        t.c.created_by,
     ]
     stmt = select(*cols).where(t.c.id == task_id)
     with get_connection() as conn:
@@ -304,7 +309,7 @@ def _row_to_dict(row) -> dict[str, Any]:
             legacy_add_info = json.loads(raw) if isinstance(raw, str) else raw
         except (json.JSONDecodeError, TypeError):
             pass
-    return {
+    d = {
         "id": row[0],
         "channel_id": row[1],
         "media_type": row[2],
@@ -323,3 +328,6 @@ def _row_to_dict(row) -> dict[str, Any]:
         "error_message": row[15],
         "retry_count": row[16],
     }
+    if len(row) > 17:
+        d["created_by"] = row[17]
+    return d

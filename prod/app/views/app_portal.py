@@ -47,6 +47,18 @@ def _require_user(request: Request):
     return user, None
 
 
+def _is_admin(user: dict) -> bool:
+    return user.get("status") == "admin"
+
+
+def _user_filter(user: dict, table_alias: str = "") -> tuple[str, dict]:
+    """Return (WHERE clause, params) for user-scoped queries. Admins see all."""
+    if _is_admin(user):
+        return "1=1", {}
+    prefix = f"{table_alias}." if table_alias else ""
+    return f"{prefix}created_by = :user_id", {"user_id": user["id"]}
+
+
 def _set_token_cookie(response, user_id: int):
     token = create_access_token({"sub": user_id})
     response.set_cookie(
@@ -172,17 +184,19 @@ async def dashboard(request: Request):
         "tasks_pending": 0, "tasks_completed": 0, "tasks_failed": 0, "tasks_total": 0,
         "success_rate": 0, "recent_tasks": [], "upcoming_tasks": [],
     }
+    ch_where, ch_params = _user_filter(user)
+    t_where, t_params = _user_filter(user, "t")
     try:
         with get_connection() as conn:
             row = conn.execute(text(
-                "SELECT COUNT(*), SUM(enabled) FROM platform_channels"
-            )).fetchone()
+                f"SELECT COUNT(*), SUM(enabled) FROM platform_channels WHERE {ch_where}"
+            ), ch_params).fetchone()
             ctx["channels_total"] = row[0] or 0
             ctx["channels_active"] = int(row[1] or 0)
 
             rows = conn.execute(text(
-                "SELECT status, COUNT(*) FROM content_upload_queue_tasks GROUP BY status"
-            )).fetchall()
+                f"SELECT status, COUNT(*) FROM content_upload_queue_tasks t WHERE {t_where} GROUP BY status"
+            ), t_params).fetchall()
             status_map = {0: "tasks_pending", 1: "tasks_completed", 2: "tasks_failed"}
             total = 0
             for r in rows:
@@ -195,11 +209,12 @@ async def dashboard(request: Request):
             ctx["success_rate"] = round(ctx["tasks_completed"] / done * 100) if done > 0 else 0
 
             recent = conn.execute(text(
-                "SELECT t.id, t.channel_id, pc.name, t.title, t.status, t.scheduled_at, t.created_at "
-                "FROM content_upload_queue_tasks t "
-                "LEFT JOIN platform_channels pc ON t.channel_id = pc.id "
-                "ORDER BY t.created_at DESC LIMIT 10"
-            )).fetchall()
+                f"SELECT t.id, t.channel_id, pc.name, t.title, t.status, t.scheduled_at, t.created_at "
+                f"FROM content_upload_queue_tasks t "
+                f"LEFT JOIN platform_channels pc ON t.channel_id = pc.id "
+                f"WHERE {t_where} "
+                f"ORDER BY t.created_at DESC LIMIT 10"
+            ), t_params).fetchall()
             ctx["recent_tasks"] = [
                 {"id": r[0], "channel_id": r[1], "channel_name": r[2] or "?",
                  "title": r[3], "status": r[4], "scheduled_at": r[5], "created_at": r[6]}
@@ -207,12 +222,12 @@ async def dashboard(request: Request):
             ]
 
             upcoming = conn.execute(text(
-                "SELECT t.id, t.channel_id, pc.name, t.title, t.scheduled_at "
-                "FROM content_upload_queue_tasks t "
-                "LEFT JOIN platform_channels pc ON t.channel_id = pc.id "
-                "WHERE t.status = 0 AND t.scheduled_at > NOW() "
-                "ORDER BY t.scheduled_at ASC LIMIT 5"
-            )).fetchall()
+                f"SELECT t.id, t.channel_id, pc.name, t.title, t.scheduled_at "
+                f"FROM content_upload_queue_tasks t "
+                f"LEFT JOIN platform_channels pc ON t.channel_id = pc.id "
+                f"WHERE t.status = 0 AND t.scheduled_at > NOW() AND {t_where} "
+                f"ORDER BY t.scheduled_at ASC LIMIT 5"
+            ), t_params).fetchall()
             ctx["upcoming_tasks"] = [
                 {"id": r[0], "channel_id": r[1], "channel_name": r[2] or "?",
                  "title": r[3], "scheduled_at": r[4]}
@@ -235,14 +250,15 @@ async def channels_page(request: Request):
     from shared.db.connection import get_connection
     from sqlalchemy import text
 
+    ch_where, ch_params = _user_filter(user)
     channels = []
     try:
         with get_connection() as conn:
-            rows = conn.execute(text("""
+            rows = conn.execute(text(f"""
                 SELECT id, name, platform_channel_id, enabled, processing_status,
                        access_token IS NOT NULL as has_tokens, created_at
-                FROM platform_channels ORDER BY id
-            """)).fetchall()
+                FROM platform_channels WHERE {ch_where} ORDER BY id
+            """), ch_params).fetchall()
             channels = [
                 {"id": r[0], "name": r[1], "platform_channel_id": r[2],
                  "enabled": bool(r[3]), "processing_status": bool(r[4]),
@@ -306,6 +322,7 @@ async def channel_add_submit(
         platform_channel_id=platform_channel_id.strip(),
         console_id=console_id,
         enabled=enabled,
+        created_by=user["id"],
     )
     if not ch_id:
         ctx["error"] = "Failed to create channel (duplicate?)"
@@ -334,6 +351,8 @@ async def channel_detail(request: Request, channel_id: int):
 
     channel = channel_repo.get_channel_by_id(channel_id)
     if not channel:
+        return RedirectResponse("/app/channels", status_code=302)
+    if not _is_admin(user) and channel.get("created_by") != user["id"]:
         return RedirectResponse("/app/channels", status_code=302)
 
     stats = {}
@@ -391,6 +410,9 @@ async def channel_delete(request: Request, channel_id: int):
         return redirect
 
     from shared.db.repositories import channel_repo
+    channel = channel_repo.get_channel_by_id(channel_id)
+    if not channel or (not _is_admin(user) and channel.get("created_by") != user["id"]):
+        return RedirectResponse("/app/channels", status_code=302)
     channel_repo.delete_channel(channel_id)
     return RedirectResponse("/app/channels", status_code=302)
 
@@ -407,6 +429,8 @@ async def channel_edit_page(request: Request, channel_id: int):
 
     channel = channel_repo.get_channel_by_id(channel_id)
     if not channel:
+        return RedirectResponse("/app/channels", status_code=302)
+    if not _is_admin(user) and channel.get("created_by") != user["id"]:
         return RedirectResponse("/app/channels", status_code=302)
 
     consoles = console_repo.list_consoles_brief(enabled_only=True)
@@ -449,6 +473,10 @@ async def channel_edit_submit(
 
     from shared.db.repositories import channel_repo
 
+    channel = channel_repo.get_channel_by_id(channel_id)
+    if not channel or (not _is_admin(user) and channel.get("created_by") != user["id"]):
+        return RedirectResponse("/app/channels", status_code=302)
+
     channel_repo.update_channel(channel_id, name=name.strip(), enabled=enabled)
 
     if login_email:
@@ -485,29 +513,31 @@ async def tasks_page(request: Request):
     tasks = []
     stats = {}
     channels = []
+    t_where, t_params = _user_filter(user, "t")
+    ch_where, ch_params = _user_filter(user)
     try:
         with get_connection() as conn:
-            # Stats
+            # Stats (user-scoped)
             rows = conn.execute(text(
-                "SELECT status, COUNT(*) FROM content_upload_queue_tasks GROUP BY status"
-            )).fetchall()
+                f"SELECT status, COUNT(*) FROM content_upload_queue_tasks t WHERE {t_where} GROUP BY status"
+            ), t_params).fetchall()
             names = {0: "pending", 1: "completed", 2: "failed", 3: "processing", 4: "cancelled"}
             stats = {names.get(r[0], "unknown"): r[1] for r in rows}
 
-            # Channels for filter dropdown
+            # Channels for filter dropdown (user-scoped)
             ch_rows = conn.execute(text(
-                "SELECT id, name FROM platform_channels ORDER BY name"
-            )).fetchall()
+                f"SELECT id, name FROM platform_channels WHERE {ch_where} ORDER BY name"
+            ), ch_params).fetchall()
             channels = [{"id": r[0], "name": r[1]} for r in ch_rows]
 
-            # Tasks
-            where = "1=1"
-            params = {}
+            # Tasks (user-scoped)
+            where = t_where
+            params = dict(t_params)
             if status_filter:
-                where += " AND status = :status"
+                where += " AND t.status = :status"
                 params["status"] = int(status_filter)
             if channel_filter:
-                where += " AND channel_id = :channel_id"
+                where += " AND t.channel_id = :channel_id"
                 params["channel_id"] = int(channel_filter)
 
             rows = conn.execute(text(f"""
@@ -544,11 +574,12 @@ async def task_new_page(request: Request):
     from sqlalchemy import text
 
     channels = []
+    ch_where, ch_params = _user_filter(user)
     try:
         with get_connection() as conn:
             rows = conn.execute(text(
-                "SELECT id, name FROM platform_channels WHERE enabled = 1 ORDER BY name"
-            )).fetchall()
+                f"SELECT id, name FROM platform_channels WHERE enabled = 1 AND {ch_where} ORDER BY name"
+            ), ch_params).fetchall()
             channels = [{"id": r[0], "name": r[1]} for r in rows]
     except Exception as e:
         logger.error("Task new error: %s", e)
@@ -594,6 +625,7 @@ async def task_new_submit(
         thumbnail_path=thumbnail_path or None,
         post_comment=post_comment or None,
         scheduled_at=scheduled,
+        created_by=user["id"],
     )
     return RedirectResponse("/app/tasks", status_code=302)
 
@@ -605,6 +637,9 @@ async def task_cancel(request: Request, task_id: int):
         return redirect
 
     from shared.db.repositories import task_repo
+    task = task_repo.get_task(task_id)
+    if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
+        return RedirectResponse("/app/tasks", status_code=302)
     task_repo.cancel_task(task_id)
     return RedirectResponse("/app/tasks", status_code=302)
 
@@ -616,6 +651,9 @@ async def task_retry(request: Request, task_id: int):
         return redirect
 
     from shared.db.repositories import task_repo
+    task = task_repo.get_task(task_id)
+    if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
+        return RedirectResponse("/app/tasks", status_code=302)
     task_repo.retry_task(task_id)
     return RedirectResponse(f"/app/tasks/{task_id}", status_code=302)
 
@@ -632,6 +670,8 @@ async def task_detail(request: Request, task_id: int):
 
     task = task_repo.get_task(task_id)
     if not task:
+        return RedirectResponse("/app/tasks", status_code=302)
+    if not _is_admin(user) and task.get("created_by") != user["id"]:
         return RedirectResponse("/app/tasks", status_code=302)
 
     channel_name = "?"
@@ -665,6 +705,10 @@ async def task_reschedule(
     from datetime import datetime
     from shared.db.repositories import task_repo
 
+    task = task_repo.get_task(task_id)
+    if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
+        return RedirectResponse("/app/tasks", status_code=302)
+
     try:
         new_time = datetime.fromisoformat(scheduled_at)
     except ValueError:
@@ -686,16 +730,18 @@ async def templates_page(request: Request):
     from sqlalchemy import text
 
     tpls = []
+    st_where, st_params = _user_filter(user, "st")
     try:
         with get_connection() as conn:
-            rows = conn.execute(text("""
+            rows = conn.execute(text(f"""
                 SELECT st.id, st.name, st.description, st.timezone, st.is_active,
                        COUNT(ss.id) as slot_count
                 FROM schedule_templates st
                 LEFT JOIN schedule_template_slots ss ON st.id = ss.template_id
+                WHERE {st_where}
                 GROUP BY st.id
                 ORDER BY st.created_at DESC
-            """)).fetchall()
+            """), st_params).fetchall()
             tpls = [
                 {"id": r[0], "name": r[1], "description": r[2],
                  "timezone": r[3], "is_active": bool(r[4]), "slot_count": r[5]}
@@ -761,11 +807,12 @@ async def template_detail(request: Request, template_id: int):
     slots = template_repo.get_slots(template_id)
 
     channels = []
+    ch_where, ch_params = _user_filter(user)
     try:
         with get_connection() as conn:
             rows = conn.execute(text(
-                "SELECT id, name FROM platform_channels WHERE enabled = 1 ORDER BY name"
-            )).fetchall()
+                f"SELECT id, name FROM platform_channels WHERE enabled = 1 AND {ch_where} ORDER BY name"
+            ), ch_params).fetchall()
             channels = [{"id": r[0], "name": r[1]} for r in rows]
     except Exception:
         pass
