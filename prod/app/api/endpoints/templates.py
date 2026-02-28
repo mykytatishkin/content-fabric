@@ -20,6 +20,20 @@ router = APIRouter()
 _DEFAULT_PROJECT = 1
 
 
+def _slot_to_response(s: dict) -> SlotResponse:
+    s = dict(s)
+    s["enabled"] = bool(s.get("enabled", True))
+    s["time_utc"] = str(s.get("time_utc", ""))
+    return SlotResponse(**s)
+
+
+def _template_to_response(t: dict, slots: list[dict]) -> TemplateResponse:
+    t = dict(t)
+    t["is_active"] = bool(t.get("is_active", True))
+    t["slots"] = [_slot_to_response(s) for s in slots]
+    return TemplateResponse(**t)
+
+
 @router.post("/", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
 async def create_template(body: TemplateCreate, user: dict = Depends(get_current_user)):
     template_id = template_repo.create_template(
@@ -49,11 +63,7 @@ async def list_templates(user: dict = Depends(get_current_user)):
     items = []
     for t in templates:
         slots = template_repo.get_slots(t["id"])
-        items.append(TemplateResponse(
-            **t,
-            is_active=bool(t.get("is_active", True)),
-            slots=[SlotResponse(**s, enabled=bool(s.get("enabled", True))) for s in slots],
-        ))
+        items.append(_template_to_response(t, slots))
     return TemplateListResponse(items=items, total=len(items))
 
 
@@ -101,7 +111,7 @@ async def add_slot(template_id: int, body: SlotCreate, user: dict = Depends(get_
     slot = next((s for s in slots if s["id"] == slot_id), None)
     if not slot:
         raise HTTPException(status_code=500, detail="Slot creation failed")
-    return SlotResponse(**slot, enabled=bool(slot.get("enabled", True)))
+    return _slot_to_response(slot)
 
 
 @router.delete("/{template_id}/slots/{slot_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -115,8 +125,4 @@ def _build_response(template_id: int) -> TemplateResponse:
     if not t:
         raise HTTPException(status_code=404, detail="Template not found")
     slots = template_repo.get_slots(template_id)
-    return TemplateResponse(
-        **t,
-        is_active=bool(t.get("is_active", True)),
-        slots=[SlotResponse(**s, enabled=bool(s.get("enabled", True))) for s in slots],
-    )
+    return _template_to_response(t, slots)
