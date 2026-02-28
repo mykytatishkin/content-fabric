@@ -300,6 +300,79 @@ async def channel_add_submit(
     return RedirectResponse("/app/channels", status_code=302)
 
 
+@router.get("/channels/{channel_id}", response_class=HTMLResponse)
+async def channel_detail(request: Request, channel_id: int):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from shared.db.repositories import channel_repo
+    from sqlalchemy import text
+
+    channel = channel_repo.get_channel_by_id(channel_id)
+    if not channel:
+        return RedirectResponse("/app/channels", status_code=302)
+
+    stats = {}
+    recent_tasks = []
+    credentials = None
+    try:
+        with get_connection() as conn:
+            # Task stats for this channel
+            rows = conn.execute(text(
+                "SELECT status, COUNT(*) FROM content_upload_queue_tasks "
+                "WHERE channel_id = :cid GROUP BY status"
+            ), {"cid": channel_id}).fetchall()
+            names = {0: "pending", 1: "completed", 2: "failed", 3: "processing", 4: "cancelled"}
+            stats = {names.get(r[0], "unknown"): r[1] for r in rows}
+            stats["total"] = sum(r[1] for r in rows)
+
+            # Recent tasks
+            task_rows = conn.execute(text(
+                "SELECT id, title, status, scheduled_at, created_at, error_message "
+                "FROM content_upload_queue_tasks WHERE channel_id = :cid "
+                "ORDER BY created_at DESC LIMIT 20"
+            ), {"cid": channel_id}).fetchall()
+            recent_tasks = [
+                {"id": r[0], "title": r[1], "status": r[2],
+                 "scheduled_at": r[3], "created_at": r[4], "error_message": r[5]}
+                for r in task_rows
+            ]
+
+            # Login credentials
+            cred_row = conn.execute(text(
+                "SELECT login_email, totp_secret IS NOT NULL as has_totp, "
+                "proxy_host, enabled, last_success_at, last_error "
+                "FROM platform_channel_login_credentials WHERE channel_id = :cid"
+            ), {"cid": channel_id}).fetchone()
+            if cred_row:
+                credentials = {
+                    "login_email": cred_row[0], "has_totp": bool(cred_row[1]),
+                    "proxy_host": cred_row[2], "enabled": bool(cred_row[3]),
+                    "last_success_at": cred_row[4], "last_error": cred_row[5],
+                }
+    except Exception as e:
+        logger.error("Channel detail error: %s", e)
+
+    return templates.TemplateResponse("app_channel_detail.html", {
+        "request": request, "user": user, "active": "channels",
+        "channel": channel, "stats": stats, "recent_tasks": recent_tasks,
+        "credentials": credentials,
+    })
+
+
+@router.post("/channels/{channel_id}/delete")
+async def channel_delete(request: Request, channel_id: int):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import channel_repo
+    channel_repo.delete_channel(channel_id)
+    return RedirectResponse("/app/channels", status_code=302)
+
+
 # ── Tasks ────────────────────────────────────────────────────────────
 
 @router.get("/tasks", response_class=HTMLResponse)
@@ -427,6 +500,17 @@ async def task_new_submit(
         post_comment=post_comment or None,
         scheduled_at=scheduled,
     )
+    return RedirectResponse("/app/tasks", status_code=302)
+
+
+@router.post("/tasks/{task_id}/cancel")
+async def task_cancel(request: Request, task_id: int):
+    user, redirect = _require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import task_repo
+    task_repo.cancel_task(task_id)
     return RedirectResponse("/app/tasks", status_code=302)
 
 

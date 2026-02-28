@@ -9,13 +9,13 @@
 {% if channels %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Name</th><th>YouTube ID</th><th>Enabled</th><th>Processing</th><th>Tokens</th><th>Created</th></tr>
+        <tr><th>ID</th><th>Name</th><th>YouTube ID</th><th>Enabled</th><th>Processing</th><th>Tokens</th><th>Created</th><th></th></tr>
     </thead>
     <tbody>
         {% for ch in channels %}
         <tr>
             <td>{{ ch.id }}</td>
-            <td><strong>{{ ch.name }}</strong></td>
+            <td><a href="/app/channels/{{ ch.id }}" style="color:#0ea5e9;font-weight:600;text-decoration:none;">{{ ch.name }}</a></td>
             <td style="font-size:0.75rem;color:#64748b;">{{ ch.platform_channel_id }}</td>
             <td>
                 {% if ch.enabled %}<span class="badge badge-green">Yes</span>
@@ -30,6 +30,12 @@
                 {% else %}<span class="badge badge-red">Missing</span>{% endif %}
             </td>
             <td>{{ ch.created_at }}</td>
+            <td>
+                <form method="POST" action="/app/channels/{{ ch.id }}/delete" style="display:inline;"
+                      onsubmit="return confirm('Delete {{ ch.name }}?')">
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+            </td>
         </tr>
         {% endfor %}
     </tbody>
