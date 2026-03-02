@@ -79,6 +79,21 @@ except Exception as e:
 | platform_channels | id, uuid, console_id, access_token, refresh_token, created_by | Has login_credentials in separate table. `created_by` used for user-scoped filtering |
 | content_upload_queue_tasks | id, uuid, channel_id, status(0-4), scheduled_at, created_by | TaskStatus IntEnum. `created_by` used for user-scoped filtering |
 | platform_oauth_credentials | id, project_id, client_id, client_secret | OAuth consoles |
-| platform_channel_login_credentials | channel_id, login_email, login_password, totp_secret | RPA credentials for reauth |
+| platform_channel_login_credentials | channel_id, login_email, login_password, totp_secret, proxy_host, proxy_port, backup_codes, browser_profile_path, user_agent, last_attempt_at, enabled, last_success_at, last_error | RPA credentials for reauth. Portal channel detail displays all columns via `credential_repo.get_credentials()` |
 | channel_reauth_audit_logs | channel_id, status, trigger_reason, error_message | Audit trail |
 | schedule_templates + slots | template → slots (day_of_week, time_utc, channel_id), created_by | Publishing schedule. `created_by` used for user-scoped filtering |
+
+### Portal-displayed credential columns
+
+The channel detail page (`/app/channels/{uuid}`) uses `credential_repo.get_credentials(channel_id)` to display the full credential record. The following columns from `platform_channel_login_credentials` are shown on the portal:
+
+- `login_email` — login email for the Google account
+- `totp_secret` — whether TOTP is configured (shown as has/doesn't have, not the actual secret)
+- `proxy_host`, `proxy_port` — proxy configuration
+- `backup_codes` — backup verification codes
+- `browser_profile_path` — path to Playwright browser profile
+- `user_agent` — browser user agent string
+- `last_attempt_at` — last reauth attempt timestamp
+- `enabled` — whether credentials are active
+- `last_success_at` — last successful reauth
+- `last_error` — last error message from reauth
