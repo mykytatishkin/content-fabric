@@ -34,10 +34,12 @@ templates = Jinja2Templates(directory=str(_templates_dir))
 
 
 def _set_token_cookie(response, user_id: int):
+    import os
     token = create_access_token({"sub": user_id})
+    _use_secure = os.environ.get("HTTPS_ENABLED", "").lower() in ("1", "true", "yes")
     response.set_cookie(
         COOKIE_NAME, token,
-        httponly=True, secure=True, samesite="lax", path="/", max_age=86400,
+        httponly=True, secure=_use_secure, samesite="lax", path="/", max_age=86400,
     )
     return response
 
