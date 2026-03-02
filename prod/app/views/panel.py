@@ -49,6 +49,7 @@ async def dashboard(request: Request):
         "request": request, "active": "dashboard",
         "channels_total": 0, "channels_active": 0, "users_total": 0,
         "tasks_pending": 0, "tasks_completed": 0, "tasks_failed": 0,
+        "tasks_processing": 0, "tasks_cancelled": 0, "tasks_total": 0,
         "queue_total": 0, "recent_failures": [], "reauth_channels": [],
     }
 
@@ -67,17 +68,20 @@ async def dashboard(request: Request):
             rows = conn.execute(text(
                 "SELECT status, COUNT(*) FROM content_upload_queue_tasks GROUP BY status"
             )).fetchall()
-            status_map = {0: "tasks_pending", 1: "tasks_completed", 2: "tasks_failed", 3: "tasks_processing"}
+            status_map = {0: "tasks_pending", 1: "tasks_completed", 2: "tasks_failed", 3: "tasks_processing", 4: "tasks_cancelled"}
+            total = 0
             for r in rows:
                 key = status_map.get(r[0])
                 if key:
                     ctx[key] = r[1]
+                total += r[1]
+            ctx["tasks_total"] = total
 
             # Recent failures
             failures = conn.execute(text(
-                "SELECT id, channel_id, title, error_message, completed_at "
+                "SELECT id, channel_id, title, error_message, COALESCE(completed_at, created_at) as completed_at "
                 "FROM content_upload_queue_tasks WHERE status = 2 "
-                "ORDER BY completed_at DESC LIMIT 10"
+                "ORDER BY id DESC LIMIT 10"
             )).fetchall()
             ctx["recent_failures"] = [
                 {"id": f[0], "channel_id": f[1], "title": f[2], "error_message": f[3], "completed_at": f[4]}
