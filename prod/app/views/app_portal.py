@@ -143,9 +143,9 @@ async def register_submit(
         return templates.TemplateResponse("app_register.html", {
             "request": request, "error": "Username already taken",
         })
-    if len(password) < 6:
+    if len(password) < 8:
         return templates.TemplateResponse("app_register.html", {
-            "request": request, "error": "Password must be at least 6 characters",
+            "request": request, "error": "Password must be at least 8 characters",
         })
 
     uid = user_repo.create_user(
@@ -989,7 +989,7 @@ async def settings_2fa_verify(
             "totp_uri": totp_uri, "totp_secret": user["totp_secret"], "backup_codes": None,
         })
 
-    backup_codes = [secrets.token_hex(4) for _ in range(8)]
+    backup_codes = [secrets.token_hex(6) for _ in range(8)]
     user_repo.enable_totp(user["id"], backup_codes)
     user = user_repo.get_user_by_id(user["id"])
 

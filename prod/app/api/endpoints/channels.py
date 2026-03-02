@@ -3,10 +3,13 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.api.deps import get_current_user
 from app.repositories.channel_repository import (
     add_account_credentials,
     add_channel,
@@ -23,26 +26,27 @@ from app.services.youtube_validator import validate_channel_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_limiter = Limiter(key_func=get_remote_address)
 _templates_dir = Path(__file__).resolve().parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
 
 @router.get("/google-consoles", response_model=list[OAuthCredential])
-async def get_consoles():
+async def get_consoles(user: dict = Depends(get_current_user)):
     """List OAuth credentials for dropdown."""
     consoles = list_oauth_credentials(enabled_only=True)
     return [OAuthCredential(**c) for c in consoles]
 
 
 @router.get("/", response_model=list[Channel])
-async def get_channels(project_id: int | None = None):
+async def get_channels(project_id: int | None = None, user: dict = Depends(get_current_user)):
     """List all channels, optionally filtered by project."""
     channels = list_channels(project_id=project_id)
     return [Channel(**c) for c in channels]
 
 
 @router.get("/form", response_class=HTMLResponse)
-async def channel_form(request: Request):
+async def channel_form(request: Request, user: dict = Depends(get_current_user)):
     """Serve add-channel form page."""
     consoles = list_oauth_credentials(enabled_only=True)
     return templates.TemplateResponse(
@@ -52,7 +56,8 @@ async def channel_form(request: Request):
 
 
 @router.post("/", response_model=Channel, status_code=201)
-async def create_channel(data: ChannelCreate):
+@_limiter.limit("10/minute")
+async def create_channel(request: Request, data: ChannelCreate, user: dict = Depends(get_current_user)):
     """Add a new YouTube channel with validation."""
     # Validate console exists
     if not data.console_id:
@@ -105,7 +110,7 @@ async def create_channel(data: ChannelCreate):
 
 
 @router.get("/{channel_id}", response_model=Channel)
-async def get_channel(channel_id: int):
+async def get_channel(channel_id: int, user: dict = Depends(get_current_user)):
     """Get channel by ID."""
     channel = get_channel_by_id(channel_id)
     if not channel:
@@ -114,7 +119,7 @@ async def get_channel(channel_id: int):
 
 
 @router.get("/{channel_id}/stats")
-async def get_channel_stats(channel_id: int, days: int = 30):
+async def get_channel_stats(channel_id: int, days: int = 30, user: dict = Depends(get_current_user)):
     """Get daily statistics for a channel."""
     from shared.db.repositories import stats_repo
     channel = get_channel_by_id(channel_id)

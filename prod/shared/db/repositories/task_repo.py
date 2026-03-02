@@ -127,6 +127,7 @@ def get_all_tasks(
     offset: int | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    created_by: int | None = None,
 ) -> list[dict[str, Any]]:
     t = content_upload_queue_tasks
     cols = [
@@ -137,6 +138,8 @@ def get_all_tasks(
         t.c.upload_id, t.c.error_message, t.c.retry_count,
     ]
     stmt = select(*cols)
+    if created_by is not None:
+        stmt = stmt.where(t.c.created_by == created_by)
     if status is not None:
         stmt = stmt.where(t.c.status == status)
     elif statuses:

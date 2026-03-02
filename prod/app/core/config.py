@@ -29,7 +29,7 @@ class ApiSettings(BaseSettings):
 class Settings(BaseSettings):
     APP_NAME: str = "FastAPI App"
     DEBUG: bool = False
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: list[str] = ["http://46.21.250.43"]
 
     # MySQL (loaded from prod/.env/.env.db only)
     MYSQL_HOST: str
