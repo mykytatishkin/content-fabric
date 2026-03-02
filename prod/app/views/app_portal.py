@@ -189,7 +189,8 @@ async def dashboard(request: Request):
             ctx["success_rate"] = round(ctx["tasks_completed"] / done * 100) if done > 0 else 0
 
             recent = conn.execute(text(
-                f"SELECT t.id, t.uuid, t.channel_id, pc.name, pc.uuid, t.title, t.status, t.scheduled_at, t.created_at "
+                f"SELECT t.id, t.uuid, t.channel_id, pc.name, pc.uuid, t.title, t.status, "
+                f"t.scheduled_at, t.created_at, t.error_message "
                 f"FROM content_upload_queue_tasks t "
                 f"LEFT JOIN platform_channels pc ON t.channel_id = pc.id "
                 f"WHERE {t_where} "
@@ -198,7 +199,7 @@ async def dashboard(request: Request):
             ctx["recent_tasks"] = [
                 {"id": r[0], "uuid": r[1], "channel_id": r[2], "channel_name": r[3] or "?",
                  "channel_uuid": r[4] or "", "title": r[5], "status": r[6],
-                 "scheduled_at": r[7], "created_at": r[8]}
+                 "scheduled_at": r[7], "created_at": r[8], "error_message": r[9]}
                 for r in recent
             ]
 
@@ -237,13 +238,15 @@ async def channels_page(request: Request):
         with get_connection() as conn:
             rows = conn.execute(text(f"""
                 SELECT id, uuid, name, platform_channel_id, enabled, processing_status,
-                       access_token IS NOT NULL as has_tokens, created_at
+                       access_token IS NOT NULL as has_tokens, created_at,
+                       token_expires_at, updated_at
                 FROM platform_channels WHERE {ch_where} ORDER BY id
             """), ch_params).fetchall()
             channels = [
                 {"id": r[0], "uuid": r[1], "name": r[2], "platform_channel_id": r[3],
                  "enabled": bool(r[4]), "processing_status": bool(r[5]),
-                 "has_tokens": bool(r[6]), "created_at": r[7]}
+                 "has_tokens": bool(r[6]), "created_at": r[7],
+                 "token_expires_at": r[8], "updated_at": r[9]}
                 for r in rows
             ]
     except Exception as e:
@@ -336,11 +339,21 @@ async def channel_detail(request: Request, channel_uuid: str):
     if not is_admin(user) and channel.get("created_by") != user["id"]:
         return RedirectResponse("/app/channels", status_code=302)
 
+    from shared.db.repositories import console_repo, credential_repo
+
     channel_id = channel["id"]
     stats = {}
     recent_tasks = []
     credentials = None
+    console = None
     try:
+        # Console info
+        if channel.get("console_id"):
+            console = console_repo.get_console_by_id(channel["console_id"])
+
+        # Full credentials via credential_repo
+        credentials = credential_repo.get_credentials(channel_id, include_disabled=True)
+
         with get_connection() as conn:
             # Task stats for this channel
             rows = conn.execute(text(
@@ -362,26 +375,13 @@ async def channel_detail(request: Request, channel_uuid: str):
                  "scheduled_at": r[4], "created_at": r[5], "error_message": r[6]}
                 for r in task_rows
             ]
-
-            # Login credentials
-            cred_row = conn.execute(text(
-                "SELECT login_email, totp_secret IS NOT NULL as has_totp, "
-                "proxy_host, enabled, last_success_at, last_error "
-                "FROM platform_channel_login_credentials WHERE channel_id = :cid"
-            ), {"cid": channel_id}).fetchone()
-            if cred_row:
-                credentials = {
-                    "login_email": cred_row[0], "has_totp": bool(cred_row[1]),
-                    "proxy_host": cred_row[2], "enabled": bool(cred_row[3]),
-                    "last_success_at": cred_row[4], "last_error": cred_row[5],
-                }
     except Exception as e:
         logger.error("Channel detail error: %s", e)
 
     return templates.TemplateResponse("app_channel_detail.html", {
         "request": request, "user": user, "active": "channels",
         "channel": channel, "stats": stats, "recent_tasks": recent_tasks,
-        "credentials": credentials,
+        "credentials": credentials, "console": console,
     })
 
 
@@ -525,7 +525,8 @@ async def tasks_page(request: Request):
 
             rows = conn.execute(text(f"""
                 SELECT t.id, t.uuid, t.channel_id, pc.name, pc.uuid, t.media_type, t.title,
-                       t.status, t.scheduled_at, t.created_at, t.error_message
+                       t.status, t.scheduled_at, t.created_at, t.error_message,
+                       t.completed_at, t.retry_count
                 FROM content_upload_queue_tasks t
                 LEFT JOIN platform_channels pc ON t.channel_id = pc.id
                 WHERE {where}
@@ -534,7 +535,8 @@ async def tasks_page(request: Request):
             tasks = [
                 {"id": r[0], "uuid": r[1], "channel_id": r[2], "channel_name": r[3] or "?",
                  "channel_uuid": r[4] or "", "media_type": r[5], "title": r[6], "status": r[7],
-                 "scheduled_at": r[8], "created_at": r[9], "error_message": r[10]}
+                 "scheduled_at": r[8], "created_at": r[9], "error_message": r[10],
+                 "completed_at": r[11], "retry_count": r[12]}
                 for r in rows
             ]
     except Exception as e:

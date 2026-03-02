@@ -27,10 +27,28 @@
         </div>
     </div>
     <div class="card">
-        <div class="label">Tokens</div>
+        <div class="label">OAuth Tokens</div>
         <div class="value">
             {% if channel.access_token %}<span class="badge badge-green">OK</span>
             {% else %}<span class="badge badge-red">Missing</span>{% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">Token Expires</div>
+        <div class="value" style="font-size:0.85rem;">
+            {% if channel.token_expires_at %}
+                {{ channel.token_expires_at }}
+            {% elif channel.access_token %}
+                <span style="color:#d97706;">Unknown</span>
+            {% else %}
+                <span style="color:#64748b;">—</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">OAuth Console</div>
+        <div class="value" style="font-size:0.85rem;">
+            {% if console %}{{ console.name }}{% else %}<span style="color:#64748b;">—</span>{% endif %}
         </div>
     </div>
     <div class="card">
@@ -71,12 +89,30 @@
 <!-- Login Credentials -->
 {% if credentials %}
 <h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Login Credentials</h3>
-<div class="form-card" style="margin-bottom:1.5rem;">
+<div class="form-card" style="margin-bottom:1.5rem;max-width:100%;">
     <table style="box-shadow:none;">
-        <tr><td style="font-weight:600;width:140px;">Email</td><td>{{ credentials.login_email or '—' }}</td></tr>
-        <tr><td style="font-weight:600;">TOTP</td><td>{% if credentials.has_totp %}<span class="badge badge-green">Configured</span>{% else %}<span class="badge badge-gray">No</span>{% endif %}</td></tr>
-        <tr><td style="font-weight:600;">Proxy</td><td>{{ credentials.proxy_host or '—' }}</td></tr>
+        <tr><td style="font-weight:600;width:160px;">Email</td><td>{{ credentials.login_email or '—' }}</td></tr>
         <tr><td style="font-weight:600;">Status</td><td>{% if credentials.enabled %}<span class="badge badge-green">Enabled</span>{% else %}<span class="badge badge-gray">Disabled</span>{% endif %}</td></tr>
+        <tr><td style="font-weight:600;">TOTP</td><td>{% if credentials.totp_secret %}<span class="badge badge-green">Configured</span>{% else %}<span class="badge badge-gray">No</span>{% endif %}</td></tr>
+        <tr><td style="font-weight:600;">Backup Codes</td><td>{% if credentials.backup_codes %}<span class="badge badge-green">{{ credentials.backup_codes|length }} codes</span>{% else %}<span class="badge badge-gray">No</span>{% endif %}</td></tr>
+        <tr>
+            <td style="font-weight:600;">Proxy</td>
+            <td>
+                {% if credentials.proxy_host %}
+                    {{ credentials.proxy_host }}{% if credentials.proxy_port %}:{{ credentials.proxy_port }}{% endif %}
+                    {% if credentials.proxy_username %} (auth: {{ credentials.proxy_username }}){% endif %}
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+        </tr>
+        {% if credentials.profile_path %}
+        <tr><td style="font-weight:600;">Browser Profile</td><td style="font-size:0.8rem;word-break:break-all;">{{ credentials.profile_path }}</td></tr>
+        {% endif %}
+        {% if credentials.user_agent %}
+        <tr><td style="font-weight:600;">User Agent</td><td style="font-size:0.8rem;word-break:break-all;">{{ credentials.user_agent }}</td></tr>
+        {% endif %}
+        <tr><td style="font-weight:600;">Last Attempt</td><td>{{ credentials.last_attempt_at or '—' }}</td></tr>
         <tr><td style="font-weight:600;">Last Success</td><td>{{ credentials.last_success_at or '—' }}</td></tr>
         {% if credentials.last_error %}
         <tr><td style="font-weight:600;">Last Error</td><td style="color:#dc2626;font-size:0.8rem;">{{ credentials.last_error }}</td></tr>
@@ -95,7 +131,7 @@
     <tbody>
         {% for t in recent_tasks %}
         <tr>
-            <td>{{ t.id }}</td>
+            <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
             <td>{{ (t.title or '—')[:50] }}</td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
