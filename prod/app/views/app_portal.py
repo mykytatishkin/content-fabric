@@ -6,6 +6,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from starlette.responses import HTMLResponse
 
 from app.core.auth import (
@@ -23,6 +25,7 @@ from app.core.security import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+_limiter = Limiter(key_func=get_remote_address)
 
 _templates_dir = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
@@ -34,7 +37,7 @@ def _set_token_cookie(response, user_id: int):
     token = create_access_token({"sub": user_id})
     response.set_cookie(
         COOKIE_NAME, token,
-        httponly=True, samesite="lax", path="/", max_age=86400,
+        httponly=True, secure=True, samesite="lax", path="/", max_age=86400,
     )
     return response
 
@@ -52,6 +55,7 @@ async def login_page(request: Request):
 
 
 @router.post("/login", response_class=HTMLResponse)
+@_limiter.limit("10/minute")
 async def login_submit(
     request: Request,
     email: str = Form(...),
@@ -98,6 +102,7 @@ async def register_page(request: Request):
 
 
 @router.post("/register", response_class=HTMLResponse)
+@_limiter.limit("5/minute")
 async def register_submit(
     request: Request,
     username: str = Form(...),
@@ -584,7 +589,17 @@ async def task_new_submit(
     if redirect:
         return redirect
 
-    from shared.db.repositories import task_repo
+    from shared.db.repositories import task_repo, channel_repo
+
+    # Validate ownership of channel
+    ch = channel_repo.get_channel_by_id(channel_id)
+    if not ch or (not is_admin(user) and ch.get("created_by") != user["id"]):
+        return RedirectResponse("/app/tasks", status_code=302)
+
+    # Validate file paths (no traversal)
+    for path_val in (source_file_path, thumbnail_path):
+        if path_val and (".." in path_val or path_val.startswith("/")):
+            return RedirectResponse("/app/tasks/new", status_code=302)
 
     from datetime import datetime, timezone
     scheduled = datetime.now(timezone.utc)
@@ -711,7 +726,7 @@ async def templates_page(request: Request):
     from sqlalchemy import text
 
     tpls = []
-    st_where, st_params = _user_filter(user, "st")
+    st_where, st_params = scoped_where(user, "st")
     try:
         with get_connection() as conn:
             rows = conn.execute(text(f"""
@@ -768,7 +783,8 @@ async def template_new_submit(
         description=description or None,
         timezone=timezone,
     )
-    return RedirectResponse(f"/app/templates/{tid}", status_code=302)
+    tpl = template_repo.get_template(tid)
+    return RedirectResponse(f"/app/templates/{tpl['uuid']}" if tpl else "/app/templates", status_code=302)
 
 
 @router.get("/templates/{template_uuid}", response_class=HTMLResponse)
@@ -1022,8 +1038,8 @@ async def settings_change_password(
         ctx["error"] = "Current password is incorrect"
         return templates.TemplateResponse("app_settings.html", ctx)
 
-    if len(new_password) < 6:
-        ctx["error"] = "New password must be at least 6 characters"
+    if len(new_password) < 8:
+        ctx["error"] = "New password must be at least 8 characters"
         return templates.TemplateResponse("app_settings.html", ctx)
 
     if new_password != confirm_password:
@@ -1062,14 +1078,20 @@ async def portal_upload_video(
     if ext not in allowed:
         return JSONResponse({"error": f"Invalid format: {ext}"}, status_code=400)
 
+    MAX_VIDEO_SIZE = 10 * 1024 * 1024 * 1024  # 10 GB
     unique_name = f"{_uuid.uuid4().hex}{ext}"
     dest = upload_dir / unique_name
 
+    total = 0
     with open(dest, "wb") as f:
         while chunk := await file.read(1024 * 1024):
+            total += len(chunk)
+            if total > MAX_VIDEO_SIZE:
+                dest.unlink(missing_ok=True)
+                return JSONResponse({"error": "File too large (max 10 GB)"}, status_code=400)
             f.write(chunk)
 
-    return JSONResponse({"path": str(dest), "filename": file.filename, "size": dest.stat().st_size})
+    return JSONResponse({"path": str(dest.name), "filename": file.filename, "size": dest.stat().st_size})
 
 
 @router.post("/upload/thumbnail", response_class=HTMLResponse)
@@ -1095,11 +1117,17 @@ async def portal_upload_thumbnail(
     if ext not in allowed:
         return JSONResponse({"error": f"Invalid format: {ext}"}, status_code=400)
 
+    MAX_IMAGE_SIZE = 50 * 1024 * 1024  # 50 MB
     unique_name = f"{_uuid.uuid4().hex}{ext}"
     dest = upload_dir / unique_name
 
+    total = 0
     with open(dest, "wb") as f:
         while chunk := await file.read(1024 * 1024):
+            total += len(chunk)
+            if total > MAX_IMAGE_SIZE:
+                dest.unlink(missing_ok=True)
+                return JSONResponse({"error": "File too large (max 50 MB)"}, status_code=400)
             f.write(chunk)
 
-    return JSONResponse({"path": str(dest), "filename": file.filename, "size": dest.stat().st_size})
+    return JSONResponse({"path": str(dest.name), "filename": file.filename, "size": dest.stat().st_size})

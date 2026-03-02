@@ -362,14 +362,19 @@ async def logs_page(request: Request):
     if redirect:
         return redirect
 
-    service = request.query_params.get("service", "cff-api")
-    level = request.query_params.get("level", "all")
-    lines = min(int(request.query_params.get("lines", "200")), 1000)
-
     available_services = [
         "cff-api", "cff-scheduler", "cff-publishing-worker",
         "cff-notification-worker", "cff-voice-worker",
     ]
+
+    service = request.query_params.get("service", "cff-api")
+    if service not in available_services:
+        service = "cff-api"
+    level = request.query_params.get("level", "all")
+    try:
+        lines = min(int(request.query_params.get("lines", "200")), 1000)
+    except (ValueError, TypeError):
+        lines = 200
 
     log_lines = []
     try:

@@ -98,7 +98,8 @@ async def me(user: dict = Depends(get_current_user)):
 
 
 @router.post("/2fa/setup", response_model=TotpSetupResponse)
-async def setup_2fa(user: dict = Depends(get_current_user)):
+@_limiter.limit("5/minute")
+async def setup_2fa(request: Request, user: dict = Depends(get_current_user)):
     """Generate a TOTP secret. User must call /2fa/verify to activate."""
     if user.get("totp_enabled"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="2FA already enabled")
@@ -117,7 +118,8 @@ async def setup_2fa(user: dict = Depends(get_current_user)):
 
 
 @router.post("/2fa/verify")
-async def verify_2fa(body: TotpVerifyRequest, user: dict = Depends(get_current_user)):
+@_limiter.limit("5/minute")
+async def verify_2fa(request: Request, body: TotpVerifyRequest, user: dict = Depends(get_current_user)):
     """Confirm TOTP setup with a valid code. Activates 2FA."""
     secret = user.get("totp_secret")
     if not secret:
@@ -137,7 +139,8 @@ async def verify_2fa(body: TotpVerifyRequest, user: dict = Depends(get_current_u
 
 
 @router.post("/2fa/disable")
-async def disable_2fa(body: TotpDisableRequest, user: dict = Depends(get_current_user)):
+@_limiter.limit("5/minute")
+async def disable_2fa(request: Request, body: TotpDisableRequest, user: dict = Depends(get_current_user)):
     """Disable 2FA. Requires password confirmation."""
     if not user.get("totp_enabled"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA not enabled")

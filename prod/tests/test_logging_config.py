@@ -46,11 +46,9 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert "status" in data
-        assert "checks" in data
-        assert "details" in data
-        assert "uptime_seconds" in data["details"]
 
-    def test_health_has_api_check(self, app_client):
+    def test_health_hides_details_for_anon(self, app_client):
         resp = app_client.get("/health")
         data = resp.json()
-        assert data["checks"]["api"] == "ok"
+        assert "checks" not in data
+        assert "details" not in data

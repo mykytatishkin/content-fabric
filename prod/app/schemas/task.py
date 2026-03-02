@@ -27,6 +27,8 @@ class TaskCreate(BaseModel):
             return v
         if ".." in v:
             raise ValueError("Path traversal not allowed")
+        if v.startswith("/") or v.startswith("\\"):
+            raise ValueError("Absolute paths not allowed")
         if len(v) > 1000:
             raise ValueError("Path too long")
         return v

@@ -43,7 +43,7 @@ class TestRegister:
     def test_email_taken(self, app_client):
         with patch("shared.db.repositories.user_repo.get_user_by_email", return_value={"id": 1}):
             resp = app_client.post("/api/v1/auth/register", json={
-                "username": "new", "email": "taken@x.com", "password": "pass",
+                "username": "new", "email": "taken@x.com", "password": "password123",
             })
         assert resp.status_code == 409
 
@@ -51,7 +51,7 @@ class TestRegister:
         with patch("shared.db.repositories.user_repo.get_user_by_email", return_value=None), \
              patch("shared.db.repositories.user_repo.get_user_by_username", return_value={"id": 1}):
             resp = app_client.post("/api/v1/auth/register", json={
-                "username": "taken", "email": "new@x.com", "password": "pass",
+                "username": "taken", "email": "new@x.com", "password": "password123",
             })
         assert resp.status_code == 409
 
@@ -62,7 +62,7 @@ class TestRegister:
              patch("app.api.endpoints.auth.hash_password", return_value="hashed"), \
              patch("app.core.audit.log"):
             resp = app_client.post("/api/v1/auth/register", json={
-                "username": "newuser", "email": "new@x.com", "password": "pass",
+                "username": "newuser", "email": "new@x.com", "password": "password123",
             })
         assert resp.status_code == 201
         assert "access_token" in resp.json()

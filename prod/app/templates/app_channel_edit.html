@@ -40,11 +40,11 @@
         </div>
         <div class="form-group">
             <label>Login Password</label>
-            <input type="password" name="login_password" value="{{ credentials.login_password if credentials else '' }}" placeholder="Leave empty to keep current">
+            <input type="password" name="login_password" value="" placeholder="Leave empty to keep current">
         </div>
         <div class="form-group">
             <label>TOTP Secret (base32)</label>
-            <input type="text" name="totp_secret" value="{{ credentials.totp_secret if credentials else '' }}" placeholder="Base32 TOTP secret for 2FA">
+            <input type="password" name="totp_secret" value="" placeholder="{{ 'Configured (leave empty to keep)' if credentials and credentials.totp_secret else 'Base32 TOTP secret for 2FA' }}">
         </div>
 
         <button type="submit" class="btn btn-primary">Save Changes</button>

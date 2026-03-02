@@ -16,7 +16,7 @@ class TestCreateTemplate:
     @patch("shared.db.repositories.template_repo.add_slot")
     @patch("shared.db.repositories.template_repo.get_template", return_value={
         "id": 1, "project_id": 1, "name": "Weekly", "description": "Weekly schedule",
-        "timezone": "UTC", "is_active": True, "created_at": "2026-01-01",
+        "timezone": "UTC", "is_active": True, "created_at": "2026-01-01", "created_by": 1,
     })
     @patch("shared.db.repositories.template_repo.get_slots", return_value=[])
     def test_create_success(self, mock_slots, mock_get, mock_add, mock_create, mock_user, app_client, auth_headers):
@@ -41,13 +41,16 @@ class TestListTemplates:
 
 class TestDeleteTemplate:
     @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
-    @patch("shared.db.repositories.template_repo.delete_template", return_value=False)
-    def test_not_found(self, mock_delete, mock_user, app_client, auth_headers):
+    @patch("shared.db.repositories.template_repo.get_template", return_value=None)
+    def test_not_found(self, mock_get, mock_user, app_client, auth_headers):
         resp = app_client.delete("/api/v1/templates/999", headers=auth_headers)
         assert resp.status_code == 404
 
     @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
     @patch("shared.db.repositories.template_repo.delete_template", return_value=True)
-    def test_success(self, mock_delete, mock_user, app_client, auth_headers):
+    @patch("shared.db.repositories.template_repo.get_template", return_value={
+        "id": 1, "name": "T", "created_by": 1,
+    })
+    def test_success(self, mock_get, mock_delete, mock_user, app_client, auth_headers):
         resp = app_client.delete("/api/v1/templates/1", headers=auth_headers)
         assert resp.status_code == 204

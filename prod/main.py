@@ -37,12 +37,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+_is_dev = os.environ.get("ENV", "production") == "development"
 app = FastAPI(
     title=settings.APP_NAME,
     description="Content Fabric API",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _is_dev else None,
+    redoc_url="/redoc" if _is_dev else None,
+    openapi_url="/openapi.json" if _is_dev else None,
 )
 
 app.state.limiter = limiter
@@ -87,18 +89,17 @@ app.include_router(app_portal_router, prefix="/app", tags=["portal"])
 
 @app.get("/")
 async def root():
-    return {
-        "message": "Content Fabric Channels API",
-        "docs": "/docs",
-        "channels_form": "/api/v1/channels/form",
-        "channels_api": "/api/v1/channels/",
-    }
+    return {"message": "Content Fabric API", "status": "running"}
 
 
 @app.get("/health")
-async def health_check():
-    """Detailed health + dependency checks + system metrics."""
+async def health_check(request: Request):
+    """Health check. Full details only for admin (cookie auth)."""
     import time
+    from app.core.auth import user_from_cookie, is_admin
+    _user = user_from_cookie(request)
+    _show_details = _user is not None and is_admin(_user)
+
     checks: dict = {"api": "ok"}
     details: dict = {}
 
@@ -177,7 +178,9 @@ async def health_check():
     details["uptime_seconds"] = round(time.time() - _app_start_time, 0)
 
     status = "healthy" if all(v == "ok" for v in checks.values()) else "degraded"
-    return {"status": status, "checks": checks, "details": details}
+    if _show_details:
+        return {"status": status, "checks": checks, "details": details}
+    return {"status": status}
 
 
 if __name__ == "__main__":
