@@ -104,15 +104,8 @@ def get_task_by_uuid(uuid: str) -> dict[str, Any] | None:
 def get_pending_tasks(limit: int | None = None) -> list[dict[str, Any]]:
     """Get tasks with status=0 and scheduled_at <= NOW()."""
     t = content_upload_queue_tasks
-    cols = [
-        t.c.id, t.c.channel_id, t.c.media_type, t.c.status,
-        t.c.created_at, t.c.source_file_path, t.c.thumbnail_path,
-        t.c.title, t.c.description, t.c.keywords, t.c.post_comment,
-        t.c.legacy_add_info, t.c.scheduled_at, t.c.completed_at,
-        t.c.upload_id, t.c.error_message, t.c.retry_count,
-    ]
     stmt = (
-        select(*cols)
+        select(*_task_cols())
         .where(t.c.status == TaskStatus.PENDING, t.c.scheduled_at <= func.now())
         .order_by(t.c.scheduled_at.asc())
     )
@@ -134,14 +127,7 @@ def get_all_tasks(
     created_by: int | None = None,
 ) -> list[dict[str, Any]]:
     t = content_upload_queue_tasks
-    cols = [
-        t.c.id, t.c.channel_id, t.c.media_type, t.c.status,
-        t.c.created_at, t.c.source_file_path, t.c.thumbnail_path,
-        t.c.title, t.c.description, t.c.keywords, t.c.post_comment,
-        t.c.legacy_add_info, t.c.scheduled_at, t.c.completed_at,
-        t.c.upload_id, t.c.error_message, t.c.retry_count,
-    ]
-    stmt = select(*cols)
+    stmt = select(*_task_cols())
     if created_by is not None:
         stmt = stmt.where(t.c.created_by == created_by)
     if status is not None:
@@ -167,13 +153,6 @@ def get_all_tasks(
 def get_token_related_failed_tasks(channel_id: int) -> list[dict[str, Any]]:
     """Get failed tasks with token-related error messages."""
     t = content_upload_queue_tasks
-    cols = [
-        t.c.id, t.c.channel_id, t.c.media_type, t.c.status,
-        t.c.created_at, t.c.source_file_path, t.c.thumbnail_path,
-        t.c.title, t.c.description, t.c.keywords, t.c.post_comment,
-        t.c.legacy_add_info, t.c.scheduled_at, t.c.completed_at,
-        t.c.upload_id, t.c.error_message, t.c.retry_count,
-    ]
     patterns = [
         "%invalid_grant%",
         "%Token has been expired or revoked%",
@@ -182,9 +161,9 @@ def get_token_related_failed_tasks(channel_id: int) -> list[dict[str, Any]]:
         "%token expired%",
     ]
     stmt = (
-        select(*cols)
+        select(*_task_cols())
         .where(
-            t.c.status == 2,
+            t.c.status == TaskStatus.FAILED,
             t.c.channel_id == channel_id,
             t.c.error_message.isnot(None),
         )

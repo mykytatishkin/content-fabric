@@ -8,9 +8,15 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.responses import HTMLResponse
 
+from app.core.auth import (
+    COOKIE_NAME,
+    is_admin,
+    require_user,
+    scoped_where,
+    user_from_cookie,
+)
 from app.core.security import (
     create_access_token,
-    decode_access_token,
     hash_password,
     verify_password,
 )
@@ -21,42 +27,7 @@ router = APIRouter()
 _templates_dir = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
-COOKIE_NAME = "cff_token"
-
-
 # ── Helpers ──────────────────────────────────────────────────────────
-
-def _get_current_user(request: Request) -> dict | None:
-    """Read JWT from cookie and return user dict or None."""
-    token = request.cookies.get(COOKIE_NAME)
-    if not token:
-        return None
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        return None
-    from shared.db.repositories import user_repo
-    user = user_repo.get_user_by_id(int(payload["sub"]))
-    return user
-
-
-def _require_user(request: Request):
-    """Return user or redirect to login."""
-    user = _get_current_user(request)
-    if not user:
-        return None, RedirectResponse("/app/login", status_code=302)
-    return user, None
-
-
-def _is_admin(user: dict) -> bool:
-    return user.get("status") == 1  # UserStatus.ADMIN
-
-
-def _user_filter(user: dict, table_alias: str = "") -> tuple[str, dict]:
-    """Return (WHERE clause, params) for user-scoped queries. Admins see all."""
-    if _is_admin(user):
-        return "1=1", {}
-    prefix = f"{table_alias}." if table_alias else ""
-    return f"{prefix}created_by = :user_id", {"user_id": user["id"]}
 
 
 def _set_token_cookie(response, user_id: int):
@@ -72,7 +43,7 @@ def _set_token_cookie(response, user_id: int):
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    user = _get_current_user(request)
+    user = user_from_cookie(request)
     if user:
         return RedirectResponse("/app/", status_code=302)
     return templates.TemplateResponse("app_login.html", {
@@ -118,7 +89,7 @@ async def login_submit(
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
-    user = _get_current_user(request)
+    user = user_from_cookie(request)
     if user:
         return RedirectResponse("/app/", status_code=302)
     return templates.TemplateResponse("app_register.html", {
@@ -174,7 +145,7 @@ async def logout(request: Request):
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -188,8 +159,8 @@ async def dashboard(request: Request):
         "tasks_processing": 0, "tasks_cancelled": 0, "tasks_total": 0,
         "success_rate": 0, "recent_tasks": [], "upcoming_tasks": [],
     }
-    ch_where, ch_params = _user_filter(user)
-    t_where, t_params = _user_filter(user, "t")
+    ch_where, ch_params = scoped_where(user)
+    t_where, t_params = scoped_where(user, "t")
     try:
         with get_connection() as conn:
             row = conn.execute(text(
@@ -248,14 +219,14 @@ async def dashboard(request: Request):
 
 @router.get("/channels", response_class=HTMLResponse)
 async def channels_page(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
     from shared.db.connection import get_connection
     from sqlalchemy import text
 
-    ch_where, ch_params = _user_filter(user)
+    ch_where, ch_params = scoped_where(user)
     channels = []
     try:
         with get_connection() as conn:
@@ -280,7 +251,7 @@ async def channels_page(request: Request):
 
 @router.get("/channels/add", response_class=HTMLResponse)
 async def channel_add_page(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -304,7 +275,7 @@ async def channel_add_submit(
     login_password: str = Form(""),
     totp_secret: str = Form(""),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -346,7 +317,7 @@ async def channel_add_submit(
 
 @router.get("/channels/{channel_uuid}", response_class=HTMLResponse)
 async def channel_detail(request: Request, channel_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -357,7 +328,7 @@ async def channel_detail(request: Request, channel_uuid: str):
     channel = channel_repo.get_channel_by_uuid(channel_uuid)
     if not channel:
         return RedirectResponse("/app/channels", status_code=302)
-    if not _is_admin(user) and channel.get("created_by") != user["id"]:
+    if not is_admin(user) and channel.get("created_by") != user["id"]:
         return RedirectResponse("/app/channels", status_code=302)
 
     channel_id = channel["id"]
@@ -411,13 +382,13 @@ async def channel_detail(request: Request, channel_uuid: str):
 
 @router.post("/channels/{channel_uuid}/delete")
 async def channel_delete(request: Request, channel_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import channel_repo
     channel = channel_repo.get_channel_by_uuid(channel_uuid)
-    if not channel or (not _is_admin(user) and channel.get("created_by") != user["id"]):
+    if not channel or (not is_admin(user) and channel.get("created_by") != user["id"]):
         return RedirectResponse("/app/channels", status_code=302)
     channel_repo.delete_channel(channel["id"])
     return RedirectResponse("/app/channels", status_code=302)
@@ -425,7 +396,7 @@ async def channel_delete(request: Request, channel_uuid: str):
 
 @router.get("/channels/{channel_uuid}/edit", response_class=HTMLResponse)
 async def channel_edit_page(request: Request, channel_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -436,7 +407,7 @@ async def channel_edit_page(request: Request, channel_uuid: str):
     channel = channel_repo.get_channel_by_uuid(channel_uuid)
     if not channel:
         return RedirectResponse("/app/channels", status_code=302)
-    if not _is_admin(user) and channel.get("created_by") != user["id"]:
+    if not is_admin(user) and channel.get("created_by") != user["id"]:
         return RedirectResponse("/app/channels", status_code=302)
 
     consoles = console_repo.list_consoles_brief(enabled_only=True)
@@ -473,14 +444,14 @@ async def channel_edit_submit(
     login_password: str = Form(""),
     totp_secret: str = Form(""),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import channel_repo
 
     channel = channel_repo.get_channel_by_uuid(channel_uuid)
-    if not channel or (not _is_admin(user) and channel.get("created_by") != user["id"]):
+    if not channel or (not is_admin(user) and channel.get("created_by") != user["id"]):
         return RedirectResponse("/app/channels", status_code=302)
 
     channel_id = channel["id"]
@@ -507,7 +478,7 @@ async def channel_edit_submit(
 
 @router.get("/tasks", response_class=HTMLResponse)
 async def tasks_page(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -520,8 +491,8 @@ async def tasks_page(request: Request):
     tasks = []
     stats = {}
     channels = []
-    t_where, t_params = _user_filter(user, "t")
-    ch_where, ch_params = _user_filter(user)
+    t_where, t_params = scoped_where(user, "t")
+    ch_where, ch_params = scoped_where(user)
     try:
         with get_connection() as conn:
             # Stats (user-scoped)
@@ -573,7 +544,7 @@ async def tasks_page(request: Request):
 
 @router.get("/tasks/new", response_class=HTMLResponse)
 async def task_new_page(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -581,7 +552,7 @@ async def task_new_page(request: Request):
     from sqlalchemy import text
 
     channels = []
-    ch_where, ch_params = _user_filter(user)
+    ch_where, ch_params = scoped_where(user)
     try:
         with get_connection() as conn:
             rows = conn.execute(text(
@@ -609,7 +580,7 @@ async def task_new_submit(
     thumbnail_path: str = Form(""),
     post_comment: str = Form(""),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -639,13 +610,13 @@ async def task_new_submit(
 
 @router.post("/tasks/{task_uuid}/cancel")
 async def task_cancel(request: Request, task_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import task_repo
     task = task_repo.get_task_by_uuid(task_uuid)
-    if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
+    if not task or (not is_admin(user) and task.get("created_by") != user["id"]):
         return RedirectResponse("/app/tasks", status_code=302)
     task_repo.cancel_task(task["id"])
     return RedirectResponse("/app/tasks", status_code=302)
@@ -653,13 +624,13 @@ async def task_cancel(request: Request, task_uuid: str):
 
 @router.post("/tasks/{task_uuid}/retry")
 async def task_retry(request: Request, task_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
     from shared.db.repositories import task_repo
     task = task_repo.get_task_by_uuid(task_uuid)
-    if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
+    if not task or (not is_admin(user) and task.get("created_by") != user["id"]):
         return RedirectResponse("/app/tasks", status_code=302)
     task_repo.retry_task(task["id"])
     return RedirectResponse(f"/app/tasks/{task_uuid}", status_code=302)
@@ -667,7 +638,7 @@ async def task_retry(request: Request, task_uuid: str):
 
 @router.get("/tasks/{task_uuid}", response_class=HTMLResponse)
 async def task_detail(request: Request, task_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -678,7 +649,7 @@ async def task_detail(request: Request, task_uuid: str):
     task = task_repo.get_task_by_uuid(task_uuid)
     if not task:
         return RedirectResponse("/app/tasks", status_code=302)
-    if not _is_admin(user) and task.get("created_by") != user["id"]:
+    if not is_admin(user) and task.get("created_by") != user["id"]:
         return RedirectResponse("/app/tasks", status_code=302)
 
     channel_name = "?"
@@ -708,7 +679,7 @@ async def task_reschedule(
     task_uuid: str,
     scheduled_at: str = Form(...),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -716,7 +687,7 @@ async def task_reschedule(
     from shared.db.repositories import task_repo
 
     task = task_repo.get_task_by_uuid(task_uuid)
-    if not task or (not _is_admin(user) and task.get("created_by") != user["id"]):
+    if not task or (not is_admin(user) and task.get("created_by") != user["id"]):
         return RedirectResponse("/app/tasks", status_code=302)
 
     try:
@@ -732,7 +703,7 @@ async def task_reschedule(
 
 @router.get("/templates", response_class=HTMLResponse)
 async def templates_page(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -767,7 +738,7 @@ async def templates_page(request: Request):
 
 @router.get("/templates/new", response_class=HTMLResponse)
 async def template_new_page(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -783,7 +754,7 @@ async def template_new_submit(
     description: str = Form(""),
     timezone: str = Form("UTC"),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -802,7 +773,7 @@ async def template_new_submit(
 
 @router.get("/templates/{template_uuid}", response_class=HTMLResponse)
 async def template_detail(request: Request, template_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -813,13 +784,13 @@ async def template_detail(request: Request, template_uuid: str):
     tpl = template_repo.get_template_by_uuid(template_uuid)
     if not tpl:
         return RedirectResponse("/app/templates", status_code=302)
-    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+    if not is_admin(user) and tpl.get("created_by") != user["id"]:
         return RedirectResponse("/app/templates", status_code=302)
 
     slots = template_repo.get_slots(tpl["id"])
 
     channels = []
-    ch_where, ch_params = _user_filter(user)
+    ch_where, ch_params = scoped_where(user)
     try:
         with get_connection() as conn:
             rows = conn.execute(text(
@@ -847,7 +818,7 @@ async def template_add_slot(
     time_utc: str = Form(...),
     channel_id: int = Form(0),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -855,7 +826,7 @@ async def template_add_slot(
     tpl = template_repo.get_template_by_uuid(template_uuid)
     if not tpl:
         return RedirectResponse("/app/templates", status_code=302)
-    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+    if not is_admin(user) and tpl.get("created_by") != user["id"]:
         return RedirectResponse("/app/templates", status_code=302)
     template_repo.add_slot(
         template_id=tpl["id"],
@@ -868,7 +839,7 @@ async def template_add_slot(
 
 @router.post("/templates/{template_uuid}/slots/{slot_id}/delete")
 async def template_delete_slot(request: Request, template_uuid: str, slot_id: int):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -876,7 +847,7 @@ async def template_delete_slot(request: Request, template_uuid: str, slot_id: in
     tpl = template_repo.get_template_by_uuid(template_uuid)
     if not tpl:
         return RedirectResponse("/app/templates", status_code=302)
-    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+    if not is_admin(user) and tpl.get("created_by") != user["id"]:
         return RedirectResponse("/app/templates", status_code=302)
     template_repo.delete_slot(slot_id)
     return RedirectResponse(f"/app/templates/{template_uuid}", status_code=302)
@@ -884,7 +855,7 @@ async def template_delete_slot(request: Request, template_uuid: str, slot_id: in
 
 @router.post("/templates/{template_uuid}/delete")
 async def template_delete(request: Request, template_uuid: str):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -892,7 +863,7 @@ async def template_delete(request: Request, template_uuid: str):
     tpl = template_repo.get_template_by_uuid(template_uuid)
     if not tpl:
         return RedirectResponse("/app/templates", status_code=302)
-    if not _is_admin(user) and tpl.get("created_by") != user["id"]:
+    if not is_admin(user) and tpl.get("created_by") != user["id"]:
         return RedirectResponse("/app/templates", status_code=302)
     template_repo.clear_slots(tpl["id"])
     template_repo.delete_template(tpl["id"])
@@ -903,7 +874,7 @@ async def template_delete(request: Request, template_uuid: str):
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -919,7 +890,7 @@ async def settings_update_profile(
     display_name: str = Form(""),
     timezone: str = Form(""),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -936,7 +907,7 @@ async def settings_update_profile(
 
 @router.post("/settings/2fa/setup", response_class=HTMLResponse)
 async def settings_2fa_setup(request: Request):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -968,7 +939,7 @@ async def settings_2fa_verify(
     request: Request,
     totp_code: str = Form(...),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -1009,7 +980,7 @@ async def settings_2fa_disable(
     request: Request,
     password: str = Form(...),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -1038,7 +1009,7 @@ async def settings_change_password(
     new_password: str = Form(...),
     confirm_password: str = Form(...),
 ):
-    user, redirect = _require_user(request)
+    user, redirect = require_user(request)
     if redirect:
         return redirect
 
@@ -1079,7 +1050,7 @@ async def portal_upload_video(
     from pathlib import Path
     from fastapi.responses import JSONResponse
 
-    user = _get_current_user(request)
+    user = user_from_cookie(request)
     if not user:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
 
@@ -1112,7 +1083,7 @@ async def portal_upload_thumbnail(
     from pathlib import Path
     from fastapi.responses import JSONResponse
 
-    user = _get_current_user(request)
+    user = user_from_cookie(request)
     if not user:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
 

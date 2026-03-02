@@ -3,25 +3,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_current_user
+from app.core.auth import require_admin_api
 from shared.db.connection import get_connection
-from shared.db.models import TaskStatus, UserStatus
+from shared.db.models import TaskStatus
 from sqlalchemy import text
 
 router = APIRouter()
 
 
-def _require_admin(user: dict) -> dict:
-    """Check that the current user has admin status (status=1)."""
-    # status=1 is admin in platform_users
-    if user.get("status") != UserStatus.ADMIN:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
-
 @router.get("/dashboard")
 async def admin_dashboard(user: dict = Depends(get_current_user)):
     """Overview of system state — users, channels, tasks, queues."""
-    _require_admin(user)
+    require_admin_api(user)
 
     with get_connection() as conn:
         users_count = conn.execute(text("SELECT COUNT(*) FROM platform_users")).scalar()
@@ -52,7 +45,7 @@ async def admin_dashboard(user: dict = Depends(get_current_user)):
 @router.get("/users")
 async def list_users(user: dict = Depends(get_current_user)):
     """List all platform users."""
-    _require_admin(user)
+    require_admin_api(user)
 
     sql = text(
         "SELECT id, uuid, username, email, display_name, status, totp_enabled, "
@@ -66,7 +59,7 @@ async def list_users(user: dict = Depends(get_current_user)):
 @router.get("/queue")
 async def queue_status(user: dict = Depends(get_current_user)):
     """Redis queue status — job counts per queue."""
-    _require_admin(user)
+    require_admin_api(user)
 
     try:
         from shared.queue.config import get_redis, QUEUE_PUBLISHING, QUEUE_NOTIFICATIONS, QUEUE_VOICE
@@ -84,7 +77,7 @@ async def queue_status(user: dict = Depends(get_current_user)):
 @router.get("/consoles")
 async def list_consoles(user: dict = Depends(get_current_user)):
     """List all OAuth consoles with channel counts."""
-    _require_admin(user)
+    require_admin_api(user)
 
     sql = text(
         "SELECT c.id, c.name, c.platform, c.cloud_project_id, c.enabled, c.created_at, "
@@ -101,7 +94,7 @@ async def list_consoles(user: dict = Depends(get_current_user)):
 @router.post("/users/{user_id}/status")
 async def update_user_status(user_id: int, new_status: int, user: dict = Depends(get_current_user)):
     """Change user status (activate/deactivate)."""
-    _require_admin(user)
+    require_admin_api(user)
 
     valid_statuses = {s.value for s in UserStatus}
     if new_status not in valid_statuses:
@@ -121,7 +114,7 @@ async def update_user_status(user_id: int, new_status: int, user: dict = Depends
 @router.get("/credentials")
 async def list_credentials(user: dict = Depends(get_current_user)):
     """List all channel login credentials (passwords masked)."""
-    _require_admin(user)
+    require_admin_api(user)
 
     from shared.db.repositories import credential_repo
     creds = credential_repo.list_credentials()
@@ -139,7 +132,7 @@ async def set_totp_secret(
     user: dict = Depends(get_current_user),
 ):
     """Set TOTP secret for a channel's RPA credentials."""
-    _require_admin(user)
+    require_admin_api(user)
 
     from shared.db.repositories import credential_repo
     existing = credential_repo.get_credentials(channel_id, include_disabled=True)
@@ -153,7 +146,7 @@ async def set_totp_secret(
 @router.get("/reauth-status")
 async def reauth_status(user: dict = Depends(get_current_user)):
     """Show channels needing re-auth (expired/revoked tokens) and MFA status."""
-    _require_admin(user)
+    require_admin_api(user)
 
     sql = text(
         "SELECT c.id, c.name, c.enabled, c.token_expires_at, "
