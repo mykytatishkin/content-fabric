@@ -62,4 +62,4 @@ Mock data tuples must match the column order in the repo's `select()` / `_row_to
 cd prod && python -m pytest tests/ -v --tb=short
 ```
 
-202 tests, all should pass. No real DB needed (everything mocked).
+204 tests, all should pass. No real DB needed (everything mocked).

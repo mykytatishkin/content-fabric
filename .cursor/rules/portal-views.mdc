@@ -11,7 +11,10 @@ alwaysApply: false
 - **Admin Panel** (`/panel/*`) — `prod/app/views/panel.py`
 
 ## Cookie-based auth (NOT Bearer JWT)
-Views use cookies, NOT `Depends(get_current_user)`:
+Views use cookies, NOT `Depends(get_current_user)`.
+
+**Cookie Secure flag:** `_set_token_cookie()` sets `secure` based on `HTTPS_ENABLED` env var. On HTTP-only deployments (current prod), `secure=False` — otherwise browsers won't send the cookie and users get infinite redirect loops.
+
 ```python
 from app.core.auth import require_user, require_admin, is_admin
 

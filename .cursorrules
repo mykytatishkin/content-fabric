@@ -18,7 +18,7 @@ prod/cpp/video/     → C++ watermark/subtitle removal (scaffold, @graf_crayt)
 
 ## Tech Stack
 
-- Python 3.10+ (server runs 3.10), FastAPI 0.109, Pydantic v2
+- Python 3.10+ (server runs 3.10), FastAPI 0.135.1, Pydantic v2 (2.11.3)
 - MySQL (content_fabric DB, 13+ tables), SQLAlchemy Core (NOT ORM)
 - Redis 7 + rq (task queues: publishing, notifications, voice)
 - JWT auth (PyJWT + passlib/bcrypt)
@@ -83,6 +83,7 @@ where_clause = scoped_where(t, user)  # adds created_by filter for non-admins
 - **Channel detail data**: uses `credential_repo.get_credentials()` for full credential display and `console_repo.get_console_by_id()` for console name
 - **All portal queries are user-scoped** via `scoped_where()` from `app/core/auth.py` — regular users see only their own channels/tasks/templates
 - **Sidebar links**: Admin Panel + Health are restricted to admin users only; API Docs link removed (disabled in prod)
+- **Cookie Secure flag**: `_set_token_cookie()` uses `HTTPS_ENABLED` env var — `secure=False` on HTTP (prod), `secure=True` only when `HTTPS_ENABLED=true`. Without this, Secure cookies cause infinite redirect loops on HTTP-only deployments.
 
 ### 8. Не добавлять Co-Authored-By в коммиты!
 
@@ -159,7 +160,7 @@ class UserStatus(IntEnum):
 
 ### Tests
 - `prod/tests/conftest.py` — fixtures: `app_client`, `auth_headers`, `admin_headers`, mocked DB
-- 202 tests, pytest, all mocked (no real DB)
+- 204 tests, pytest, all mocked (no real DB)
 - Test pattern: patch at IMPORT SITE, not definition site
 ```python
 # WRONG: @patch("shared.db.repositories.channel_repo.get_channel_by_id")
@@ -225,6 +226,7 @@ TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 UPLOAD_DIR=/opt/content-fabric/uploads
 LOG_LEVEL=INFO
 LOG_FORMAT=json  # or omit for plaintext
+HTTPS_ENABLED=false  # set to "true" when HTTPS is configured (controls cookie Secure flag)
 ```
 
 ## Language
