@@ -1,7 +1,7 @@
 # Content Fabric — Отчёт для менеджера проекта
 
 > Период: октябрь 2025 — февраль 2026
-> Последнее обновление: 28.02.2026 (Phase 10)
+> Последнее обновление: 02.03.2026 (Phase 11 — Security Pentest)
 
 ---
 
@@ -177,6 +177,25 @@
 | **DDL cleanup** | Удалены 11 legacy reference DDL файлов, Docker init | Done |
 | **Dead references** | Вычищены мёртвые ссылки на legacy/ из 7 файлов | Done |
 | **Porting issue** | GitHub issue #107 — задача на портирование оставшихся модулей | Done |
+
+### Фаза 11: Security Pentest & Remediation (02.03.2026)
+
+Независимый пентест всей кодовой базы — найдено и исправлено 12 уязвимостей.
+
+| Severity | Фикс | Описание | Статус |
+|----------|------|----------|--------|
+| **CRITICAL** | Channels auth | Все 6 API endpoints `/api/v1/channels/*` работали БЕЗ авторизации | Fixed |
+| **CRITICAL** | CORS wildcard | `allow_origins=["*"]` + `allow_credentials=True` → CSRF через JS | Fixed |
+| **CRITICAL** | JWT fallback | Hardcoded fallback ключ → `raise RuntimeError` при старте | Fixed |
+| **CRITICAL** | Demo endpoint | `/api/v1/items/*` без auth (DoS на RAM) — удалён | Fixed |
+| **HIGH** | Task IDOR | API tasks без фильтрации по user + нет ownership check | Fixed |
+| **HIGH** | Path traversal | `_file_info()` позволяла пробить произвольные пути на сервере | Fixed |
+| **MEDIUM** | Security headers | Добавлены CSP, Permissions-Policy | Fixed |
+| **MEDIUM** | Rate limiting | Добавлены лимиты: uploads 10/min, channels 10/min, tasks 20/min, batch 5/min | Fixed |
+| **MEDIUM** | Weak passwords | Минимум пароля 6→8 символов | Fixed |
+| **MEDIUM** | Backup codes | Энтропия 32→48 бит (`token_hex(4)`→`token_hex(6)`) | Fixed |
+| **MEDIUM** | Bind address | `uvicorn 0.0.0.0` → `127.0.0.1` | Fixed |
+| **WARNING** | Deprecation | `datetime.utcnow()` → `datetime.now(UTC)` в 4 файлах | Fixed |
 
 ---
 
