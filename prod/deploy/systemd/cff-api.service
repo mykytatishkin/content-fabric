@@ -8,13 +8,18 @@ Type=simple
 User=root
 WorkingDirectory=/opt/content-fabric/prod
 EnvironmentFile=/opt/content-fabric/.env
-EnvironmentFile=/opt/content-fabric/prod/.env/.env.db
-EnvironmentFile=/opt/content-fabric/prod/.env/.env.api
-ExecStart=/opt/content-fabric/prod/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+EnvironmentFile=-/opt/content-fabric/prod/.env
+ExecStart=/opt/content-fabric/prod/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --access-log --log-level info
 Restart=always
 RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
 StandardOutput=append:/var/log/cff-api.log
 StandardError=append:/var/log/cff-api.log
+SyslogIdentifier=cff-api
+LimitNOFILE=65536
+MemoryMax=1G
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

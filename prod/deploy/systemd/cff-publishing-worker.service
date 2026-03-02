@@ -8,13 +8,18 @@ Type=simple
 User=root
 WorkingDirectory=/opt/content-fabric/prod
 EnvironmentFile=/opt/content-fabric/.env
-EnvironmentFile=/opt/content-fabric/prod/.env/.env.db
-EnvironmentFile=/opt/content-fabric/prod/.env/.env.api
+EnvironmentFile=-/opt/content-fabric/prod/.env
 ExecStart=/opt/content-fabric/prod/venv/bin/python -m workers.publishing_worker
 Restart=always
 RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
 StandardOutput=append:/var/log/cff-publishing-worker.log
 StandardError=append:/var/log/cff-publishing-worker.log
+SyslogIdentifier=cff-publishing
+LimitNOFILE=65536
+MemoryMax=2G
+TimeoutStopSec=120
 
 [Install]
 WantedBy=multi-user.target
