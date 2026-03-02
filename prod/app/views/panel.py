@@ -4,10 +4,9 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.core.security import decode_access_token
+from app.core.auth import require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,30 +14,10 @@ router = APIRouter()
 _templates_dir = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
-COOKIE_NAME = "cff_token"
-
-
-def _require_admin(request: Request):
-    """Check cookie for admin user. Returns (user, redirect)."""
-    token = request.cookies.get(COOKIE_NAME)
-    if not token:
-        logger.debug("Panel access denied: no cookie")
-        return None, RedirectResponse("/app/login", status_code=302)
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        logger.warning("Panel access denied: invalid JWT")
-        return None, RedirectResponse("/app/login", status_code=302)
-    from shared.db.repositories import user_repo
-    user = user_repo.get_user_by_id(int(payload["sub"]))
-    if not user or user.get("status") != 1:  # UserStatus.ADMIN
-        logger.warning("Panel access denied: user_id=%s is not admin", payload.get("sub"))
-        return None, RedirectResponse("/app/", status_code=302)
-    return user, None
-
 
 @router.get("/")
 async def dashboard(request: Request):
-    user, redirect = _require_admin(request)
+    user, redirect = require_admin(request)
     if redirect:
         return redirect
 
@@ -123,7 +102,7 @@ async def dashboard(request: Request):
 
 @router.get("/channels")
 async def channels_page(request: Request):
-    user, redirect = _require_admin(request)
+    user, redirect = require_admin(request)
     if redirect:
         return redirect
 
@@ -153,7 +132,7 @@ async def channels_page(request: Request):
 
 @router.get("/tasks")
 async def tasks_page(request: Request):
-    user, redirect = _require_admin(request)
+    user, redirect = require_admin(request)
     if redirect:
         return redirect
 
@@ -190,7 +169,7 @@ async def tasks_page(request: Request):
 
 @router.get("/users")
 async def users_page(request: Request):
-    user, redirect = _require_admin(request)
+    user, redirect = require_admin(request)
     if redirect:
         return redirect
 
@@ -219,7 +198,7 @@ async def users_page(request: Request):
 
 @router.get("/credentials")
 async def credentials_page(request: Request):
-    user, redirect = _require_admin(request)
+    user, redirect = require_admin(request)
     if redirect:
         return redirect
 
@@ -251,7 +230,7 @@ async def credentials_page(request: Request):
 
 @router.get("/payment")
 async def payment_page(request: Request):
-    user, redirect = _require_admin(request)
+    user, redirect = require_admin(request)
     if redirect:
         return redirect
 

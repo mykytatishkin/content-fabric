@@ -10,28 +10,14 @@ from slowapi.util import get_remote_address
 
 from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
+from app.core.auth import check_owner_or_404, scoped_user_id
 from app.schemas.task import TaskBatchCreate, TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
-from shared.db.models import TaskStatus, UserStatus
+from shared.db.models import TaskStatus
 from shared.db.repositories import task_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _limiter = Limiter(key_func=get_remote_address)
-
-
-def _scoped_user_id(user: dict) -> int | None:
-    """Return user ID for filtering, or None if admin (sees all)."""
-    if user.get("status") == UserStatus.ADMIN:
-        return None
-    return user["id"]
-
-
-def _check_task_owner(task: dict, user: dict) -> None:
-    """Raise 404 if non-admin user doesn't own the task."""
-    if user.get("status") == UserStatus.ADMIN:
-        return
-    if task.get("created_by") != user["id"]:
-        raise HTTPException(status_code=404, detail="Task not found")
 
 
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
@@ -104,7 +90,7 @@ async def list_tasks(
         offset=offset,
         date_from=date_from,
         date_to=date_to,
-        created_by=_scoped_user_id(user),
+        created_by=scoped_user_id(user),
     )
     return TaskListResponse(
         items=[TaskResponse(**t) for t in tasks],
@@ -126,7 +112,7 @@ async def task_calendar(
         date_from=date_from,
         date_to=date_to,
         limit=500,
-        created_by=_scoped_user_id(user),
+        created_by=scoped_user_id(user),
     )
     by_day: dict[str, list] = defaultdict(list)
     for t in tasks:
@@ -168,7 +154,7 @@ async def task_history(
         offset=offset,
         date_from=date_from,
         date_to=date_to,
-        created_by=_scoped_user_id(user),
+        created_by=scoped_user_id(user),
     )
     return TaskListResponse(
         items=[TaskResponse(**t) for t in tasks],
@@ -181,7 +167,7 @@ async def get_task(task_id: int, user: dict = Depends(get_current_user)):
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    _check_task_owner(task, user)
+    check_owner_or_404(task, user)
     return TaskResponse(**task)
 
 
@@ -191,7 +177,7 @@ async def update_task(task_id: int, body: TaskUpdate, user: dict = Depends(get_c
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    _check_task_owner(task, user)
+    check_owner_or_404(task, user)
 
     if body.scheduled_at is not None:
         if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
@@ -215,7 +201,7 @@ async def cancel_task(task_id: int, user: dict = Depends(get_current_user)):
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    _check_task_owner(task, user)
+    check_owner_or_404(task, user)
     if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
         logger.warning("Cancel rejected: task %s status=%s", task_id, task["status"])
         raise HTTPException(status_code=409, detail="Only pending/processing tasks can be cancelled")
@@ -232,7 +218,7 @@ async def get_task_status(task_id: int, user: dict = Depends(get_current_user)):
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    _check_task_owner(task, user)
+    check_owner_or_404(task, user)
     return {
         "task_id": task["id"],
         "status": task["status"],
@@ -248,7 +234,7 @@ async def get_task_progress(task_id: int, user: dict = Depends(get_current_user)
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    _check_task_owner(task, user)
+    check_owner_or_404(task, user)
 
     progress = _get_progress_from_redis(task_id)
     return {
@@ -267,7 +253,7 @@ async def get_task_preview(task_id: int, user: dict = Depends(get_current_user))
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    _check_task_owner(task, user)
+    check_owner_or_404(task, user)
 
     source = task.get("source_file_path", "")
     thumb = task.get("thumbnail_path", "")
@@ -288,7 +274,7 @@ async def task_stats(user: dict = Depends(get_current_user)):
     """Aggregate task statistics."""
     from shared.db.connection import get_connection
     from sqlalchemy import text
-    uid = _scoped_user_id(user)
+    uid = scoped_user_id(user)
     if uid is None:
         sql = text("SELECT status, COUNT(*) as cnt FROM content_upload_queue_tasks GROUP BY status")
         params = {}
