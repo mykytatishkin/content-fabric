@@ -38,6 +38,7 @@ def _check_task_owner(task: dict, user: dict) -> None:
 @_limiter.limit("20/minute")
 async def create_task(request: Request, body: TaskCreate, user: dict = Depends(get_current_user)):
     """Create a new upload task. Scheduler picks it up and enqueues to Redis."""
+    logger.info("Creating task: user=%s channel=%s title=%r", user["id"], body.channel_id, body.title)
     task_id = task_repo.create_task(
         channel_id=body.channel_id,
         source_file_path=body.source_file_path,
@@ -49,11 +50,14 @@ async def create_task(request: Request, body: TaskCreate, user: dict = Depends(g
         keywords=body.keywords,
         post_comment=body.post_comment,
         legacy_add_info=body.legacy_add_info,
+        created_by=user["id"],
     )
     if task_id is None:
+        logger.error("Failed to create task: user=%s channel=%s", user["id"], body.channel_id)
         raise HTTPException(status_code=500, detail="Failed to create task")
 
     task = task_repo.get_task(task_id)
+    logger.info("Task created: id=%s user=%s channel=%s", task_id, user["id"], body.channel_id)
     audit_log("task.create", actor_id=user.get("id"), entity_type="task", entity_id=task_id,
               metadata={"channel_id": body.channel_id, "title": body.title})
     return TaskResponse(**task)
@@ -63,10 +67,13 @@ async def create_task(request: Request, body: TaskCreate, user: dict = Depends(g
 @_limiter.limit("5/minute")
 async def create_tasks_batch(request: Request, body: TaskBatchCreate, user: dict = Depends(get_current_user)):
     """Create multiple tasks in a single transaction."""
+    logger.info("Batch create: user=%s count=%d", user["id"], len(body.tasks))
     if len(body.tasks) > 100:
         raise HTTPException(status_code=400, detail="Maximum 100 tasks per batch")
 
     task_dicts = [t.model_dump() for t in body.tasks]
+    for td in task_dicts:
+        td["created_by"] = user["id"]
     ids = task_repo.create_tasks_batch(task_dicts)
 
     tasks = [task_repo.get_task(tid) for tid in ids]
@@ -180,6 +187,7 @@ async def get_task(task_id: int, user: dict = Depends(get_current_user)):
 
 @router.put("/{task_id}", response_model=TaskResponse)
 async def update_task(task_id: int, body: TaskUpdate, user: dict = Depends(get_current_user)):
+    logger.info("Updating task %s: user=%s fields=%s", task_id, user["id"], body.model_dump(exclude_none=True))
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -187,11 +195,14 @@ async def update_task(task_id: int, body: TaskUpdate, user: dict = Depends(get_c
 
     if body.scheduled_at is not None:
         if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+            logger.warning("Reschedule rejected: task %s status=%s", task_id, task["status"])
             raise HTTPException(status_code=409, detail="Cannot reschedule a task that is already completed or failed")
         task_repo.update_task_scheduled_at(task_id, body.scheduled_at)
+        logger.info("Task %s rescheduled to %s", task_id, body.scheduled_at)
 
     if body.status is not None:
         task_repo.update_task_status(task_id, body.status, error_message=body.error_message)
+        logger.info("Task %s status changed to %s", task_id, body.status)
 
     updated = task_repo.get_task(task_id)
     return TaskResponse(**updated)
@@ -200,14 +211,17 @@ async def update_task(task_id: int, body: TaskUpdate, user: dict = Depends(get_c
 @router.post("/{task_id}/cancel", response_model=TaskResponse)
 async def cancel_task(task_id: int, user: dict = Depends(get_current_user)):
     """Cancel a pending or processing task."""
+    logger.info("Cancelling task %s: user=%s", task_id, user["id"])
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     _check_task_owner(task, user)
     if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+        logger.warning("Cancel rejected: task %s status=%s", task_id, task["status"])
         raise HTTPException(status_code=409, detail="Only pending/processing tasks can be cancelled")
 
     task_repo.cancel_task(task_id)
+    logger.info("Task %s cancelled by user %s", task_id, user["id"])
     audit_log("task.cancel", actor_id=user.get("id"), entity_type="task", entity_id=task_id)
     updated = task_repo.get_task(task_id)
     return TaskResponse(**updated)

@@ -82,6 +82,7 @@ async def create_channel(request: Request, data: ChannelCreate, user: dict = Dep
 
     data = ChannelCreate(**{**data.model_dump(), "platform_channel_id": canonical_id})
 
+    logger.info("Creating channel: user=%s name=%r platform_id=%s", user["id"], data.name, canonical_id)
     channel_id = add_channel(data)
     if channel_id is None:
         raise HTTPException(
@@ -106,6 +107,7 @@ async def create_channel(request: Request, data: ChannelCreate, user: dict = Dep
     channel = get_channel_by_id(channel_id)
     if not channel:
         raise HTTPException(status_code=500, detail="Channel created but not found")
+    logger.info("Channel created: id=%s name=%r", channel_id, data.name)
     return Channel(**channel)
 
 

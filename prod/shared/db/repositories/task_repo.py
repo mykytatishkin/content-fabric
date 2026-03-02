@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid as _uuid
 from datetime import datetime
 from typing import Any
@@ -11,6 +12,8 @@ from sqlalchemy import select, insert, text, func, or_
 
 from shared.db.connection import get_connection
 from shared.db.models import TaskStatus, content_upload_queue_tasks, platform_projects
+
+logger = logging.getLogger(__name__)
 
 
 def get_default_project_id() -> int | None:
@@ -62,6 +65,7 @@ def create_task(
     stmt = insert(content_upload_queue_tasks).values(**values)
     with get_connection() as conn:
         result = conn.execute(stmt)
+        logger.info("Task inserted: id=%s channel=%s created_by=%s", result.lastrowid, channel_id, created_by)
         return result.lastrowid
 
 
@@ -214,7 +218,9 @@ def update_task_status(
             "error_message": error_message,
             "tid": task_id,
         })
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        logger.info("Task %s status → %s (ok=%s, error=%s)", task_id, status, ok, error_message[:80] if error_message else None)
+        return ok
 
 
 def mark_task_processing(task_id: int) -> bool:
@@ -222,6 +228,7 @@ def mark_task_processing(task_id: int) -> bool:
 
 
 def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
+    logger.info("Marking task %s completed (upload_id=%s)", task_id, upload_id)
     completed_at = datetime.now()
     sql = text(
         "UPDATE content_upload_queue_tasks "
@@ -238,6 +245,7 @@ def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
 
 
 def mark_task_failed(task_id: int, error_message: str | None = None) -> bool:
+    logger.warning("Marking task %s failed: %s", task_id, error_message[:120] if error_message else "no message")
     return update_task_status(task_id, TaskStatus.FAILED, error_message=error_message)
 
 
@@ -295,7 +303,7 @@ def create_tasks_batch(tasks: list[dict[str, Any]]) -> list[int]:
     with get_engine().begin() as conn:
         for t in tasks:
             add_info = json.dumps(t.get("legacy_add_info")) if t.get("legacy_add_info") else None
-            stmt = insert(content_upload_queue_tasks).values(
+            values = dict(
                 uuid=str(_uuid.uuid4()),
                 project_id=project_id,
                 channel_id=t["channel_id"],
@@ -309,6 +317,9 @@ def create_tasks_batch(tasks: list[dict[str, Any]]) -> list[int]:
                 legacy_add_info=add_info,
                 scheduled_at=t["scheduled_at"],
             )
+            if t.get("created_by") is not None:
+                values["created_by"] = t["created_by"]
+            stmt = insert(content_upload_queue_tasks).values(**values)
             result = conn.execute(stmt)
             ids.append(result.lastrowid)
     return ids
