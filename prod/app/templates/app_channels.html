@@ -32,7 +32,7 @@
             <td>{{ ch.created_at }}</td>
             <td>
                 <form method="POST" action="/app/channels/{{ ch.uuid }}/delete" style="display:inline;"
-                      onsubmit="return confirm('Delete {{ ch.name }}?')">
+                      data-name="{{ ch.name }}" onsubmit="return confirm('Delete ' + this.dataset.name + '?')">
                     <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                 </form>
             </td>

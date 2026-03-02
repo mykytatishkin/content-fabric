@@ -6,7 +6,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "")
@@ -33,7 +34,7 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode["exp"] = expire
-    # jose requires "sub" to be a string
+    # "sub" must be a string per JWT spec
     if "sub" in to_encode:
         to_encode["sub"] = str(to_encode["sub"])
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -43,5 +44,5 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     """Decode and validate JWT. Returns payload or None on failure."""
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
+    except PyJWTError:
         return None

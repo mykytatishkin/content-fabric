@@ -7,7 +7,7 @@
         <a href="/app/channels" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back to Channels</a>
         <a href="/app/channels/{{ channel.uuid }}/edit" class="btn btn-primary btn-sm">Edit Channel</a>
         <form method="POST" action="/app/channels/{{ channel.uuid }}/delete" style="display:inline;"
-              onsubmit="return confirm('Delete channel {{ channel.name }}? This cannot be undone.')">
+              data-name="{{ channel.name }}" onsubmit="return confirm('Delete channel ' + this.dataset.name + '? This cannot be undone.')">
             <button type="submit" class="btn btn-danger btn-sm">Delete Channel</button>
         </form>
     </div>

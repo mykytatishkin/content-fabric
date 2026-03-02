@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.deps import get_current_user
 from app.core.auth import require_admin_api
 from shared.db.connection import get_connection
-from shared.db.models import TaskStatus
+from shared.db.models import TaskStatus, UserStatus
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ async def queue_status(user: dict = Depends(get_current_user)):
         }
     except Exception as e:
         logger.error("Redis health check failed: %s", e)
-        return {"error": "Redis not available", "detail": str(e)}
+        return {"error": "Redis not available"}
 
 
 @router.get("/consoles")

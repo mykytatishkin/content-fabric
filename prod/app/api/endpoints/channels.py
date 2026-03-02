@@ -22,6 +22,7 @@ from app.repositories.channel_repository import (
 )
 from app.schemas.channel import Channel, ChannelCreate, OAuthCredential
 from app.services.youtube_validator import validate_channel_id
+from shared.db.models import UserStatus
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,10 @@ async def get_consoles(user: dict = Depends(get_current_user)):
 
 @router.get("/", response_model=list[Channel])
 async def get_channels(project_id: int | None = None, user: dict = Depends(get_current_user)):
-    """List all channels, optionally filtered by project."""
+    """List channels owned by current user (admins see all)."""
     channels = list_channels(project_id=project_id)
+    if user["status"] != UserStatus.ADMIN.value:
+        channels = [c for c in channels if c.get("created_by") == user["id"]]
     return [Channel(**c) for c in channels]
 
 
@@ -83,7 +86,7 @@ async def create_channel(request: Request, data: ChannelCreate, user: dict = Dep
     data = ChannelCreate(**{**data.model_dump(), "platform_channel_id": canonical_id})
 
     logger.info("Creating channel: user=%s name=%r platform_id=%s", user["id"], data.name, canonical_id)
-    channel_id = add_channel(data)
+    channel_id = add_channel(data, created_by=user["id"])
     if channel_id is None:
         raise HTTPException(
             status_code=409,
@@ -113,19 +116,23 @@ async def create_channel(request: Request, data: ChannelCreate, user: dict = Dep
 
 @router.get("/{channel_id}", response_model=Channel)
 async def get_channel(channel_id: int, user: dict = Depends(get_current_user)):
-    """Get channel by ID."""
+    """Get channel by ID (owner or admin only)."""
     channel = get_channel_by_id(channel_id)
     if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if user["status"] != UserStatus.ADMIN.value and channel.get("created_by") != user["id"]:
         raise HTTPException(status_code=404, detail="Channel not found")
     return Channel(**channel)
 
 
 @router.get("/{channel_id}/stats")
 async def get_channel_stats(channel_id: int, days: int = 30, user: dict = Depends(get_current_user)):
-    """Get daily statistics for a channel."""
+    """Get daily statistics for a channel (owner or admin only)."""
     from shared.db.repositories import stats_repo
     channel = get_channel_by_id(channel_id)
     if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if user["status"] != UserStatus.ADMIN.value and channel.get("created_by") != user["id"]:
         raise HTTPException(status_code=404, detail="Channel not found")
     stats = stats_repo.get_channel_stats(channel_id, days=days)
     return {"channel_id": channel_id, "days": days, "stats": stats}

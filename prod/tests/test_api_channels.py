@@ -25,7 +25,7 @@ class TestListChannels:
     @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
     @patch(f"{_EP}.list_channels", return_value=[
         {"id": 1, "name": "TestChannel", "platform_channel_id": "UC123",
-         "console_id": 1, "enabled": True, "project_id": None,
+         "console_id": 1, "enabled": True, "project_id": None, "created_by": 1,
          "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00"},
     ])
     def test_list_with_items(self, mock_list, mock_user, app_client, auth_headers):
@@ -46,7 +46,7 @@ class TestGetChannel:
     @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
     @patch(f"{_EP}.get_channel_by_id", return_value={
         "id": 1, "name": "MyChannel", "platform_channel_id": "UC123",
-        "console_id": 1, "enabled": True, "project_id": None,
+        "console_id": 1, "enabled": True, "project_id": None, "created_by": 1,
         "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00",
     })
     def test_found(self, mock_get, mock_user, app_client, auth_headers):

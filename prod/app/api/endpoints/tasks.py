@@ -12,8 +12,8 @@ from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
 from app.core.auth import check_owner_or_404, scoped_user_id
 from app.schemas.task import TaskBatchCreate, TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
-from shared.db.models import TaskStatus
-from shared.db.repositories import task_repo
+from shared.db.models import TaskStatus, UserStatus
+from shared.db.repositories import channel_repo, task_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -24,6 +24,10 @@ _limiter = Limiter(key_func=get_remote_address)
 @_limiter.limit("20/minute")
 async def create_task(request: Request, body: TaskCreate, user: dict = Depends(get_current_user)):
     """Create a new upload task. Scheduler picks it up and enqueues to Redis."""
+    # Verify user owns the channel
+    ch = channel_repo.get_channel_by_id(body.channel_id)
+    if not ch or (user["status"] != UserStatus.ADMIN.value and ch.get("created_by") != user["id"]):
+        raise HTTPException(status_code=404, detail="Channel not found")
     logger.info("Creating task: user=%s channel=%s title=%r", user["id"], body.channel_id, body.title)
     task_id = task_repo.create_task(
         channel_id=body.channel_id,

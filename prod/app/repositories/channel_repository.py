@@ -43,7 +43,7 @@ def channel_exists_by_channel_id(platform_channel_id: str) -> bool:
 
 # ── Channel CRUD ────────────────────────────────────────────────────
 
-def add_channel(data: ChannelCreate) -> int | None:
+def add_channel(data: ChannelCreate, created_by: int | None = None) -> int | None:
     project_id = data.project_id or channel_repo.get_default_project_id()
     if not project_id:
         raise ValueError("No project_id provided and no default project found")
@@ -53,6 +53,7 @@ def add_channel(data: ChannelCreate) -> int | None:
         platform_channel_id=data.platform_channel_id,
         console_id=data.console_id,
         enabled=data.enabled,
+        created_by=created_by,
     )
 
 

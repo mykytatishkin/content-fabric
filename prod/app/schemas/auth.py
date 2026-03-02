@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
@@ -12,9 +12,9 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    username: str
+    username: str = Field(..., min_length=2, max_length=64)
     email: str
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
     display_name: str | None = None
 
 

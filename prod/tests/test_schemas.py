@@ -22,12 +22,16 @@ class TestLoginRequest:
 
 class TestRegisterRequest:
     def test_valid(self):
-        r = RegisterRequest(username="user", email="a@b.com", password="pass")
+        r = RegisterRequest(username="user", email="a@b.com", password="password123")
         assert r.display_name is None
 
     def test_with_display_name(self):
-        r = RegisterRequest(username="user", email="a@b.com", password="pass", display_name="User")
+        r = RegisterRequest(username="user", email="a@b.com", password="password123", display_name="User")
         assert r.display_name == "User"
+
+    def test_short_password_rejected(self):
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="user", email="a@b.com", password="short")
 
 
 class TestTokenResponse:
@@ -41,7 +45,7 @@ class TestTaskCreate:
     def test_valid(self):
         t = TaskCreate(
             channel_id=1,
-            source_file_path="/tmp/video.mp4",
+            source_file_path="uploads/videos/video.mp4",
             title="My Video",
             scheduled_at=datetime(2026, 3, 1, 12, 0),
         )
@@ -51,7 +55,16 @@ class TestTaskCreate:
         with pytest.raises(ValidationError, match="Path traversal"):
             TaskCreate(
                 channel_id=1,
-                source_file_path="/tmp/../etc/passwd",
+                source_file_path="uploads/../etc/passwd",
+                title="Bad",
+                scheduled_at=datetime(2026, 3, 1),
+            )
+
+    def test_absolute_path_rejected(self):
+        with pytest.raises(ValidationError, match="Absolute paths"):
+            TaskCreate(
+                channel_id=1,
+                source_file_path="/etc/passwd",
                 title="Bad",
                 scheduled_at=datetime(2026, 3, 1),
             )
@@ -60,7 +73,7 @@ class TestTaskCreate:
         with pytest.raises(ValidationError):
             TaskCreate(
                 channel_id=1,
-                source_file_path="/tmp/v.mp4",
+                source_file_path="uploads/v.mp4",
                 title="",
                 scheduled_at=datetime(2026, 3, 1),
             )
@@ -69,7 +82,7 @@ class TestTaskCreate:
         with pytest.raises(ValidationError):
             TaskCreate(
                 channel_id=1,
-                source_file_path="/" + "a" * 1001,
+                source_file_path="a" * 1002,
                 title="X",
                 scheduled_at=datetime(2026, 3, 1),
             )
@@ -78,10 +91,10 @@ class TestTaskCreate:
         with pytest.raises(ValidationError, match="Path traversal"):
             TaskCreate(
                 channel_id=1,
-                source_file_path="/tmp/v.mp4",
+                source_file_path="uploads/v.mp4",
                 title="X",
                 scheduled_at=datetime(2026, 3, 1),
-                thumbnail_path="/tmp/../../etc/shadow",
+                thumbnail_path="uploads/../../etc/shadow",
             )
 
 
@@ -99,7 +112,7 @@ class TestTaskUpdate:
 class TestTaskBatchCreate:
     def test_multiple_tasks(self):
         b = TaskBatchCreate(tasks=[
-            TaskCreate(channel_id=1, source_file_path="/a.mp4", title="A", scheduled_at=datetime(2026, 3, 1)),
-            TaskCreate(channel_id=2, source_file_path="/b.mp4", title="B", scheduled_at=datetime(2026, 3, 2)),
+            TaskCreate(channel_id=1, source_file_path="uploads/a.mp4", title="A", scheduled_at=datetime(2026, 3, 1)),
+            TaskCreate(channel_id=2, source_file_path="uploads/b.mp4", title="B", scheduled_at=datetime(2026, 3, 2)),
         ])
         assert len(b.tasks) == 2

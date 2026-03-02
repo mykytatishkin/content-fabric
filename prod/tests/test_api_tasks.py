@@ -8,11 +8,14 @@ import pytest
 from tests.conftest import TEST_USER
 
 
+_MOCK_CHANNEL = {"id": 10, "name": "TestCh", "created_by": 1}
+
+
 def _task(task_id=1, status=0):
     return {
         "id": task_id, "channel_id": 10, "media_type": "video",
         "status": status, "created_at": datetime(2026, 1, 1),
-        "source_file_path": "/tmp/v.mp4", "thumbnail_path": None,
+        "source_file_path": "uploads/v.mp4", "thumbnail_path": None,
         "title": "Test Video", "description": None, "keywords": None,
         "post_comment": None, "legacy_add_info": None,
         "scheduled_at": datetime(2026, 3, 1), "completed_at": None,
@@ -31,11 +34,12 @@ class TestCreateTask:
 
     def test_success(self, app_client, auth_headers):
         with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.channel_repo.get_channel_by_id", return_value=_MOCK_CHANNEL), \
              patch("shared.db.repositories.task_repo.create_task", return_value=1), \
              patch("shared.db.repositories.task_repo.get_task", return_value=_task()), \
              patch("app.core.audit.log"):
             resp = app_client.post("/api/v1/tasks/", json={
-                "channel_id": 10, "source_file_path": "/tmp/v.mp4",
+                "channel_id": 10, "source_file_path": "uploads/v.mp4",
                 "title": "Test Video", "scheduled_at": "2026-03-01T12:00:00",
             }, headers=auth_headers)
         assert resp.status_code == 201
@@ -43,9 +47,10 @@ class TestCreateTask:
 
     def test_creation_failure(self, app_client, auth_headers):
         with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.channel_repo.get_channel_by_id", return_value=_MOCK_CHANNEL), \
              patch("shared.db.repositories.task_repo.create_task", return_value=None):
             resp = app_client.post("/api/v1/tasks/", json={
-                "channel_id": 10, "source_file_path": "/v.mp4",
+                "channel_id": 10, "source_file_path": "uploads/v.mp4",
                 "title": "T", "scheduled_at": "2026-03-01T12:00:00",
             }, headers=auth_headers)
         assert resp.status_code == 500
