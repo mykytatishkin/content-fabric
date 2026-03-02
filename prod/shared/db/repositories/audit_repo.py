@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +11,8 @@ from sqlalchemy import select, insert, text
 
 from shared.db.connection import get_connection
 from shared.db.models import channel_reauth_audit_logs
+
+logger = logging.getLogger(__name__)
 
 
 def create_reauth_audit(
@@ -29,6 +32,7 @@ def create_reauth_audit(
     )
     with get_connection() as conn:
         result = conn.execute(stmt)
+        logger.info("Reauth audit created: id=%s channel=%s status=%s", result.lastrowid, channel_id, status)
         return result.lastrowid
 
 
@@ -58,7 +62,9 @@ def complete_reauth_audit(
             "metadata": metadata_json,
             "aid": audit_id,
         })
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        logger.info("Reauth audit %s completed: status=%s error=%s", audit_id, status, error_message[:80] if error_message else None)
+        return ok
 
 
 def get_recent_reauth_audits(

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 from redis import Redis
+
+logger = logging.getLogger(__name__)
 
 _redis: Redis | None = None
 
@@ -21,6 +24,7 @@ def get_redis() -> Redis:
     global _redis
     if _redis is None:
         _redis = Redis.from_url(REDIS_URL, decode_responses=False)
+        logger.info("Redis connection established: %s", REDIS_URL.split("@")[-1] if "@" in REDIS_URL else REDIS_URL)
     return _redis
 
 
@@ -30,3 +34,4 @@ def close_redis() -> None:
     if _redis is not None:
         _redis.close()
         _redis = None
+        logger.info("Redis connection closed")

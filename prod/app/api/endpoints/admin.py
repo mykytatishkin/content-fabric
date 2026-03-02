@@ -1,5 +1,7 @@
 """Admin endpoints — system overview, user management, queue status."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_current_user
@@ -8,6 +10,7 @@ from shared.db.connection import get_connection
 from shared.db.models import TaskStatus
 from sqlalchemy import text
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -71,6 +74,7 @@ async def queue_status(user: dict = Depends(get_current_user)):
             "failed": r.llen("rq:queue:failed"),
         }
     except Exception as e:
+        logger.error("Redis health check failed: %s", e)
         return {"error": "Redis not available", "detail": str(e)}
 
 
@@ -105,6 +109,7 @@ async def update_user_status(user_id: int, new_status: int, user: dict = Depends
         result = conn.execute(sql, {"status": new_status, "uid": user_id})
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="User not found")
+    logger.info("Admin %s changed user %s status to %s", user["id"], user_id, new_status)
     return {"ok": True, "user_id": user_id, "new_status": new_status}
 
 
@@ -140,6 +145,7 @@ async def set_totp_secret(
         raise HTTPException(status_code=404, detail="No credentials for this channel")
 
     credential_repo.update_totp_secret(channel_id, totp_secret)
+    logger.info("Admin %s set TOTP for channel %s", user["id"], channel_id)
     return {"ok": True, "channel_id": channel_id, "totp_set": True}
 
 

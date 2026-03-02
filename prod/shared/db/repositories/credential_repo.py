@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +11,8 @@ from sqlalchemy import select, insert, text
 
 from shared.db.connection import get_connection
 from shared.db.models import platform_channel_login_credentials
+
+logger = logging.getLogger(__name__)
 
 
 def get_credentials(
@@ -94,6 +97,7 @@ def add_credentials(
     )
     with get_connection() as conn:
         result = conn.execute(stmt)
+        logger.info("Credentials added: id=%s channel=%s email=%s", result.lastrowid, channel_id, login_email)
         return result.lastrowid
 
 
@@ -155,6 +159,7 @@ def upsert_credentials(
             "user_agent": user_agent,
             "enabled": int(enabled),
         })
+        logger.info("Credentials upserted for channel %s email=%s", channel_id, login_email)
         return True
 
 
@@ -166,7 +171,9 @@ def disable_credentials(channel_id: int) -> bool:
     )
     with get_connection() as conn:
         result = conn.execute(sql, {"cid": channel_id})
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        logger.info("Credentials disabled for channel %s (ok=%s)", channel_id, ok)
+        return ok
 
 
 def mark_attempt(
@@ -193,7 +200,12 @@ def mark_attempt(
             "error_message": None if success else error_message,
             "cid": channel_id,
         })
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        if success:
+            logger.info("RPA attempt success for channel %s", channel_id)
+        else:
+            logger.warning("RPA attempt failed for channel %s: %s", channel_id, error_message[:100] if error_message else "no message")
+        return ok
 
 
 def update_totp_secret(
@@ -214,7 +226,9 @@ def update_totp_secret(
             "codes": backup_codes_json,
             "cid": channel_id,
         })
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        logger.info("TOTP secret %s for channel %s (ok=%s)", "set" if totp_secret else "cleared", channel_id, ok)
+        return ok
 
 
 def update_profile_path(channel_id: int, profile_path: str) -> bool:

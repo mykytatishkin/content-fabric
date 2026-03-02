@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid as _uuid
 from typing import Any
 
@@ -15,6 +16,8 @@ from shared.db.models import (
     platform_oauth_credentials,
     platform_projects,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def list_channels(project_id: int | None = None) -> list[dict[str, Any]]:
@@ -204,9 +207,11 @@ def add_channel(
     try:
         with get_connection() as conn:
             result = conn.execute(stmt)
+            logger.info("Channel added: id=%s name=%s platform_id=%s created_by=%s", result.lastrowid, name, platform_channel_id, created_by)
             return result.lastrowid
     except Exception as e:
         if "1062" in str(e):
+            logger.warning("Duplicate channel: name=%s platform_id=%s", name, platform_channel_id)
             return None
         raise
 
@@ -229,7 +234,9 @@ def update_channel_tokens(
     sql = f"UPDATE platform_channels SET {', '.join(parts)} WHERE id = :cid"
     with get_connection() as conn:
         result = conn.execute(text(sql), params)
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        logger.info("Channel %s tokens updated (ok=%s, has_refresh=%s)", channel_id, ok, refresh_token is not None)
+        return ok
 
 
 def update_channel(channel_id: int, name: str | None = None, enabled: bool | None = None) -> bool:
@@ -287,7 +294,9 @@ def delete_channel(channel_id: int) -> bool:
         result = conn.execute(text(
             "DELETE FROM platform_channels WHERE id = :cid"
         ), {"cid": channel_id})
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        logger.info("Channel %s deleted (ok=%s)", channel_id, ok)
+        return ok
 
 
 def add_login_credentials(
@@ -316,4 +325,5 @@ def add_login_credentials(
     )
     with get_connection() as conn:
         result = conn.execute(stmt)
+        logger.info("Login credentials added: id=%s channel=%s email=%s", result.lastrowid, channel_id, login_email)
         return result.lastrowid

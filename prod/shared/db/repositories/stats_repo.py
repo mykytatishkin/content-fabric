@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 
 from shared.db.connection import get_connection
+
+logger = logging.getLogger(__name__)
 
 
 def get_channel_stats(channel_id: int, days: int = 30) -> list[dict[str, Any]]:
@@ -44,6 +47,7 @@ def record_stats(
             "subs": subscribers, "views": views, "vids": videos,
             "likes": likes, "comments": comments,
         })
+        logger.info("Stats recorded: channel=%s subs=%s views=%s videos=%s", channel_id, subscribers, views, videos)
         return result.lastrowid
 
 

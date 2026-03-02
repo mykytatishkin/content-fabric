@@ -1,9 +1,13 @@
 """Schedule template endpoints — CRUD for publishing schedules."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
+
+logger = logging.getLogger(__name__)
 from app.schemas.template import (
     SlotCreate,
     SlotResponse,
@@ -54,6 +58,7 @@ async def create_template(body: TemplateCreate, user: dict = Depends(get_current
         )
 
     audit_log("template.create", actor_id=user["id"], entity_type="template", entity_id=template_id)
+    logger.info("Template created: id=%s name=%s by user=%s (%d slots)", template_id, body.name, user["id"], len(body.slots))
     return _build_response(template_id)
 
 
@@ -93,6 +98,7 @@ async def delete_template(template_id: int, user: dict = Depends(get_current_use
     if not template_repo.delete_template(template_id):
         raise HTTPException(status_code=404, detail="Template not found")
     audit_log("template.delete", actor_id=user["id"], entity_type="template", entity_id=template_id)
+    logger.info("Template deleted: id=%s by user=%s", template_id, user["id"])
 
 
 @router.post("/{template_id}/slots", response_model=SlotResponse, status_code=status.HTTP_201_CREATED)
