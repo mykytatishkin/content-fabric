@@ -41,7 +41,7 @@
 {% if tasks %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th><th></th></tr>
+        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Type</th><th>Status</th><th>Scheduled</th><th>Completed</th><th>Retries</th><th>Error</th><th></th></tr>
     </thead>
     <tbody>
         {% for t in tasks %}
@@ -49,6 +49,7 @@
             <td>{{ t.id }}</td>
             <td><a href="/app/channels/{{ t.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
             <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ (t.title or '—')[:50] }}</a></td>
+            <td><span class="badge badge-gray">{{ t.media_type or 'video' }}</span></td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
                 {% elif t.status == 1 %}<span class="badge badge-green">Completed</span>
@@ -57,8 +58,9 @@
                 {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
                 {% endif %}
             </td>
-            <td>{{ t.scheduled_at or '—' }}</td>
-            <td>{{ t.created_at }}</td>
+            <td style="font-size:0.75rem;">{{ t.scheduled_at or '—' }}</td>
+            <td style="font-size:0.75rem;">{{ t.completed_at or '—' }}</td>
+            <td>{% if t.retry_count %}<span style="color:#d97706;">{{ t.retry_count }}</span>{% else %}0{% endif %}</td>
             <td style="font-size:0.75rem;color:#991b1b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:80] }}</td>
             <td style="white-space:nowrap;">
                 {% if t.status == 0 %}

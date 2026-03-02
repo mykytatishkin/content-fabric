@@ -70,11 +70,10 @@
                 <a href="/app/settings" class="{{ 'active' if active == 'settings' }}">&#9881; <span>Settings</span></a>
             </nav>
             <div class="sidebar-bottom">
-                {% if user and user.status == 'admin' %}
+                {% if user and user.status == 1 %}
                 <a href="/panel/">&#128272; <span>Admin Panel</span></a>
-                {% endif %}
-                <a href="/docs">&#128214; <span>API Docs</span></a>
                 <a href="/health">&#128154; <span>Health</span></a>
+                {% endif %}
             </div>
             <div class="user-info">
                 <strong>{{ user.display_name if user else 'Guest' }}</strong>

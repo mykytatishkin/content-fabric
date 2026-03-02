@@ -23,12 +23,20 @@
         <div class="value" style="color:#d97706;">{{ tasks_pending }}</div>
     </div>
     <div class="card">
+        <div class="label">Processing</div>
+        <div class="value" style="color:#2563eb;">{{ tasks_processing }}</div>
+    </div>
+    <div class="card">
         <div class="label">Completed</div>
         <div class="value" style="color:#16a34a;">{{ tasks_completed }}</div>
     </div>
     <div class="card">
         <div class="label">Failed</div>
         <div class="value" style="color:#dc2626;">{{ tasks_failed }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Cancelled</div>
+        <div class="value" style="color:#64748b;">{{ tasks_cancelled }}</div>
     </div>
     <div class="card">
         <div class="label">Success Rate</div>
@@ -59,7 +67,7 @@
 {% if recent_tasks %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th></tr>
+        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th></tr>
     </thead>
     <tbody>
         {% for t in recent_tasks %}
@@ -75,8 +83,9 @@
                 {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
                 {% endif %}
             </td>
-            <td>{{ t.scheduled_at or '—' }}</td>
-            <td>{{ t.created_at }}</td>
+            <td style="font-size:0.75rem;">{{ t.scheduled_at or '—' }}</td>
+            <td style="font-size:0.75rem;">{{ t.created_at }}</td>
+            <td style="font-size:0.75rem;color:#991b1b;max-width:180px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:60] }}</td>
         </tr>
         {% endfor %}
     </tbody>

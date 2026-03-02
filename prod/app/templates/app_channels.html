@@ -9,7 +9,7 @@
 {% if channels %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Name</th><th>YouTube ID</th><th>Enabled</th><th>Processing</th><th>Tokens</th><th>Created</th><th></th></tr>
+        <tr><th>ID</th><th>Name</th><th>YouTube ID</th><th>Enabled</th><th>Processing</th><th>Tokens</th><th>Token Expires</th><th>Updated</th><th></th></tr>
     </thead>
     <tbody>
         {% for ch in channels %}
@@ -29,7 +29,16 @@
                 {% if ch.has_tokens %}<span class="badge badge-green">OK</span>
                 {% else %}<span class="badge badge-red">Missing</span>{% endif %}
             </td>
-            <td>{{ ch.created_at }}</td>
+            <td style="font-size:0.75rem;">
+                {% if ch.token_expires_at %}
+                    <span style="color:#64748b;">{{ ch.token_expires_at }}</span>
+                {% elif ch.has_tokens %}
+                    <span style="color:#d97706;">Unknown</span>
+                {% else %}
+                    <span style="color:#64748b;">—</span>
+                {% endif %}
+            </td>
+            <td style="font-size:0.75rem;color:#64748b;">{{ ch.updated_at or ch.created_at }}</td>
             <td>
                 <form method="POST" action="/app/channels/{{ ch.uuid }}/delete" style="display:inline;"
                       data-name="{{ ch.name }}" onsubmit="return confirm('Delete ' + this.dataset.name + '?')">
