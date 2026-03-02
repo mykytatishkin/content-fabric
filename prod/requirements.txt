@@ -18,3 +18,4 @@ bcrypt>=4.0,<6.0
 pyotp>=2.9,<3.0
 slowapi>=0.1.9,<1.0
 python-multipart>=0.0.6,<1.0
+orjson>=3.9,<4.0
