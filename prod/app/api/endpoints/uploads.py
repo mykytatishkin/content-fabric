@@ -5,13 +5,16 @@ import uuid
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+_limiter = Limiter(key_func=get_remote_address)
 
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads"))
 
@@ -36,7 +39,9 @@ def _validate_extension(filename: str, allowed: set[str]) -> str:
 
 
 @router.post("/video", status_code=status.HTTP_201_CREATED)
+@_limiter.limit("10/minute")
 async def upload_video(
+    request: Request,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
 ):
@@ -71,7 +76,9 @@ async def upload_video(
 
 
 @router.post("/thumbnail", status_code=status.HTTP_201_CREATED)
+@_limiter.limit("20/minute")
 async def upload_thumbnail(
+    request: Request,
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
 ):

@@ -17,6 +17,7 @@ def _task(task_id=1, status=0):
         "post_comment": None, "legacy_add_info": None,
         "scheduled_at": datetime(2026, 3, 1), "completed_at": None,
         "upload_id": None, "error_message": None, "retry_count": 0,
+        "created_by": TEST_USER["id"],
     }
 
 

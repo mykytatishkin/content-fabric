@@ -1,22 +1,42 @@
 """Task management endpoints — creates tasks in DB, scheduler enqueues to Redis."""
 
 import logging
+import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
 from app.schemas.task import TaskBatchCreate, TaskCreate, TaskListResponse, TaskResponse, TaskUpdate
-from shared.db.models import TaskStatus
+from shared.db.models import TaskStatus, UserStatus
 from shared.db.repositories import task_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+_limiter = Limiter(key_func=get_remote_address)
+
+
+def _scoped_user_id(user: dict) -> int | None:
+    """Return user ID for filtering, or None if admin (sees all)."""
+    if user.get("status") == UserStatus.ADMIN:
+        return None
+    return user["id"]
+
+
+def _check_task_owner(task: dict, user: dict) -> None:
+    """Raise 404 if non-admin user doesn't own the task."""
+    if user.get("status") == UserStatus.ADMIN:
+        return
+    if task.get("created_by") != user["id"]:
+        raise HTTPException(status_code=404, detail="Task not found")
 
 
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-async def create_task(body: TaskCreate, user: dict = Depends(get_current_user)):
+@_limiter.limit("20/minute")
+async def create_task(request: Request, body: TaskCreate, user: dict = Depends(get_current_user)):
     """Create a new upload task. Scheduler picks it up and enqueues to Redis."""
     task_id = task_repo.create_task(
         channel_id=body.channel_id,
@@ -40,7 +60,8 @@ async def create_task(body: TaskCreate, user: dict = Depends(get_current_user)):
 
 
 @router.post("/batch", response_model=TaskListResponse, status_code=status.HTTP_201_CREATED)
-async def create_tasks_batch(body: TaskBatchCreate, user: dict = Depends(get_current_user)):
+@_limiter.limit("5/minute")
+async def create_tasks_batch(request: Request, body: TaskBatchCreate, user: dict = Depends(get_current_user)):
     """Create multiple tasks in a single transaction."""
     if len(body.tasks) > 100:
         raise HTTPException(status_code=400, detail="Maximum 100 tasks per batch")
@@ -76,6 +97,7 @@ async def list_tasks(
         offset=offset,
         date_from=date_from,
         date_to=date_to,
+        created_by=_scoped_user_id(user),
     )
     return TaskListResponse(
         items=[TaskResponse(**t) for t in tasks],
@@ -97,6 +119,7 @@ async def task_calendar(
         date_from=date_from,
         date_to=date_to,
         limit=500,
+        created_by=_scoped_user_id(user),
     )
     by_day: dict[str, list] = defaultdict(list)
     for t in tasks:
@@ -138,6 +161,7 @@ async def task_history(
         offset=offset,
         date_from=date_from,
         date_to=date_to,
+        created_by=_scoped_user_id(user),
     )
     return TaskListResponse(
         items=[TaskResponse(**t) for t in tasks],
@@ -150,6 +174,7 @@ async def get_task(task_id: int, user: dict = Depends(get_current_user)):
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _check_task_owner(task, user)
     return TaskResponse(**task)
 
 
@@ -158,6 +183,7 @@ async def update_task(task_id: int, body: TaskUpdate, user: dict = Depends(get_c
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _check_task_owner(task, user)
 
     if body.scheduled_at is not None:
         if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
@@ -177,6 +203,7 @@ async def cancel_task(task_id: int, user: dict = Depends(get_current_user)):
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _check_task_owner(task, user)
     if task["status"] not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
         raise HTTPException(status_code=409, detail="Only pending/processing tasks can be cancelled")
 
@@ -191,6 +218,7 @@ async def get_task_status(task_id: int, user: dict = Depends(get_current_user)):
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _check_task_owner(task, user)
     return {
         "task_id": task["id"],
         "status": task["status"],
@@ -206,6 +234,7 @@ async def get_task_progress(task_id: int, user: dict = Depends(get_current_user)
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _check_task_owner(task, user)
 
     progress = _get_progress_from_redis(task_id)
     return {
@@ -221,10 +250,10 @@ async def get_task_progress(task_id: int, user: dict = Depends(get_current_user)
 @router.get("/{task_id}/preview")
 async def get_task_preview(task_id: int, user: dict = Depends(get_current_user)):
     """Get file info for task preview (file existence, size, type)."""
-    import os
     task = task_repo.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _check_task_owner(task, user)
 
     source = task.get("source_file_path", "")
     thumb = task.get("thumbnail_path", "")
@@ -245,11 +274,15 @@ async def task_stats(user: dict = Depends(get_current_user)):
     """Aggregate task statistics."""
     from shared.db.connection import get_connection
     from sqlalchemy import text
-    sql = text(
-        "SELECT status, COUNT(*) as cnt FROM content_upload_queue_tasks GROUP BY status"
-    )
+    uid = _scoped_user_id(user)
+    if uid is None:
+        sql = text("SELECT status, COUNT(*) as cnt FROM content_upload_queue_tasks GROUP BY status")
+        params = {}
+    else:
+        sql = text("SELECT status, COUNT(*) as cnt FROM content_upload_queue_tasks WHERE created_by = :uid GROUP BY status")
+        params = {"uid": uid}
     with get_connection() as conn:
-        rows = conn.execute(sql).fetchall()
+        rows = conn.execute(sql, params).fetchall()
 
     status_names = {s.value: s.name.lower() for s in TaskStatus}
     stats = {status_names.get(r[0], f"unknown_{r[0]}"): r[1] for r in rows}
@@ -257,14 +290,21 @@ async def task_stats(user: dict = Depends(get_current_user)):
     return stats
 
 
+_UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")
+
+
 def _file_info(path: str) -> dict | None:
-    """Get basic file info without reading content."""
-    import os
-    if not path or not os.path.exists(path):
-        return {"path": path, "exists": False}
-    stat = os.stat(path)
+    """Get basic file info without reading content. Only allows files under UPLOAD_DIR."""
+    if not path:
+        return None
+    # Prevent arbitrary file probing — only allow paths under the upload directory
+    real = os.path.realpath(path)
+    if not real.startswith(os.path.realpath(_UPLOAD_DIR)):
+        return {"exists": False}
+    if not os.path.exists(real):
+        return {"exists": False}
+    stat = os.stat(real)
     return {
-        "path": path,
         "exists": True,
         "size_bytes": stat.st_size,
         "size_mb": round(stat.st_size / (1024 * 1024), 2),
