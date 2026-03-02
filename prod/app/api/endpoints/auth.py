@@ -1,5 +1,6 @@
 """Authentication endpoints — login, register, me, 2FA."""
 
+import logging
 import secrets
 import uuid
 
@@ -11,6 +12,8 @@ from slowapi.util import get_remote_address
 from app.api.deps import get_current_user
 from app.core.audit import log as audit_log
 from app.core.security import create_access_token, hash_password, verify_password
+
+logger = logging.getLogger(__name__)
 from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
@@ -34,18 +37,22 @@ _limiter = Limiter(key_func=get_remote_address)
 async def login(request: Request, body: LoginRequest):
     user = user_repo.get_user_by_email(body.email)
     if not user or not verify_password(body.password, user["password_hash"]):
+        logger.warning("Login failed: email=%s ip=%s", body.email, request.client.host if request.client else "unknown")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     # 2FA check
     if user.get("totp_enabled"):
         if not body.totp_code:
+            logger.info("Login requires 2FA: user=%s", user["id"])
             return TokenResponse(access_token="", requires_2fa=True)
         if not _verify_totp(user, body.totp_code):
+            logger.warning("Login 2FA failed: user=%s ip=%s", user["id"], request.client.host if request.client else "unknown")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid 2FA code")
 
     user_repo.update_last_login(user["id"])
     token = create_access_token({"sub": user["id"]})
     audit_log("login", actor_id=user["id"], entity_type="user", entity_id=user["id"])
+    logger.info("Login success: user=%s email=%s", user["id"], body.email)
     return TokenResponse(access_token=token)
 
 
@@ -53,8 +60,10 @@ async def login(request: Request, body: LoginRequest):
 @_limiter.limit("5/minute")
 async def register(request: Request, body: RegisterRequest):
     if user_repo.get_user_by_email(body.email):
+        logger.warning("Registration conflict: email=%s already exists", body.email)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     if user_repo.get_user_by_username(body.username):
+        logger.warning("Registration conflict: username=%s already exists", body.username)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already taken")
 
     user_id = user_repo.create_user(
@@ -67,6 +76,7 @@ async def register(request: Request, body: RegisterRequest):
     )
     token = create_access_token({"sub": user_id})
     audit_log("register", actor_id=user_id, entity_type="user", entity_id=user_id)
+    logger.info("Registration success: user=%s username=%s email=%s", user_id, body.username, body.email)
     return TokenResponse(access_token=token)
 
 
@@ -102,6 +112,7 @@ async def setup_2fa(user: dict = Depends(get_current_user)):
     backup_codes = [secrets.token_hex(6) for _ in range(8)]
 
     audit_log("2fa.setup_initiated", actor_id=user["id"], entity_type="user", entity_id=user["id"])
+    logger.info("2FA setup initiated: user=%s", user["id"])
     return TotpSetupResponse(secret=secret, provisioning_uri=uri, backup_codes=backup_codes)
 
 
@@ -131,10 +142,12 @@ async def disable_2fa(body: TotpDisableRequest, user: dict = Depends(get_current
     if not user.get("totp_enabled"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="2FA not enabled")
     if not verify_password(body.password, user["password_hash"]):
+        logger.warning("2FA disable failed — wrong password: user=%s", user["id"])
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
 
     user_repo.disable_totp(user["id"])
     audit_log("2fa.disabled", actor_id=user["id"], entity_type="user", entity_id=user["id"])
+    logger.info("2FA disabled: user=%s", user["id"])
     return {"ok": True}
 
 

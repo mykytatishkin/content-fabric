@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import select, insert, text
 
 from shared.db.connection import get_connection
 from shared.db.models import platform_oauth_credentials, platform_projects
+
+logger = logging.getLogger(__name__)
 
 
 def get_default_project_id() -> int | None:
@@ -114,9 +117,11 @@ def add_console(
     try:
         with get_connection() as conn:
             result = conn.execute(stmt)
+            logger.info("Console added: id=%s name=%s project=%s", result.lastrowid, name, cloud_project_id)
             return result.lastrowid
     except Exception as e:
         if "1062" in str(e):
+            logger.warning("Duplicate console: name=%s", name)
             return None
         raise
 
@@ -159,7 +164,9 @@ def delete_console(console_id: int) -> bool:
     sql = text("DELETE FROM platform_oauth_credentials WHERE id = :cid")
     with get_connection() as conn:
         result = conn.execute(sql, {"cid": console_id})
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+        logger.info("Console %s deleted (ok=%s)", console_id, ok)
+        return ok
 
 
 def _row_to_dict(row) -> dict[str, Any]:

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import select, insert, text
 
 from shared.db.connection import get_connection
 from shared.db.models import platform_users
+
+logger = logging.getLogger(__name__)
 
 _USER_COLS = [
     platform_users.c.id,
@@ -67,6 +70,7 @@ def create_user(
     )
     with get_connection() as conn:
         result = conn.execute(stmt)
+        logger.info("User created: id=%s username=%s email=%s", result.lastrowid, username, email)
         return result.lastrowid
 
 
@@ -74,6 +78,7 @@ def update_last_login(user_id: int) -> None:
     sql = text("UPDATE platform_users SET last_login_at = NOW() WHERE id = :uid")
     with get_connection() as conn:
         conn.execute(sql, {"uid": user_id})
+    logger.debug("Updated last_login_at for user %s", user_id)
 
 
 def update_profile(user_id: int, display_name: str | None = None, timezone: str | None = None) -> None:
@@ -98,6 +103,7 @@ def change_password(user_id: int, new_password_hash: str) -> None:
     sql = text("UPDATE platform_users SET password_hash = :hash WHERE id = :uid")
     with get_connection() as conn:
         conn.execute(sql, {"hash": new_password_hash, "uid": user_id})
+    logger.info("Password changed for user %s", user_id)
 
 
 def set_totp_secret(user_id: int, secret: str) -> None:
@@ -105,6 +111,7 @@ def set_totp_secret(user_id: int, secret: str) -> None:
     sql = text("UPDATE platform_users SET totp_secret = :secret WHERE id = :uid")
     with get_connection() as conn:
         conn.execute(sql, {"secret": secret, "uid": user_id})
+    logger.info("TOTP secret set for user %s", user_id)
 
 
 def enable_totp(user_id: int, backup_codes: list[str]) -> None:
@@ -115,6 +122,7 @@ def enable_totp(user_id: int, backup_codes: list[str]) -> None:
     )
     with get_connection() as conn:
         conn.execute(sql, {"codes": json.dumps(backup_codes), "uid": user_id})
+    logger.info("2FA enabled for user %s (%d backup codes)", user_id, len(backup_codes))
 
 
 def disable_totp(user_id: int) -> None:
@@ -124,6 +132,7 @@ def disable_totp(user_id: int) -> None:
     )
     with get_connection() as conn:
         conn.execute(sql, {"uid": user_id})
+    logger.info("2FA disabled for user %s", user_id)
 
 
 def consume_backup_code(user_id: int, code: str) -> bool:
@@ -131,16 +140,19 @@ def consume_backup_code(user_id: int, code: str) -> bool:
     import json
     user = get_user_by_id(user_id)
     if not user:
+        logger.warning("Backup code attempt for non-existent user %s", user_id)
         return False
     codes: list[str] = user.get("totp_backup_codes") or []
     if isinstance(codes, str):
         codes = json.loads(codes)
     if code not in codes:
+        logger.warning("Invalid backup code for user %s", user_id)
         return False
     codes.remove(code)
     sql = text("UPDATE platform_users SET totp_backup_codes = :codes WHERE id = :uid")
     with get_connection() as conn:
         conn.execute(sql, {"codes": json.dumps(codes), "uid": user_id})
+    logger.info("Backup code consumed for user %s (%d remaining)", user_id, len(codes))
     return True
 
 
