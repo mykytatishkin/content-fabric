@@ -42,7 +42,7 @@
 
 ### Tech Stack
 
-- **Python 3.10+**, FastAPI 0.109, Pydantic 2.5
+- **Python 3.10+**, FastAPI 0.135.1, Pydantic 2.11.3
 - **MySQL** (content_fabric DB, 15 tables)
 - **Redis 7** + **rq** (task queues)
 - **SQLAlchemy Core** (connection pooling, not ORM)
@@ -214,6 +214,9 @@ TELEGRAM_CHAT_ID=<chat-id>
 
 # YouTube API
 YOUTUBE_API_KEY=<api-key>
+
+# Cookie security (set to "true" when HTTPS is configured)
+HTTPS_ENABLED=false
 ```
 
 ---
@@ -334,6 +337,7 @@ Services: api, publishing-worker, notification-worker, voice-worker, scheduler, 
 
 - **API docs disabled in production**: Swagger UI and ReDoc are only available when `ENV=development` (`docs_url=None, redoc_url=None` in prod).
 - **Authentication**: All API endpoints require Bearer JWT auth; portal (SSR views) uses cookie-based auth (`cff_token`).
+- **Cookie Secure flag**: Conditional via `HTTPS_ENABLED` env var — disabled on HTTP (prod), enabled when HTTPS is set up. Without this, Secure cookies cause infinite redirect loops on HTTP-only deployments.
 - **User-scoped data**: Channels, templates, and tasks are filtered by `created_by` — regular users see only their own resources, admins see all.
 - **Rate limiting**: Global limit of 120 requests/min + stricter per-endpoint limits on auth and 2FA routes.
 - **File uploads**: Size limits enforced (10 GB video, 50 MB thumbnail), extension validation, and path traversal protection (rejects absolute paths and `..`).
