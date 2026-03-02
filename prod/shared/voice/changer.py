@@ -1,16 +1,7 @@
-"""Voice change processing — wraps the legacy VoiceChanger.
+"""Voice change processing — wraps VoiceChanger.
 
-The heavy ML dependencies (torch, librosa, pyworld, etc.) live in the legacy
-module.  This file provides a clean interface for the queue worker.
-
-TODO (manual porting required):
-    Voice ML module not yet ported to prod. See unported/core/voice/ for reference.
-    1. Port unported/core/voice/voice_changer.py into prod/shared/voice/
-    2. Install ML dependencies: torch, librosa, pyworld, soundfile, so-vits-svc
-    3. Download voice models to prod server
-    4. Set VOICE_MODELS_DIR env var pointing to models directory
-    5. Test with: rq worker voice --url redis://localhost:6379
-    6. The GPU (Quadro P2000) is available on prod server for inference
+Lazy-loads heavy ML dependencies (torch, librosa, pyworld) to avoid
+import overhead at module level. The queue worker imports this module.
 """
 
 from __future__ import annotations
@@ -28,7 +19,7 @@ _voice_changer = None
 def _get_changer():
     global _voice_changer
     if _voice_changer is None:
-        from core.voice.voice_changer import VoiceChanger
+        from shared.voice.voice_changer import VoiceChanger
         _voice_changer = VoiceChanger()
     return _voice_changer
 

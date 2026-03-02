@@ -101,13 +101,34 @@ prod/
 │   ├── youtube/
 │   │   ├── client.py                # YouTube API (upload, thumbnail, like, comment)
 │   │   ├── upload.py                # Upload orchestration
-│   │   └── token_refresh.py         # OAuth token refresh
+│   │   ├── token_refresh.py         # OAuth token refresh
+│   │   └── reauth/                  # Playwright-based OAuth re-authorization
+│   │       ├── models.py            # AutomationCredential, ReauthResult, etc.
+│   │       ├── oauth_flow.py        # OAuth consent + token exchange
+│   │       ├── playwright_client.py # Automated Google login (3200+ lines)
+│   │       └── service.py           # Orchestration (DB → Playwright → tokens)
 │   ├── notifications/
 │   │   ├── telegram.py              # Telegram Bot API
 │   │   ├── email.py                 # SMTP sender
 │   │   └── manager.py              # Notification routing
-│   └── voice/
-│       └── changer.py               # Voice change wrapper
+│   └── voice/                       # Voice conversion (ML-based)
+│       ├── changer.py               # Worker interface (lazy-loads ML libs)
+│       ├── voice_changer.py         # VoiceChanger class (RVC-based)
+│       ├── mixer.py                 # Audio background mixing
+│       ├── silero.py                # Silero TTS
+│       ├── prosody.py               # Prosody transfer
+│       ├── stress.py                # Russian stress marker
+│       ├── parallel.py              # Parallel voice processing
+│       └── rvc/                     # RVC voice conversion
+│           ├── inference.py         # RVC inference
+│           ├── model_manager.py     # Model loading/management
+│           └── sovits.py            # SoVITS converter
+│
+├── cli/                             # CLI tools
+│   └── reauth.py                    # YouTube re-auth CLI (python -m cli.reauth)
+│
+├── cpp/                             # C++ modules (@graf_crayt)
+│   └── video/                       # Watermark/subtitle removal scaffold
 │
 ├── scheduler/
 │   ├── run.py                       # Entry point (polling loop)

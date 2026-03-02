@@ -8,16 +8,6 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 
-def _validate_file_path(v: str | None) -> str | None:
-    if v is None:
-        return v
-    if ".." in v:
-        raise ValueError("Path traversal not allowed")
-    if len(v) > 1000:
-        raise ValueError("Path too long")
-    return v
-
-
 class TaskCreate(BaseModel):
     channel_id: int
     source_file_path: str = Field(..., min_length=1, max_length=1000)
@@ -30,18 +20,27 @@ class TaskCreate(BaseModel):
     post_comment: str | None = Field(None, max_length=2000)
     legacy_add_info: dict[str, Any] | None = None
 
-    _check_source = field_validator("source_file_path")(_validate_file_path)
-    _check_thumb = field_validator("thumbnail_path")(_validate_file_path)
+    @field_validator("source_file_path", "thumbnail_path")
+    @classmethod
+    def validate_file_path(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if ".." in v:
+            raise ValueError("Path traversal not allowed")
+        if len(v) > 1000:
+            raise ValueError("Path too long")
+        return v
 
 
 class TaskUpdate(BaseModel):
-    status: int | None = None
+    status: int | None = Field(None, ge=0, le=4)
     scheduled_at: datetime | None = None
     error_message: str | None = None
 
 
 class TaskResponse(BaseModel):
     id: int
+    uuid: str | None = None
     channel_id: int
     media_type: str | None = None
     status: int

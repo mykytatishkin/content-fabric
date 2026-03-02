@@ -16,10 +16,10 @@ try:
 except ImportError:
     pw = None
 
-from core.utils.logger import get_logger
-from core.voice.rvc.model_manager import RVCModelManager
+import logging
+from shared.voice.rvc.model_manager import RVCModelManager
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class RVCInference:

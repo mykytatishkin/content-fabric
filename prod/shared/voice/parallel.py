@@ -20,9 +20,9 @@ try:
 except ImportError:
     raise ImportError("librosa and soundfile are required. Install with: pip install librosa soundfile")
 
-from core.utils.logger import get_logger
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _process_chunk_worker(chunk_info: Dict, processor_params: Dict, output_dir: str) -> Dict:
@@ -37,7 +37,7 @@ def _process_chunk_worker(chunk_info: Dict, processor_params: Dict, output_dir: 
     
     try:
         # Import here to avoid pickling issues
-        from core.voice.silero import SileroVoiceChanger
+        from shared.voice.silero import SileroVoiceChanger
         
         # Initialize voice changer in this process
         voice_changer = SileroVoiceChanger(device=processor_params.get('device', 'cpu'))

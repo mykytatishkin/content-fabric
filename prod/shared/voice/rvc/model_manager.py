@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import requests
 
-from core.utils.logger import get_logger
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class RVCModelManager:

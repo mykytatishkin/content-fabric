@@ -19,17 +19,24 @@ def create_reauth_audit(
     channel_id: int,
     status: str,
     initiated_at: datetime | None = None,
+    trigger_reason: str | None = None,
+    error_code: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> int | None:
     """Create an audit record. Returns new id."""
     initiated_at = initiated_at or datetime.now()
     metadata_json = serialize_json(metadata)
-    stmt = insert(channel_reauth_audit_logs).values(
-        channel_id=channel_id,
-        initiated_at=initiated_at,
-        status=status,
-        metadata=metadata_json,
-    )
+    values: dict[str, Any] = {
+        "channel_id": channel_id,
+        "initiated_at": initiated_at,
+        "status": status,
+        "metadata": metadata_json,
+    }
+    if trigger_reason is not None:
+        values["trigger_reason"] = trigger_reason
+    if error_code is not None:
+        values["error_code"] = error_code
+    stmt = insert(channel_reauth_audit_logs).values(**values)
     with get_connection() as conn:
         result = conn.execute(stmt)
         logger.info("Reauth audit created: id=%s channel=%s status=%s", result.lastrowid, channel_id, status)
@@ -41,6 +48,7 @@ def complete_reauth_audit(
     status: str,
     completed_at: datetime | None = None,
     error_message: str | None = None,
+    error_code: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> bool:
     """Update an audit record with completion status."""
@@ -51,6 +59,7 @@ def complete_reauth_audit(
         "completed_at = :completed_at, "
         "status = :status, "
         "error_message = :error_message, "
+        "error_code = COALESCE(:error_code, error_code), "
         "metadata_ = COALESCE(:metadata, metadata_) "
         "WHERE id = :aid"
     )
@@ -59,6 +68,7 @@ def complete_reauth_audit(
             "completed_at": completed_at,
             "status": status,
             "error_message": error_message,
+            "error_code": error_code,
             "metadata": metadata_json,
             "aid": audit_id,
         })
