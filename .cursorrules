@@ -77,7 +77,14 @@ where_clause = scoped_where(t, user)  # adds created_by filter for non-admins
 - Use **PyJWT** (not python-jose) for JWT operations
 - Health endpoint details (disk, memory, queues) are admin-only
 
-### 7. Не добавлять Co-Authored-By в коммиты!
+### 7. Web Portal (SSR)
+- **Sidebar admin check** uses `user.status == 1` (`UserStatus.ADMIN` IntEnum value), NOT string comparison. Jinja2: `{% if user and user.status == 1 %}`
+- **XSS prevention**: Portal templates use Jinja2 autoescaping + `data-*` attributes for passing context to JavaScript (no inline JS interpolation)
+- **Channel detail data**: uses `credential_repo.get_credentials()` for full credential display and `console_repo.get_console_by_id()` for console name
+- **All portal queries are user-scoped** via `scoped_where()` from `app/core/auth.py` — regular users see only their own channels/tasks/templates
+- **Sidebar links**: Admin Panel + Health are restricted to admin users only; API Docs link removed (disabled in prod)
+
+### 8. Не добавлять Co-Authored-By в коммиты!
 
 ## Database Tables (13)
 

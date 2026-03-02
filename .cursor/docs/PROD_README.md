@@ -343,6 +343,43 @@ Services: api, publishing-worker, notification-worker, voice-worker, scheduler, 
 
 ---
 
+## Web Portal
+
+The web portal is a server-side rendered (Jinja2) application served at `/app/*` with cookie-based JWT authentication. All data queries are user-scoped via `scoped_where()` (regular users see only their own resources, admins see all). The sidebar uses `user.status == 1` (UserStatus.ADMIN IntEnum) to conditionally show admin links.
+
+### Portal Pages
+
+| Page | Route | Features |
+|------|-------|----------|
+| **Dashboard** | `/app/` | Stats cards: active channels, total tasks, pending, processing, completed, failed, cancelled, success rate %. Upcoming tasks table. Recent tasks table with error column. |
+| **Channels list** | `/app/channels` | Table: ID, name, YouTube ID, enabled, processing status, token status, token expiration, updated_at. Add/delete actions. |
+| **Channel detail** | `/app/channels/{uuid}` | Info cards: YouTube ID, enabled, tokens, token expires, console name (via `console_repo.get_console_by_id()`), created_at. Task statistics (per-channel). Full credential display (via `credential_repo.get_credentials()`): login email, TOTP, proxy host/port, backup codes, browser profile, user agent, last attempt time. Recent tasks table. |
+| **Channel edit** | `/app/channels/{uuid}/edit` | Rename, toggle enabled, update RPA credentials. |
+| **Tasks list** | `/app/tasks` | Filter by status/channel. Stats cards. Table: ID, channel, title, media type badge, status, scheduled_at, completed_at, retry count, error, actions (cancel/retry). |
+| **Task detail** | `/app/tasks/{uuid}` | Status, channel link, scheduled/created dates, details table, error display, reschedule form, cancel/retry actions. |
+| **Create task** | `/app/tasks/create` | Channel select, file upload (AJAX), title, description, scheduling. |
+| **Templates list** | `/app/templates` | Template list with slot count per template. |
+| **Template detail** | `/app/templates/{uuid}` | Slot management: add/delete time slots by day of week. |
+| **Create template** | `/app/templates/create` | Name, timezone configuration. |
+| **Settings** | `/app/settings` | Profile edit (display name, timezone), password change, 2FA setup/verify/disable with backup codes. |
+| **Login** | `/app/login` | Email/password, 2FA code input. |
+| **Register** | `/app/register` | Username, email, password. |
+| **Logout** | `/app/logout` | Clears cookie, redirects to login. |
+
+### Admin Panel (admin-only)
+
+| Page | Route | Features |
+|------|-------|----------|
+| Dashboard | `/panel/` | System overview, user count, task stats |
+| Channels | `/panel/channels` | All channels across all users |
+| Tasks | `/panel/tasks` | All tasks across all users |
+| Users | `/panel/users` | User management |
+| Credentials | `/panel/credentials` | OAuth credentials |
+| Health | `/panel/health` | Service status, disk/memory, MySQL/Redis latency, queues |
+| Logs | `/panel/logs` | journalctl viewer with service/level filters |
+
+---
+
 ## Task Lifecycle
 
 ```
