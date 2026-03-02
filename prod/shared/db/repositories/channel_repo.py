@@ -16,6 +16,7 @@ from shared.db.models import (
     platform_oauth_credentials,
     platform_projects,
 )
+from shared.db.utils import is_duplicate_key_error, serialize_json
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +211,7 @@ def add_channel(
             logger.info("Channel added: id=%s name=%s platform_id=%s created_by=%s", result.lastrowid, name, platform_channel_id, created_by)
             return result.lastrowid
     except Exception as e:
-        if "1062" in str(e):
+        if is_duplicate_key_error(e):
             logger.warning("Duplicate channel: name=%s platform_id=%s", name, platform_channel_id)
             return None
         raise

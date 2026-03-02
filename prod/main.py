@@ -1,19 +1,12 @@
 import logging
 import os
 
+from shared.logging_config import setup_logging
+
+setup_logging(service_name="cff-api")
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-
-# ── Centralized logging ────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.DEBUG if os.environ.get("DEBUG") == "1" else logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-# Quiet noisy libraries
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-logging.getLogger("googleapiclient").setLevel(logging.WARNING)
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -25,6 +18,9 @@ from app.api.routes import router
 from app.views.panel import router as panel_router
 from app.views.app_portal import router as app_portal_router
 from app.core.config import settings
+
+import time as _time
+_app_start_time = _time.time()
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
@@ -101,30 +97,87 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Basic health + dependency checks."""
+    """Detailed health + dependency checks + system metrics."""
+    import time
     checks: dict = {"api": "ok"}
+    details: dict = {}
 
     # MySQL check
     try:
         from shared.db.connection import get_connection
         from sqlalchemy import text
+        t0 = time.time()
         with get_connection() as conn:
             conn.execute(text("SELECT 1"))
         checks["mysql"] = "ok"
-    except Exception:
+        details["mysql_latency_ms"] = round((time.time() - t0) * 1000, 1)
+    except Exception as e:
         checks["mysql"] = "error"
+        details["mysql_error"] = str(e)[:200]
 
     # Redis check
     try:
         from shared.queue.config import get_redis
+        t0 = time.time()
         r = get_redis()
         r.ping()
         checks["redis"] = "ok"
-    except Exception:
+        details["redis_latency_ms"] = round((time.time() - t0) * 1000, 1)
+        # Queue sizes
+        details["queues"] = {
+            "publishing": r.llen("rq:queue:publishing"),
+            "notifications": r.llen("rq:queue:notifications"),
+            "voice": r.llen("rq:queue:voice"),
+            "failed": r.llen("rq:queue:failed"),
+        }
+    except Exception as e:
         checks["redis"] = "error"
+        details["redis_error"] = str(e)[:200]
+
+    # Disk check
+    try:
+        import shutil
+        disk = shutil.disk_usage("/")
+        details["disk"] = {
+            "total_gb": round(disk.total / (1024**3), 1),
+            "used_gb": round(disk.used / (1024**3), 1),
+            "free_gb": round(disk.free / (1024**3), 1),
+            "used_pct": round(disk.used / disk.total * 100, 1),
+        }
+        if disk.free / disk.total < 0.1:
+            checks["disk"] = "warning"
+        else:
+            checks["disk"] = "ok"
+    except Exception:
+        checks["disk"] = "unknown"
+
+    # Memory check
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        details["memory"] = {
+            "total_gb": round(mem.total / (1024**3), 1),
+            "used_gb": round(mem.used / (1024**3), 1),
+            "available_gb": round(mem.available / (1024**3), 1),
+            "used_pct": mem.percent,
+        }
+        proc = psutil.Process()
+        details["process"] = {
+            "pid": proc.pid,
+            "memory_mb": round(proc.memory_info().rss / (1024**2), 1),
+            "cpu_pct": proc.cpu_percent(interval=0),
+            "threads": proc.num_threads(),
+        }
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Uptime
+    details["uptime_seconds"] = round(time.time() - _app_start_time, 0)
 
     status = "healthy" if all(v == "ok" for v in checks.values()) else "degraded"
-    return {"status": status, "checks": checks}
+    return {"status": status, "checks": checks, "details": details}
 
 
 if __name__ == "__main__":

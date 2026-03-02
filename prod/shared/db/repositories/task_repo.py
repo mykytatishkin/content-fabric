@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid as _uuid
 from datetime import datetime
@@ -12,6 +11,7 @@ from sqlalchemy import select, insert, text, func, or_
 
 from shared.db.connection import get_connection
 from shared.db.models import TaskStatus, content_upload_queue_tasks, platform_projects
+from shared.db.utils import serialize_json, deserialize_json, truncate_error
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def create_task(
     if project_id is None:
         raise ValueError("No project_id provided and no default project found")
 
-    add_info_json = json.dumps(legacy_add_info) if legacy_add_info else None
+    add_info_json = serialize_json(legacy_add_info)
     values = dict(
         uuid=str(_uuid.uuid4()),
         project_id=project_id,
@@ -198,7 +198,7 @@ def update_task_status(
             "tid": task_id,
         })
         ok = result.rowcount > 0
-        logger.info("Task %s status → %s (ok=%s, error=%s)", task_id, status, ok, error_message[:80] if error_message else None)
+        logger.info("Task %s status → %s (ok=%s, error=%s)", task_id, status, ok, truncate_error(error_message))
         return ok
 
 
@@ -224,7 +224,7 @@ def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
 
 
 def mark_task_failed(task_id: int, error_message: str | None = None) -> bool:
-    logger.warning("Marking task %s failed: %s", task_id, error_message[:120] if error_message else "no message")
+    logger.warning("Marking task %s failed: %s", task_id, truncate_error(error_message) or "no message")
     return update_task_status(task_id, TaskStatus.FAILED, error_message=error_message)
 
 
@@ -281,7 +281,7 @@ def create_tasks_batch(tasks: list[dict[str, Any]]) -> list[int]:
     from shared.db.connection import get_engine
     with get_engine().begin() as conn:
         for t in tasks:
-            add_info = json.dumps(t.get("legacy_add_info")) if t.get("legacy_add_info") else None
+            add_info = serialize_json(t.get("legacy_add_info"))
             values = dict(
                 uuid=str(_uuid.uuid4()),
                 project_id=project_id,
@@ -312,13 +312,6 @@ def delete_task(task_id: int) -> bool:
 
 
 def _row_to_dict(row) -> dict[str, Any]:
-    legacy_add_info = None
-    raw = row[11]
-    if raw:
-        try:
-            legacy_add_info = json.loads(raw) if isinstance(raw, str) else raw
-        except (json.JSONDecodeError, TypeError):
-            pass
     d = {
         "id": row[0],
         "channel_id": row[1],
@@ -331,7 +324,7 @@ def _row_to_dict(row) -> dict[str, Any]:
         "description": row[8],
         "keywords": row[9],
         "post_comment": row[10],
-        "legacy_add_info": legacy_add_info,
+        "legacy_add_info": deserialize_json(row[11]),
         "scheduled_at": row[12],
         "completed_at": row[13],
         "upload_id": row[14],

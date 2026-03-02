@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -10,8 +9,16 @@ from sqlalchemy import select, insert, text
 
 from shared.db.connection import get_connection
 from shared.db.models import platform_oauth_credentials, platform_projects
+from shared.db.utils import serialize_json, deserialize_json, is_duplicate_key_error, build_update
 
 logger = logging.getLogger(__name__)
+
+_t = platform_oauth_credentials
+_CONSOLE_COLS = [
+    _t.c.id, _t.c.name, _t.c.cloud_project_id, _t.c.client_id,
+    _t.c.client_secret, _t.c.credentials_file, _t.c.redirect_uris,
+    _t.c.description, _t.c.enabled, _t.c.created_at, _t.c.updated_at,
+]
 
 
 def get_default_project_id() -> int | None:
@@ -24,16 +31,10 @@ def get_default_project_id() -> int | None:
 
 
 def list_consoles(enabled_only: bool = False) -> list[dict[str, Any]]:
-    t = platform_oauth_credentials
-    cols = [
-        t.c.id, t.c.name, t.c.cloud_project_id, t.c.client_id,
-        t.c.client_secret, t.c.credentials_file, t.c.redirect_uris,
-        t.c.description, t.c.enabled, t.c.created_at, t.c.updated_at,
-    ]
-    stmt = select(*cols)
+    stmt = select(*_CONSOLE_COLS)
     if enabled_only:
-        stmt = stmt.where(t.c.enabled == 1)
-    stmt = stmt.order_by(t.c.name)
+        stmt = stmt.where(_t.c.enabled == 1)
+    stmt = stmt.order_by(_t.c.name)
     with get_connection() as conn:
         rows = conn.execute(stmt).fetchall()
     return [_row_to_dict(r) for r in rows]
@@ -41,12 +42,11 @@ def list_consoles(enabled_only: bool = False) -> list[dict[str, Any]]:
 
 def list_consoles_brief(enabled_only: bool = True) -> list[dict[str, Any]]:
     """Lightweight listing for dropdowns (id, name, description, enabled)."""
-    t = platform_oauth_credentials
-    cols = [t.c.id, t.c.name, t.c.description, t.c.enabled]
+    cols = [_t.c.id, _t.c.name, _t.c.description, _t.c.enabled]
     stmt = select(*cols)
     if enabled_only:
-        stmt = stmt.where(t.c.enabled == 1)
-    stmt = stmt.order_by(t.c.name)
+        stmt = stmt.where(_t.c.enabled == 1)
+    stmt = stmt.order_by(_t.c.name)
     with get_connection() as conn:
         rows = conn.execute(stmt).fetchall()
     return [
@@ -56,13 +56,7 @@ def list_consoles_brief(enabled_only: bool = True) -> list[dict[str, Any]]:
 
 
 def get_console_by_id(console_id: int) -> dict[str, Any] | None:
-    t = platform_oauth_credentials
-    cols = [
-        t.c.id, t.c.name, t.c.cloud_project_id, t.c.client_id,
-        t.c.client_secret, t.c.credentials_file, t.c.redirect_uris,
-        t.c.description, t.c.enabled, t.c.created_at, t.c.updated_at,
-    ]
-    stmt = select(*cols).where(t.c.id == console_id)
+    stmt = select(*_CONSOLE_COLS).where(_t.c.id == console_id)
     with get_connection() as conn:
         row = conn.execute(stmt).fetchone()
     if not row:
@@ -71,13 +65,7 @@ def get_console_by_id(console_id: int) -> dict[str, Any] | None:
 
 
 def get_console_by_name(name: str) -> dict[str, Any] | None:
-    t = platform_oauth_credentials
-    cols = [
-        t.c.id, t.c.name, t.c.cloud_project_id, t.c.client_id,
-        t.c.client_secret, t.c.credentials_file, t.c.redirect_uris,
-        t.c.description, t.c.enabled, t.c.created_at, t.c.updated_at,
-    ]
-    stmt = select(*cols).where(t.c.name == name)
+    stmt = select(*_CONSOLE_COLS).where(_t.c.name == name)
     with get_connection() as conn:
         row = conn.execute(stmt).fetchone()
     if not row:
@@ -102,7 +90,6 @@ def add_console(
     if project_id is None:
         raise ValueError("No project_id provided and no default project found")
 
-    redirect_uris_json = json.dumps(redirect_uris) if redirect_uris else None
     stmt = insert(platform_oauth_credentials).values(
         project_id=project_id,
         name=name,
@@ -110,7 +97,7 @@ def add_console(
         client_id=client_id,
         client_secret=client_secret,
         credentials_file=credentials_file,
-        redirect_uris=redirect_uris_json,
+        redirect_uris=serialize_json(redirect_uris),
         description=description,
         enabled=int(enabled),
     )
@@ -120,7 +107,7 @@ def add_console(
             logger.info("Console added: id=%s name=%s project=%s", result.lastrowid, name, cloud_project_id)
             return result.lastrowid
     except Exception as e:
-        if "1062" in str(e):
+        if is_duplicate_key_error(e):
             logger.warning("Duplicate console: name=%s", name)
             return None
         raise
@@ -134,30 +121,20 @@ def update_console(
     description: str | None = None,
     enabled: bool | None = None,
 ) -> bool:
-    parts: list[str] = []
-    params: dict[str, Any] = {"cid": console_id}
-    if client_id is not None:
-        parts.append("client_id = :client_id")
-        params["client_id"] = client_id
-    if client_secret is not None:
-        parts.append("client_secret = :client_secret")
-        params["client_secret"] = client_secret
-    if credentials_file is not None:
-        parts.append("credentials_file = :credentials_file")
-        params["credentials_file"] = credentials_file
-    if description is not None:
-        parts.append("description = :description")
-        params["description"] = description
-    if enabled is not None:
-        parts.append("enabled = :enabled")
-        params["enabled"] = int(enabled)
-    if not parts:
+    result = build_update(
+        "platform_oauth_credentials", "id", console_id,
+        client_id=client_id,
+        client_secret=client_secret,
+        credentials_file=credentials_file,
+        description=description,
+        enabled=int(enabled) if enabled is not None else None,
+    )
+    if result is None:
         return False
-
-    sql = f"UPDATE platform_oauth_credentials SET {', '.join(parts)} WHERE id = :cid"
+    sql, params = result
     with get_connection() as conn:
-        result = conn.execute(text(sql), params)
-        return result.rowcount > 0
+        r = conn.execute(text(sql), params)
+        return r.rowcount > 0
 
 
 def delete_console(console_id: int) -> bool:
@@ -170,13 +147,6 @@ def delete_console(console_id: int) -> bool:
 
 
 def _row_to_dict(row) -> dict[str, Any]:
-    redirect_uris = None
-    raw = row[6]
-    if raw:
-        try:
-            redirect_uris = json.loads(raw) if isinstance(raw, str) else raw
-        except (json.JSONDecodeError, TypeError):
-            pass
     return {
         "id": row[0],
         "name": row[1],
@@ -184,7 +154,7 @@ def _row_to_dict(row) -> dict[str, Any]:
         "client_id": row[3],
         "client_secret": row[4],
         "credentials_file": row[5],
-        "redirect_uris": redirect_uris,
+        "redirect_uris": deserialize_json(row[6]),
         "description": row[7],
         "enabled": bool(row[8]),
         "created_at": row[9],

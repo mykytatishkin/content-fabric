@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -11,6 +10,7 @@ from sqlalchemy import select, insert, text
 
 from shared.db.connection import get_connection
 from shared.db.models import channel_reauth_audit_logs
+from shared.db.utils import serialize_json, deserialize_json, truncate_error
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def create_reauth_audit(
 ) -> int | None:
     """Create an audit record. Returns new id."""
     initiated_at = initiated_at or datetime.now()
-    metadata_json = json.dumps(metadata) if metadata else None
+    metadata_json = serialize_json(metadata)
     stmt = insert(channel_reauth_audit_logs).values(
         channel_id=channel_id,
         initiated_at=initiated_at,
@@ -45,7 +45,7 @@ def complete_reauth_audit(
 ) -> bool:
     """Update an audit record with completion status."""
     completed_at = completed_at or datetime.now()
-    metadata_json = json.dumps(metadata) if metadata else None
+    metadata_json = serialize_json(metadata)
     sql = text(
         "UPDATE channel_reauth_audit_logs SET "
         "completed_at = :completed_at, "
@@ -63,7 +63,7 @@ def complete_reauth_audit(
             "aid": audit_id,
         })
         ok = result.rowcount > 0
-        logger.info("Reauth audit %s completed: status=%s error=%s", audit_id, status, error_message[:80] if error_message else None)
+        logger.info("Reauth audit %s completed: status=%s error=%s", audit_id, status, truncate_error(error_message))
         return ok
 
 
@@ -92,13 +92,6 @@ def get_recent_reauth_audits(
 
 
 def _row_to_dict(row) -> dict[str, Any]:
-    meta = None
-    raw = row[8]
-    if raw:
-        try:
-            meta = json.loads(raw) if isinstance(raw, str) else raw
-        except (json.JSONDecodeError, TypeError):
-            pass
     return {
         "id": row[0],
         "channel_id": row[1],
@@ -108,6 +101,6 @@ def _row_to_dict(row) -> dict[str, Any]:
         "trigger_reason": row[5],
         "error_message": row[6],
         "error_code": row[7],
-        "metadata": meta,
+        "metadata": deserialize_json(row[8]),
         "created_at": row[9],
     }
