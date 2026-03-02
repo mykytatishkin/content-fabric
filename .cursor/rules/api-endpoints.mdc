@@ -1,0 +1,78 @@
+---
+description: API endpoint patterns — FastAPI routes, auth, schemas
+globs: prod/app/api/**/*.py, prod/app/schemas/**/*.py
+alwaysApply: false
+---
+
+# API Endpoint Conventions
+
+## Route structure
+All API routes under `/api/v1/` via `prod/app/api/routes.py`:
+- `/api/v1/auth/` — login, register, /me, 2FA
+- `/api/v1/channels/` — CRUD
+- `/api/v1/tasks/` — CRUD + calendar, stats, history
+- `/api/v1/templates/` — schedule templates
+- `/api/v1/admin/` — admin-only
+- `/api/v1/uploads/` — file upload
+
+## Authentication
+API uses Bearer JWT token:
+```python
+from app.api.deps import get_current_user
+
+@router.get("/something")
+async def something(user: dict = Depends(get_current_user)):
+    # user has: id, email, username, status, display_name
+    ...
+```
+
+Admin check:
+```python
+from shared.db.models import UserStatus
+if user["status"] != UserStatus.ADMIN.value:
+    raise HTTPException(403, "Admin only")
+```
+
+## Rate limiting
+```python
+from app.core.config import limiter
+
+@router.post("/create")
+@limiter.limit("10/minute")
+async def create(request: Request, ...):
+    ...
+```
+
+## Pydantic v2 schemas
+Located in `prod/app/schemas/`. Use:
+```python
+from pydantic import BaseModel, Field, field_validator
+
+class MySchema(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return v.strip()
+
+    model_config = {"from_attributes": True}
+```
+
+## User-scoped data
+Non-admin users see only their own resources:
+```python
+# In repo calls, pass created_by filter for non-admins
+tasks = task_repo.list_tasks(
+    created_by=user["id"] if user["status"] != UserStatus.ADMIN.value else None
+)
+```
+
+## Response format
+- Single item: return Pydantic model directly
+- List: return `list[Model]` (FastAPI serializes automatically)
+- Errors: `raise HTTPException(status_code, detail="message")`
+
+## UUID in URLs
+Portal uses UUID in URLs to prevent IDOR. API can use both int ID and UUID.
+Tables with UUID: platform_channels, content_upload_queue_tasks, schedule_templates.
