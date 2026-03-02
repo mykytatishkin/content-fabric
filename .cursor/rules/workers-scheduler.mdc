@@ -1,0 +1,71 @@
+---
+description: Workers, scheduler, queue system, YouTube upload pipeline
+globs: prod/workers/**/*.py, prod/scheduler/**/*.py, prod/shared/queue/**/*.py, prod/shared/youtube/**/*.py
+alwaysApply: false
+---
+
+# Workers & Scheduler
+
+## Task Lifecycle
+```
+Task Created (status=0 PENDING, scheduled_at set)
+      ↓
+Scheduler polls DB every 60s (scheduler/jobs.py)
+      ↓
+Mark as PROCESSING (status=3)
+      ↓
+Enqueue to Redis (publishing queue via rq)
+      ↓
+Publishing Worker picks up (workers/publishing_worker.py)
+      ↓
+Upload to YouTube (shared/youtube/upload.py → client.py)
+      ↓  success                    ↓  failure
+COMPLETED (status=1)           Retry once, then FAILED (status=2)
+- save upload_id               - save error_message
+- set thumbnail                - send Telegram notification
+- auto-like                    - if token error: suggest reauth
+- post comment
+```
+
+## Queue system (RQ)
+Three queues in Redis:
+- `publishing` — video uploads (30min timeout)
+- `notifications` — Telegram/email notifications (2min timeout)
+- `voice` — voice processing
+
+```python
+from shared.queue.publisher import enqueue_video_upload
+from shared.queue.types import VideoUploadPayload
+
+enqueue_video_upload(VideoUploadPayload(
+    task_id=t["id"],
+    channel_id=t["channel_id"],
+    source_file_path=t["source_file_path"],
+    title=t["title"],
+    ...
+))
+```
+
+## YouTube upload pipeline (shared/youtube/upload.py)
+1. `channel_repo.get_channel_by_id()` → get tokens
+2. `console_repo.get_console_by_id()` → get client_id/secret
+3. `yt.create_service()` → auto-refreshes token (token_refresh.py)
+4. `yt.upload_video()` → resumable upload with retry
+5. Post-upload: like, comment, thumbnail
+6. On failure: detect token errors → Telegram notification
+
+## Reauth module (shared/youtube/reauth/)
+Playwright-based automated Google OAuth login:
+- `service.py` — orchestration: loads credentials from DB → Playwright → captures token
+- `playwright_client.py` — 3200+ lines of browser automation
+- `oauth_flow.py` — HTTP callback server on port 8080, token exchange
+- `models.py` — AutomationCredential, ReauthResult, BrowserConfig
+
+CLI: `python -m cli.reauth --channel-id 9 --all-failed --all`
+
+## Centralized logging
+All workers use `setup_logging(service_name)`:
+```python
+from shared.logging_config import setup_logging
+setup_logging(service_name="cff-publishing")
+```

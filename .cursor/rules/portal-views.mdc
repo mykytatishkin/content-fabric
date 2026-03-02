@@ -1,0 +1,90 @@
+---
+description: SSR portal views — Jinja2 templates, cookie auth
+globs: prod/app/views/**/*.py, prod/app/templates/**/*.html
+alwaysApply: false
+---
+
+# Portal (SSR Views) Conventions
+
+## Two portals
+- **User Portal** (`/app/*`) — `prod/app/views/app_portal.py` (1000+ lines)
+- **Admin Panel** (`/panel/*`) — `prod/app/views/panel.py`
+
+## Cookie-based auth (NOT Bearer JWT)
+Views use cookies, NOT `Depends(get_current_user)`:
+```python
+from app.core.auth import require_user, require_admin, is_admin
+
+@router.get("/something", response_class=HTMLResponse)
+async def something_page(request: Request):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+    # user is a dict: {id, email, username, status, ...}
+    ...
+```
+
+Admin-only pages:
+```python
+@router.get("/admin-page", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+```
+
+## Inline repo imports
+Views import repos inside functions (lazy):
+```python
+async def channel_detail(request: Request, channel_uuid: str):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+    from shared.db.repositories import channel_repo, credential_repo
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
+    ...
+```
+
+## Template rendering
+```python
+from fastapi.templating import Jinja2Templates
+templates = Jinja2Templates(directory="app/templates")
+
+return templates.TemplateResponse("app_channels.html", {
+    "request": request,
+    "user": user,
+    "active": "channels",  # for sidebar highlight
+    "channels": channels,
+    "error": None,
+})
+```
+
+## Ownership checks
+```python
+# Returns 404 to non-owners (not 403!) — intentional IDOR protection
+if not channel or (not is_admin(user) and channel.get("created_by") != user["id"]):
+    return RedirectResponse("/app/channels", status_code=302)
+```
+
+## Template files
+```
+app_base.html          — base layout for user portal (sidebar, nav)
+app_login.html         — login form
+app_register.html      — registration form
+app_dashboard.html     — user dashboard
+app_channels.html      — channel list
+app_channel_add.html   — add channel form
+app_channel_detail.html — channel detail page
+app_channel_edit.html  — edit channel form
+app_tasks.html         — task list
+app_task_new.html      — create task form
+app_task_detail.html   — task detail page
+app_templates.html     — schedule templates list
+app_template_new.html  — create template form
+app_template_detail.html — template detail page
+app_settings.html      — user settings (2FA, password)
+base.html              — admin panel base layout
+dashboard.html         — admin dashboard
+channels.html / tasks.html / users.html — admin lists
+health.html / logs.html — admin monitoring
+```

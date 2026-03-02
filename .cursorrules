@@ -1,0 +1,218 @@
+# Content Fabric (CFF) — Cursor Rules
+
+You are working on Content Fabric — a microservices platform for automated video content production and publishing to YouTube/TikTok/Instagram. The codebase lives in `prod/` — there is NO legacy code, only prod.
+
+## Architecture
+
+6 services: FastAPI API, Scheduler, Publishing Worker, Notification Worker, Voice Worker, Redis.
+
+```
+prod/main.py        → FastAPI app (uvicorn :8000)
+prod/scheduler/     → Polls DB every 60s, enqueues pending tasks to Redis
+prod/workers/       → rq workers consuming from Redis queues
+prod/shared/        → Shared code between API and workers
+prod/app/           → API layer (endpoints, schemas, views, auth)
+prod/cli/           → CLI tools (reauth)
+prod/cpp/video/     → C++ watermark/subtitle removal (scaffold, @graf_crayt)
+```
+
+## Tech Stack
+
+- Python 3.10+ (server runs 3.10), FastAPI 0.109, Pydantic v2
+- MySQL (content_fabric DB, 13+ tables), SQLAlchemy Core (NOT ORM)
+- Redis 7 + rq (task queues: publishing, notifications, voice)
+- JWT auth (python-jose + passlib/bcrypt)
+- YouTube Data API v3 (google-api-python-client)
+- Playwright (automated OAuth re-authorization)
+- Jinja2 SSR templates for web portal
+
+## CRITICAL Rules
+
+### 1. IntEnum в SQL — ВСЕГДА используй .value
+```python
+# WRONG — SQLAlchemy передаёт строку "TaskStatus.PENDING" в MySQL:
+.where(t.c.status == TaskStatus.PENDING)
+
+# CORRECT:
+.where(t.c.status == TaskStatus.PENDING.value)
+```
+Это касается TaskStatus и UserStatus во ВСЕХ SQL-запросах.
+
+### 2. Два типа аутентификации
+- **API endpoints** (`/api/v1/*`): Bearer JWT через `Depends(get_current_user)` из `app/api/deps.py`
+- **SSR views** (`/app/*`, `/panel/*`): Cookie `cff_token` через `require_user(request)` из `app/core/auth.py`
+
+НЕ смешивать! Views НЕ используют `Depends()`.
+
+### 3. Database — SQLAlchemy Core, НЕ ORM
+```python
+from shared.db.connection import get_connection
+from shared.db.models import platform_channels
+
+with get_connection() as conn:
+    result = conn.execute(select(...).where(...))
+```
+- Каждый repo имеет свой `_row_to_dict()` (позиционная индексация)
+- JSON columns: `serialize_json()`/`deserialize_json()` из `shared/db/utils.py`
+- `Column("metadata_", JSON, key="metadata")` — в models.py `metadata_` (underscore) чтобы не конфликтовать с SQLAlchemy MetaData
+
+### 4. User-scoped data
+Юзер видит только СВОИ данные (фильтр `created_by = user_id`). Admin видит всё.
+```python
+from app.core.auth import is_admin, scoped_where
+# В views:
+user, redirect = require_user(request)
+where_clause = scoped_where(t, user)  # adds created_by filter for non-admins
+```
+
+### 5. UUID vs int ID
+- URLs в портале используют UUID (IDOR-protected): `/app/channels/{uuid}`
+- API и БД внутри используют int ID
+- Таблицы `platform_channels`, `content_upload_queue_tasks`, `schedule_templates` имеют `uuid VARCHAR(36) NOT NULL UNIQUE`
+
+### 6. Не добавлять Co-Authored-By в коммиты!
+
+## Database Tables (13)
+
+```
+platform_users                       — id, uuid, username, email, password_hash, totp_*, status(IntEnum)
+platform_projects                    — id, uuid, owner_id, name, slug
+platform_project_members             — project_id, user_id, role
+platform_oauth_credentials           — id, project_id, client_id/secret, redirect_uris(JSON)
+platform_channels                    — id, uuid, project_id, console_id, access/refresh_token, created_by
+platform_channel_tokens              — channel_id, token_type, token_value
+platform_channel_login_credentials   — channel_id, login_email/password, totp_secret, proxy_*, profile_path
+content_upload_queue_tasks           — id, uuid, channel_id, status(0-4), source_file_path, scheduled_at
+channel_daily_statistics             — channel_id, snapshot_date, subscribers, views
+channel_reauth_audit_logs            — channel_id, status, trigger_reason, error_message
+schedule_templates                   — id, uuid, project_id, created_by, name, timezone
+schedule_template_slots              — template_id, day_of_week, time_utc, channel_id
+live_streaming_accounts / live_stream_configurations — streaming (not active)
+```
+
+### Enums
+```python
+class TaskStatus(IntEnum):
+    PENDING = 0      # Ждёт scheduler
+    COMPLETED = 1    # Успешно загружен
+    FAILED = 2       # Ошибка
+    PROCESSING = 3   # Взят scheduler'ом, в очереди Redis
+    CANCELLED = 4    # Отменён
+
+class UserStatus(IntEnum):
+    INACTIVE = 0
+    ADMIN = 1        # is_admin() checks status == 1
+    ACTIVE = 10
+```
+
+## Key File Paths
+
+### API Layer
+- `prod/main.py` — FastAPI app, middlewares, routers, /health
+- `prod/app/api/routes.py` — router includes (auth, channels, tasks, templates, admin, uploads)
+- `prod/app/api/deps.py` — `get_current_user()` Bearer JWT dependency
+- `prod/app/api/endpoints/` — REST endpoints
+- `prod/app/core/security.py` — `create_access_token()`, `decode_access_token()`, `hash_password()`, `verify_password()`
+- `prod/app/core/auth.py` — `require_user()`, `require_admin()`, `is_admin()`, `scoped_where()`
+- `prod/app/core/config.py` — pydantic Settings, CORS_ORIGINS, UPLOAD_DIR
+- `prod/app/schemas/` — Pydantic v2 request/response models
+- `prod/app/views/app_portal.py` — SSR user portal (1000+ lines, cookie auth)
+- `prod/app/views/panel.py` — SSR admin panel
+- `prod/app/templates/` — Jinja2 HTML templates
+
+### Shared Layer (used by API + workers)
+- `prod/shared/db/connection.py` — `get_connection()`, `get_engine()`
+- `prod/shared/db/models.py` — ALL table definitions, TaskStatus, UserStatus
+- `prod/shared/db/utils.py` — `serialize_json()`, `deserialize_json()`, `build_update()`, `is_duplicate_key_error()`, `truncate_error()`
+- `prod/shared/db/repositories/` — repos: user, channel, task, template, credential, console, stats, audit
+- `prod/shared/queue/config.py` — Redis connection, queue names (publishing, notifications, voice)
+- `prod/shared/queue/publisher.py` — `enqueue_video_upload()`, `enqueue_notification()`, `enqueue_voice_change()`
+- `prod/shared/queue/types.py` — `VideoUploadPayload`, `NotificationPayload`, `VoiceChangePayload` dataclasses
+- `prod/shared/youtube/client.py` — `create_service()`, `upload_video()`, `set_thumbnail()`, `like_video()`, `post_comment()`
+- `prod/shared/youtube/upload.py` — `process_upload()` — full upload pipeline (called by worker)
+- `prod/shared/youtube/token_refresh.py` — `build_credentials()`, `ensure_fresh_credentials()`
+- `prod/shared/youtube/reauth/` — Playwright-based automated OAuth re-authorization (3200+ lines)
+- `prod/shared/notifications/telegram.py` — `send(message)` → Telegram Bot API
+- `prod/shared/voice/` — Voice conversion (VoiceChanger, Silero TTS, RVC, mixer)
+- `prod/shared/logging_config.py` — `setup_logging(service_name)` — JSON or plaintext
+
+### Workers & Scheduler
+- `prod/scheduler/run.py` — Scheduler entry point (60s polling loop)
+- `prod/scheduler/jobs.py` — `enqueue_pending_tasks()` — polls DB, marks PROCESSING, pushes to Redis
+- `prod/workers/publishing_worker.py` — rq worker for YouTube uploads
+- `prod/workers/notification_worker.py` — rq worker for notifications
+- `prod/workers/voice_worker.py` — rq worker for voice changes
+
+### Tests
+- `prod/tests/conftest.py` — fixtures: `app_client`, `auth_headers`, `admin_headers`, mocked DB
+- 202 tests, pytest, all mocked (no real DB)
+- Test pattern: patch at IMPORT SITE, not definition site
+```python
+# WRONG: @patch("shared.db.repositories.channel_repo.get_channel_by_id")
+# CORRECT: @patch("app.api.endpoints.channels.get_channel_by_id")
+```
+
+## Patterns for New Code
+
+### New API endpoint
+```python
+@router.post("/something")
+@limiter.limit("10/minute")
+async def create_something(
+    request: Request,
+    body: SomeSchema,
+    user: dict = Depends(get_current_user),
+):
+    # user["id"], user["status"], user["email"]
+    ...
+```
+
+### New repo function
+```python
+def get_something(id: int) -> dict | None:
+    t = some_table
+    cols = [t.c.id, t.c.name, ...]
+    stmt = select(*cols).where(t.c.id == id)
+    with get_connection() as conn:
+        row = conn.execute(stmt).fetchone()
+    if not row:
+        return None
+    return {"id": row[0], "name": row[1], ...}
+```
+
+### New SSR view route
+```python
+@router.get("/something", response_class=HTMLResponse)
+async def something_page(request: Request):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+    from shared.db.repositories import some_repo
+    data = some_repo.get_data(created_by=user["id"] if not is_admin(user) else None)
+    return templates.TemplateResponse("app_something.html", {"request": request, "user": user, "data": data})
+```
+
+## Server & Deployment
+
+- Production server: 46.21.250.43 (ZOMRO, Xeon E5-2430v2, 32GB, Quadro P2000)
+- Services: systemd (cff-api, cff-scheduler, cff-publishing-worker, cff-notification-worker)
+- Nginx reverse proxy → localhost:8000
+- Logs: /var/log/cff-*.log + journalctl -u cff-*
+- MySQL: content_fabric DB, content_fabric_user
+- Deploy: `git pull && pip install -r requirements.txt && systemctl restart cff-*`
+
+## Environment Variables
+
+```bash
+MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
+REDIS_URL=redis://localhost:6379/0
+JWT_SECRET_KEY=<required, no fallback>
+TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+UPLOAD_DIR=/opt/content-fabric/uploads
+LOG_LEVEL=INFO
+LOG_FORMAT=json  # or omit for plaintext
+```
+
+## Language
+
+Team speaks Ukrainian/Russian. Code comments and user-facing strings are often in Ukrainian.
