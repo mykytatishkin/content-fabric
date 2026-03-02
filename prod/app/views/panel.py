@@ -237,3 +237,168 @@ async def payment_page(request: Request):
     return templates.TemplateResponse("payment.html", {
         "request": request, "active": "payment",
     })
+
+
+@router.get("/health")
+async def health_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    import shutil
+    import time
+
+    checks = {}
+    queues = {}
+    disk = {}
+    memory = {}
+    process_info = {}
+
+    # MySQL
+    try:
+        from shared.db.connection import get_connection
+        from sqlalchemy import text
+        t0 = time.time()
+        with get_connection() as conn:
+            conn.execute(text("SELECT 1"))
+        checks["MySQL"] = {"status": "ok", "latency_ms": round((time.time() - t0) * 1000, 1)}
+    except Exception as e:
+        checks["MySQL"] = {"status": "error", "error": str(e)[:200]}
+
+    # Redis
+    try:
+        from shared.queue.config import get_redis
+        t0 = time.time()
+        r = get_redis()
+        r.ping()
+        checks["Redis"] = {"status": "ok", "latency_ms": round((time.time() - t0) * 1000, 1)}
+        queues = {
+            "publishing": r.llen("rq:queue:publishing"),
+            "notifications": r.llen("rq:queue:notifications"),
+            "voice": r.llen("rq:queue:voice"),
+            "failed": r.llen("rq:queue:failed"),
+        }
+    except Exception as e:
+        checks["Redis"] = {"status": "error", "error": str(e)[:200]}
+
+    # Disk
+    try:
+        d = shutil.disk_usage("/")
+        disk = {
+            "total_gb": round(d.total / (1024**3), 1),
+            "used_gb": round(d.used / (1024**3), 1),
+            "free_gb": round(d.free / (1024**3), 1),
+            "used_pct": round(d.used / d.total * 100, 1),
+        }
+    except Exception:
+        pass
+
+    # Memory + Process
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        memory = {
+            "total_gb": round(mem.total / (1024**3), 1),
+            "used_gb": round(mem.used / (1024**3), 1),
+            "available_gb": round(mem.available / (1024**3), 1),
+            "used_pct": mem.percent,
+        }
+        proc = psutil.Process()
+        process_info = {
+            "pid": proc.pid,
+            "memory_mb": round(proc.memory_info().rss / (1024**2), 1),
+            "cpu_pct": proc.cpu_percent(interval=0),
+            "threads": proc.num_threads(),
+        }
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Systemd services
+    services = []
+    try:
+        import subprocess
+        for svc_name in ["cff-api", "cff-scheduler", "cff-publishing-worker", "cff-notification-worker", "cff-voice-worker"]:
+            try:
+                result = subprocess.run(
+                    ["systemctl", "show", svc_name, "--property=ActiveState,MemoryCurrent,ExecMainStartTimestamp"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                props = dict(line.split("=", 1) for line in result.stdout.strip().split("\n") if "=" in line)
+                mem_bytes = int(props.get("MemoryCurrent", 0))
+                services.append({
+                    "name": svc_name,
+                    "active": props.get("ActiveState", "unknown"),
+                    "memory": f"{round(mem_bytes / (1024**2), 1)} MB" if mem_bytes > 0 else None,
+                    "uptime": props.get("ExecMainStartTimestamp", "")[:19] or None,
+                })
+            except Exception:
+                services.append({"name": svc_name, "active": "unknown", "memory": None, "uptime": None})
+    except Exception:
+        pass
+
+    # Uptime
+    from main import _app_start_time
+    uptime_sec = int(time.time() - _app_start_time)
+    hours, remainder = divmod(uptime_sec, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    uptime_str = f"{hours}h {minutes}m {seconds}s"
+
+    overall = "healthy" if all(c.get("status") == "ok" for c in checks.values()) else "degraded"
+
+    return templates.TemplateResponse("health.html", {
+        "request": request, "active": "health",
+        "status": overall, "uptime": uptime_str,
+        "checks": checks, "queues": queues,
+        "disk": disk, "memory": memory, "process": process_info,
+        "services": services,
+    })
+
+
+@router.get("/logs")
+async def logs_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    service = request.query_params.get("service", "cff-api")
+    level = request.query_params.get("level", "all")
+    lines = min(int(request.query_params.get("lines", "200")), 1000)
+
+    available_services = [
+        "cff-api", "cff-scheduler", "cff-publishing-worker",
+        "cff-notification-worker", "cff-voice-worker",
+    ]
+
+    log_lines = []
+    try:
+        import subprocess
+        cmd = ["journalctl", "-u", service, "--no-pager", "-n", str(lines), "--output=short-iso"]
+        if level == "ERROR":
+            cmd.extend(["-p", "err"])
+        elif level == "WARNING":
+            cmd.extend(["-p", "warning"])
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        raw_lines = result.stdout.strip().split("\n") if result.stdout.strip() else []
+        # Filter by Python log level if needed (journalctl -p only filters syslog levels)
+        if level in ("ERROR", "WARNING", "INFO") and not any("-p" in c for c in cmd[4:]):
+            log_lines = [l for l in raw_lines if f" {level} " in l or (level == "WARNING" and " ERROR " in l)]
+        else:
+            log_lines = raw_lines
+    except Exception as e:
+        log_lines = [f"Error reading logs: {e}"]
+
+    error_count = sum(1 for l in log_lines if " ERROR " in l)
+    warning_count = sum(1 for l in log_lines if " WARNING " in l)
+
+    return templates.TemplateResponse("logs.html", {
+        "request": request, "active": "logs",
+        "log_lines": log_lines,
+        "available_services": available_services,
+        "current_service": service,
+        "current_level": level,
+        "lines": lines,
+        "error_count": error_count,
+        "warning_count": warning_count,
+    })
