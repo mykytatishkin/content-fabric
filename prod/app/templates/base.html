@@ -57,7 +57,8 @@
             <a href="/panel/users" class="{% if active == 'users' %}active{% endif %}">👤 <span>Пользователи</span></a>
             <a href="/panel/credentials" class="{% if active == 'credentials' %}active{% endif %}">🔑 <span>Credentials</span></a>
             <a href="/panel/payment" class="{% if active == 'payment' %}active{% endif %}">💳 <span>Оплата</span></a>
-            <a href="/health" style="margin-top: 2rem; border-top: 1px solid #1e293b; padding-top: 1rem;">🟢 <span>Health</span></a>
+            <a href="/panel/health" style="margin-top: 2rem; border-top: 1px solid #1e293b; padding-top: 1rem;" class="{% if active == 'health' %}active{% endif %}">🟢 <span>Health</span></a>
+            <a href="/panel/logs" class="{% if active == 'logs' %}active{% endif %}">📜 <span>Логи</span></a>
             <a href="/docs">📖 <span>API Docs</span></a>
         </nav>
     </div>
