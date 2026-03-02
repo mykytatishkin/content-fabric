@@ -46,7 +46,7 @@
 - **MySQL** (content_fabric DB, 15 tables)
 - **Redis 7** + **rq** (task queues)
 - **SQLAlchemy Core** (connection pooling, not ORM)
-- **JWT** auth (python-jose + passlib/bcrypt)
+- **JWT** auth (PyJWT + passlib/bcrypt)
 - **YouTube Data API v3** (google-api-python-client)
 
 ---
@@ -149,8 +149,8 @@ prod/
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Service info |
-| GET | `/health` | Health check |
-| GET | `/docs` | Swagger UI |
+| GET | `/health` | Health check (details admin-only) |
+| GET | `/docs` | Swagger UI (development only) |
 
 ### Auth (`/api/v1/auth`)
 
@@ -327,6 +327,19 @@ docker compose up -d
 ```
 
 Services: api, publishing-worker, notification-worker, voice-worker, scheduler, redis.
+
+---
+
+## Security
+
+- **API docs disabled in production**: Swagger UI and ReDoc are only available when `ENV=development` (`docs_url=None, redoc_url=None` in prod).
+- **Authentication**: All API endpoints require Bearer JWT auth; portal (SSR views) uses cookie-based auth (`cff_token`).
+- **User-scoped data**: Channels, templates, and tasks are filtered by `created_by` — regular users see only their own resources, admins see all.
+- **Rate limiting**: Global limit of 120 requests/min + stricter per-endpoint limits on auth and 2FA routes.
+- **File uploads**: Size limits enforced (10 GB video, 50 MB thumbnail), extension validation, and path traversal protection (rejects absolute paths and `..`).
+- **Health endpoint**: System details (disk, memory, queue sizes) are only visible to admin users.
+- **nginx**: HSTS enabled, `server_tokens off`.
+- **Dependencies**: Audited with `pip-audit` (0 known vulnerabilities).
 
 ---
 

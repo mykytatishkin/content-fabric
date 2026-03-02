@@ -73,6 +73,21 @@ tasks = task_repo.list_tasks(
 - List: return `list[Model]` (FastAPI serializes automatically)
 - Errors: `raise HTTPException(status_code, detail="message")`
 
+## Ownership checks (IDOR protection)
+Non-admin users only see their own resources. Every endpoint that accesses channels, templates, or tasks MUST verify ownership:
+```python
+from shared.db.models import UserStatus
+
+# Pattern for single resource:
+if user["status"] != UserStatus.ADMIN.value and resource.get("created_by") != user["id"]:
+    raise HTTPException(status_code=404, detail="Not found")
+
+# Pattern for list:
+if user["status"] != UserStatus.ADMIN.value:
+    items = [i for i in items if i.get("created_by") == user["id"]]
+```
+
 ## UUID in URLs
 Portal uses UUID in URLs to prevent IDOR. API can use both int ID and UUID.
 Tables with UUID: platform_channels, content_upload_queue_tasks, schedule_templates.
+API endpoints that look up resources by UUID must also validate ownership (created_by check) for non-admin users.
