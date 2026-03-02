@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Any
 
@@ -30,7 +30,7 @@ def log(
 ) -> None:
     """Write a structured audit log entry."""
     entry = {
-        "ts": datetime.now(UTC).isoformat(),
+        "ts": datetime.now(timezone.utc).isoformat(),
         "action": action,
         "actor_id": actor_id,
         "actor_role": actor_role,
