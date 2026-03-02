@@ -61,8 +61,26 @@ app.add_middleware(
 )
 
 
+_request_logger = logging.getLogger("cff.requests")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    import time
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = int((time.time() - start) * 1000)
+    if not request.url.path.startswith("/health"):
+        _request_logger.info(
+            "%s %s → %d (%dms)",
+            request.method, request.url.path, response.status_code, duration_ms,
+        )
+    return response
+
+
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    _request_logger.warning("Rate limit exceeded: %s %s", request.method, request.url.path)
     return JSONResponse(status_code=429, content={"detail": "Too many requests"})
 
 

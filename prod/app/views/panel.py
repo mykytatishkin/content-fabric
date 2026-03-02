@@ -22,13 +22,16 @@ def _require_admin(request: Request):
     """Check cookie for admin user. Returns (user, redirect)."""
     token = request.cookies.get(COOKIE_NAME)
     if not token:
+        logger.debug("Panel access denied: no cookie")
         return None, RedirectResponse("/app/login", status_code=302)
     payload = decode_access_token(token)
     if not payload or "sub" not in payload:
+        logger.warning("Panel access denied: invalid JWT")
         return None, RedirectResponse("/app/login", status_code=302)
     from shared.db.repositories import user_repo
     user = user_repo.get_user_by_id(int(payload["sub"]))
     if not user or user.get("status") != 1:  # UserStatus.ADMIN
+        logger.warning("Panel access denied: user_id=%s is not admin", payload.get("sub"))
         return None, RedirectResponse("/app/", status_code=302)
     return user, None
 

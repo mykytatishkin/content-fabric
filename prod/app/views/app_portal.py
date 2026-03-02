@@ -90,6 +90,7 @@ async def login_submit(
     from shared.db.repositories import user_repo
     user = user_repo.get_user_by_email(email)
     if not user or not verify_password(password, user["password_hash"]):
+        logger.warning("Login failed: email=%s (invalid credentials)", email)
         return templates.TemplateResponse("app_login.html", {
             "request": request, "error": "Wrong email or password",
         })
@@ -110,6 +111,7 @@ async def login_submit(
                 })
 
     user_repo.update_last_login(user["id"])
+    logger.info("Login success: user_id=%s email=%s", user["id"], email)
     resp = RedirectResponse("/app/", status_code=302)
     return _set_token_cookie(resp, user["id"])
 
@@ -156,6 +158,7 @@ async def register_submit(
         auth_key=str(_uuid.uuid4()),
         display_name=display_name or username,
     )
+    logger.info("User registered: id=%s email=%s username=%s", uid, email, username)
     resp = RedirectResponse("/app/", status_code=302)
     return _set_token_cookie(resp, uid)
 
@@ -181,7 +184,8 @@ async def dashboard(request: Request):
     ctx = {
         "request": request, "user": user, "active": "dashboard",
         "channels_total": 0, "channels_active": 0,
-        "tasks_pending": 0, "tasks_completed": 0, "tasks_failed": 0, "tasks_total": 0,
+        "tasks_pending": 0, "tasks_completed": 0, "tasks_failed": 0,
+        "tasks_processing": 0, "tasks_cancelled": 0, "tasks_total": 0,
         "success_rate": 0, "recent_tasks": [], "upcoming_tasks": [],
     }
     ch_where, ch_params = _user_filter(user)
@@ -197,7 +201,7 @@ async def dashboard(request: Request):
             rows = conn.execute(text(
                 f"SELECT status, COUNT(*) FROM content_upload_queue_tasks t WHERE {t_where} GROUP BY status"
             ), t_params).fetchall()
-            status_map = {0: "tasks_pending", 1: "tasks_completed", 2: "tasks_failed"}
+            status_map = {0: "tasks_pending", 1: "tasks_completed", 2: "tasks_failed", 3: "tasks_processing", 4: "tasks_cancelled"}
             total = 0
             for r in rows:
                 key = status_map.get(r[0])

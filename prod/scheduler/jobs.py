@@ -19,7 +19,9 @@ def enqueue_pending_tasks() -> int:
     """
     tasks = task_repo.get_pending_tasks(limit=50)
     if not tasks:
+        logger.debug("No pending tasks found")
         return 0
+    logger.info("Found %d pending tasks to enqueue", len(tasks))
 
     count = 0
     for t in tasks:
