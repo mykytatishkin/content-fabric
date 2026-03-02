@@ -33,11 +33,11 @@ try:
 except ImportError:
     PYMORPHY_AVAILABLE = False
 
-from core.utils.logger import get_logger
+import logging
 
 # Импортируем расширенный словарь
 try:
-    from core.voice.stress_dictionaries import (
+    from shared.voice.stress_dictionaries import (
         EXTENDED_STRESS_DICT,
         WORD_FORMS,
         get_stress_position
@@ -48,7 +48,7 @@ except ImportError:
     EXTENDED_STRESS_DICT = {}
     WORD_FORMS = {}
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class RussianStressMarker:

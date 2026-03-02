@@ -26,11 +26,11 @@ try:
 except ImportError:
     whisper = None
 
-from core.utils.logger import get_logger
-from core.voice.prosody import ProsodyTransfer
-from core.voice.stress import RussianStressMarker
+import logging
+from shared.voice.prosody import ProsodyTransfer
+from shared.voice.stress import RussianStressMarker
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class SileroVoiceChanger:

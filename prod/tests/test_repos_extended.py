@@ -51,7 +51,7 @@ class TestConsoleRepo:
             assert console_repo.get_console_by_id(999) is None
 
     def test_get_console_by_id_found(self):
-        row = (1, "Console1", "gcp-proj", "client123", "secret", None,
+        row = (1, 1, "Console1", "gcp-proj", "client123", "secret", None,
                '["http://localhost"]', "desc", 1, datetime.now(), datetime.now())
         conn, _ = _make_conn(fetchone=row)
         with _patch_repo(CONSOLE_MOD, conn):
@@ -63,7 +63,7 @@ class TestConsoleRepo:
             assert result["enabled"] is True
 
     def test_get_console_by_name(self):
-        row = (2, "Test", None, "cid", "sec", None, None, None, 1,
+        row = (2, 1, "Test", None, "cid", "sec", None, None, None, 1,
                datetime.now(), datetime.now())
         conn, _ = _make_conn(fetchone=row)
         with _patch_repo(CONSOLE_MOD, conn):

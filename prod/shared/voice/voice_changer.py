@@ -44,15 +44,15 @@ try:
 except ImportError:
     raise ImportError("moviepy is required. Install with: pip install moviepy")
 
-from core.utils.logger import get_logger
-from core.voice.rvc.model_manager import RVCModelManager
-from core.voice.rvc.inference import RVCInference
-from core.voice.rvc.sovits import SoVITSConverter
-from core.voice.silero import SileroVoiceChanger
-from core.voice.parallel import ParallelVoiceProcessor
-from core.voice.mixer import AudioBackgroundMixer
+import logging
+from shared.voice.rvc.model_manager import RVCModelManager
+from shared.voice.rvc.inference import RVCInference
+from shared.voice.rvc.sovits import SoVITSConverter
+from shared.voice.silero import SileroVoiceChanger
+from shared.voice.parallel import ParallelVoiceProcessor
+from shared.voice.mixer import AudioBackgroundMixer
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class VoiceChanger:

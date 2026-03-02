@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 _t = platform_oauth_credentials
 _CONSOLE_COLS = [
-    _t.c.id, _t.c.name, _t.c.cloud_project_id, _t.c.client_id,
+    _t.c.id, _t.c.project_id, _t.c.name, _t.c.cloud_project_id, _t.c.client_id,
     _t.c.client_secret, _t.c.credentials_file, _t.c.redirect_uris,
     _t.c.description, _t.c.enabled, _t.c.created_at, _t.c.updated_at,
 ]
@@ -149,14 +149,15 @@ def delete_console(console_id: int) -> bool:
 def _row_to_dict(row) -> dict[str, Any]:
     return {
         "id": row[0],
-        "name": row[1],
-        "cloud_project_id": row[2],
-        "client_id": row[3],
-        "client_secret": row[4],
-        "credentials_file": row[5],
-        "redirect_uris": deserialize_json(row[6]),
-        "description": row[7],
-        "enabled": bool(row[8]),
-        "created_at": row[9],
-        "updated_at": row[10],
+        "project_id": row[1],
+        "name": row[2],
+        "cloud_project_id": row[3],
+        "client_id": row[4],
+        "client_secret": row[5],
+        "credentials_file": row[6],
+        "redirect_uris": deserialize_json(row[7]),
+        "description": row[8],
+        "enabled": bool(row[9]),
+        "created_at": row[10],
+        "updated_at": row[11],
     }

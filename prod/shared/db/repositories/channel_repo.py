@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid as _uuid
 from typing import Any
@@ -300,31 +299,3 @@ def delete_channel(channel_id: int) -> bool:
         return ok
 
 
-def add_login_credentials(
-    channel_id: int,
-    login_email: str,
-    login_password: str,
-    totp_secret: str | None = None,
-    backup_codes: list[str] | None = None,
-    proxy_host: str | None = None,
-    proxy_port: int | None = None,
-    proxy_username: str | None = None,
-    proxy_password: str | None = None,
-) -> int:
-    """Insert RPA login credentials. Returns new row id."""
-    stmt = insert(platform_channel_login_credentials).values(
-        channel_id=channel_id,
-        login_email=login_email,
-        login_password=login_password,
-        totp_secret=totp_secret,
-        backup_codes=json.dumps(backup_codes) if backup_codes else None,
-        proxy_host=proxy_host,
-        proxy_port=proxy_port,
-        proxy_username=proxy_username,
-        proxy_password=proxy_password,
-        enabled=1,
-    )
-    with get_connection() as conn:
-        result = conn.execute(stmt)
-        logger.info("Login credentials added: id=%s channel=%s email=%s", result.lastrowid, channel_id, login_email)
-        return result.lastrowid

@@ -279,7 +279,7 @@ async def channel_add_submit(
     if redirect:
         return redirect
 
-    from shared.db.repositories import channel_repo, console_repo
+    from shared.db.repositories import channel_repo, console_repo, credential_repo
 
     consoles = console_repo.list_consoles_brief(enabled_only=True)
     ctx = {
@@ -305,7 +305,7 @@ async def channel_add_submit(
         return templates.TemplateResponse("app_channel_add.html", ctx)
 
     if login_email:
-        channel_repo.add_login_credentials(
+        credential_repo.add_credentials(
             channel_id=ch_id,
             login_email=login_email,
             login_password=login_password,
@@ -448,7 +448,7 @@ async def channel_edit_submit(
     if redirect:
         return redirect
 
-    from shared.db.repositories import channel_repo
+    from shared.db.repositories import channel_repo, credential_repo
 
     channel = channel_repo.get_channel_by_uuid(channel_uuid)
     if not channel or (not is_admin(user) and channel.get("created_by") != user["id"]):
@@ -464,7 +464,7 @@ async def channel_edit_submit(
             totp_secret=totp_secret or None,
         )
         if not updated:
-            channel_repo.add_login_credentials(
+            credential_repo.add_credentials(
                 channel_id=channel_id,
                 login_email=login_email,
                 login_password=login_password,

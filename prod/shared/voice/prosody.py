@@ -9,9 +9,9 @@ from scipy import signal
 from typing import Tuple, List, Dict
 import soundfile as sf
 
-from core.utils.logger import get_logger
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ProsodyTransfer:

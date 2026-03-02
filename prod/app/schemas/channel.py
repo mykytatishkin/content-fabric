@@ -54,11 +54,23 @@ class ChannelCreate(ChannelBase):
     credentials: ChannelCredentials | None = None
 
 
+class ChannelUpdate(BaseModel):
+    """Schema for updating a channel."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    platform_channel_id: str | None = Field(None, min_length=1, max_length=255)
+    console_id: int | None = None
+    enabled: bool | None = None
+
+
 class Channel(ChannelBase):
     """Channel response schema."""
 
     id: int
+    uuid: str | None = None
     project_id: int | None = None
+    has_tokens: bool = False
+    token_expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
