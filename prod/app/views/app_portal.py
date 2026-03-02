@@ -615,8 +615,8 @@ async def task_new_submit(
 
     from shared.db.repositories import task_repo
 
-    from datetime import UTC, datetime
-    scheduled = datetime.now(UTC)
+    from datetime import datetime, timezone
+    scheduled = datetime.now(timezone.utc)
     if scheduled_at:
         try:
             scheduled = datetime.fromisoformat(scheduled_at)

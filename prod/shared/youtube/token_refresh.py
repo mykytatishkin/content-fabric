@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from google.auth.transport.requests import Request
@@ -59,7 +59,7 @@ def ensure_fresh_credentials(
     if creds.expired:
         needs_refresh = True
     elif creds.expiry:
-        if creds.expiry - datetime.now(UTC) < TOKEN_REFRESH_MARGIN:
+        if creds.expiry - datetime.now(timezone.utc) < TOKEN_REFRESH_MARGIN:
             needs_refresh = True
     else:
         needs_refresh = True  # no expiry info → refresh to be safe
