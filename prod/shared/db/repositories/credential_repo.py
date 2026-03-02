@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -11,8 +10,20 @@ from sqlalchemy import select, insert, text
 
 from shared.db.connection import get_connection
 from shared.db.models import platform_channel_login_credentials
+from shared.db.utils import serialize_json, deserialize_json, truncate_error
 
 logger = logging.getLogger(__name__)
+
+_t = platform_channel_login_credentials
+_CRED_COLS = [
+    _t.c.id, _t.c.channel_id,
+    _t.c.login_email, _t.c.login_password,
+    _t.c.totp_secret, _t.c.backup_codes,
+    _t.c.proxy_host, _t.c.proxy_port, _t.c.proxy_username, _t.c.proxy_password,
+    _t.c.profile_path, _t.c.user_agent,
+    _t.c.last_success_at, _t.c.last_attempt_at, _t.c.last_error,
+    _t.c.enabled, _t.c.created_at, _t.c.updated_at,
+]
 
 
 def get_credentials(
@@ -20,19 +31,9 @@ def get_credentials(
     include_disabled: bool = False,
 ) -> dict[str, Any] | None:
     """Get login credentials for a channel."""
-    t = platform_channel_login_credentials
-    cols = [
-        t.c.id, t.c.channel_id,
-        t.c.login_email, t.c.login_password,
-        t.c.totp_secret, t.c.backup_codes,
-        t.c.proxy_host, t.c.proxy_port, t.c.proxy_username, t.c.proxy_password,
-        t.c.profile_path, t.c.user_agent,
-        t.c.last_success_at, t.c.last_attempt_at, t.c.last_error,
-        t.c.enabled, t.c.created_at, t.c.updated_at,
-    ]
-    stmt = select(*cols).where(t.c.channel_id == channel_id)
+    stmt = select(*_CRED_COLS).where(_t.c.channel_id == channel_id)
     if not include_disabled:
-        stmt = stmt.where(t.c.enabled == 1)
+        stmt = stmt.where(_t.c.enabled == 1)
     with get_connection() as conn:
         row = conn.execute(stmt).fetchone()
     if not row:
@@ -45,20 +46,10 @@ def list_credentials(
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """List all login credentials, optionally filtered by channel_id."""
-    t = platform_channel_login_credentials
-    cols = [
-        t.c.id, t.c.channel_id,
-        t.c.login_email, t.c.login_password,
-        t.c.totp_secret, t.c.backup_codes,
-        t.c.proxy_host, t.c.proxy_port, t.c.proxy_username, t.c.proxy_password,
-        t.c.profile_path, t.c.user_agent,
-        t.c.last_success_at, t.c.last_attempt_at, t.c.last_error,
-        t.c.enabled, t.c.created_at, t.c.updated_at,
-    ]
-    stmt = select(*cols)
+    stmt = select(*_CRED_COLS)
     if channel_id is not None:
-        stmt = stmt.where(t.c.channel_id == channel_id)
-    stmt = stmt.order_by(t.c.channel_id.asc())
+        stmt = stmt.where(_t.c.channel_id == channel_id)
+    stmt = stmt.order_by(_t.c.channel_id.asc())
     if limit:
         stmt = stmt.limit(limit)
     with get_connection() as conn:
@@ -86,7 +77,7 @@ def add_credentials(
         login_email=login_email,
         login_password=login_password,
         totp_secret=totp_secret,
-        backup_codes=json.dumps(backup_codes) if backup_codes else None,
+        backup_codes=serialize_json(backup_codes),
         proxy_host=proxy_host,
         proxy_port=proxy_port,
         proxy_username=proxy_username,
@@ -116,7 +107,6 @@ def upsert_credentials(
     enabled: bool = True,
 ) -> bool:
     """Create or update login credentials (ON DUPLICATE KEY UPDATE)."""
-    backup_codes_json = json.dumps(backup_codes) if backup_codes else None
     sql = text("""
         INSERT INTO platform_channel_login_credentials (
             channel_id, login_email, login_password,
@@ -150,7 +140,7 @@ def upsert_credentials(
             "login_email": login_email,
             "login_password": login_password,
             "totp_secret": totp_secret,
-            "backup_codes": backup_codes_json,
+            "backup_codes": serialize_json(backup_codes),
             "proxy_host": proxy_host,
             "proxy_port": proxy_port,
             "proxy_username": proxy_username,
@@ -204,7 +194,7 @@ def mark_attempt(
         if success:
             logger.info("RPA attempt success for channel %s", channel_id)
         else:
-            logger.warning("RPA attempt failed for channel %s: %s", channel_id, error_message[:100] if error_message else "no message")
+            logger.warning("RPA attempt failed for channel %s: %s", channel_id, truncate_error(error_message))
         return ok
 
 
@@ -214,7 +204,6 @@ def update_totp_secret(
     backup_codes: list[str] | None = None,
 ) -> bool:
     """Set or clear the TOTP secret for a channel's credentials."""
-    backup_codes_json = json.dumps(backup_codes) if backup_codes else None
     sql = text(
         "UPDATE platform_channel_login_credentials "
         "SET totp_secret = :secret, backup_codes = :codes, updated_at = CURRENT_TIMESTAMP "
@@ -223,7 +212,7 @@ def update_totp_secret(
     with get_connection() as conn:
         result = conn.execute(sql, {
             "secret": totp_secret,
-            "codes": backup_codes_json,
+            "codes": serialize_json(backup_codes),
             "cid": channel_id,
         })
         ok = result.rowcount > 0
@@ -243,20 +232,13 @@ def update_profile_path(channel_id: int, profile_path: str) -> bool:
 
 
 def _row_to_dict(row) -> dict[str, Any]:
-    backup_codes = None
-    raw = row[5]
-    if raw:
-        try:
-            backup_codes = json.loads(raw) if isinstance(raw, str) else raw
-        except (json.JSONDecodeError, TypeError):
-            pass
     return {
         "id": row[0],
         "channel_id": row[1],
         "login_email": row[2],
         "login_password": row[3],
         "totp_secret": row[4],
-        "backup_codes": backup_codes,
+        "backup_codes": deserialize_json(row[5]),
         "proxy_host": row[6],
         "proxy_port": row[7],
         "proxy_username": row[8],
