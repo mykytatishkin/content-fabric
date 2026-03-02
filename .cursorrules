@@ -21,7 +21,7 @@ prod/cpp/video/     → C++ watermark/subtitle removal (scaffold, @graf_crayt)
 - Python 3.10+ (server runs 3.10), FastAPI 0.109, Pydantic v2
 - MySQL (content_fabric DB, 13+ tables), SQLAlchemy Core (NOT ORM)
 - Redis 7 + rq (task queues: publishing, notifications, voice)
-- JWT auth (python-jose + passlib/bcrypt)
+- JWT auth (PyJWT + passlib/bcrypt)
 - YouTube Data API v3 (google-api-python-client)
 - Playwright (automated OAuth re-authorization)
 - Jinja2 SSR templates for web portal
@@ -70,7 +70,14 @@ where_clause = scoped_where(t, user)  # adds created_by filter for non-admins
 - API и БД внутри используют int ID
 - Таблицы `platform_channels`, `content_upload_queue_tasks`, `schedule_templates` имеют `uuid VARCHAR(36) NOT NULL UNIQUE`
 
-### 6. Не добавлять Co-Authored-By в коммиты!
+### 6. Security
+- FastAPI docs are disabled in production (`docs_url=None, redoc_url=None` when `ENV != development`)
+- All data endpoints must enforce ownership (`created_by` check) for non-admin users
+- File paths from user input must reject absolute paths and `..` (path traversal protection)
+- Use **PyJWT** (not python-jose) for JWT operations
+- Health endpoint details (disk, memory, queues) are admin-only
+
+### 7. Не добавлять Co-Authored-By в коммиты!
 
 ## Database Tables (13)
 

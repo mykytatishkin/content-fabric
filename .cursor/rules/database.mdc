@@ -76,9 +76,9 @@ except Exception as e:
 | Table | Key columns | Notes |
 |-------|------------|-------|
 | platform_users | id, uuid, email, password_hash, status(IntEnum), totp_* | UserStatus: 0=inactive, 1=admin, 10=active |
-| platform_channels | id, uuid, console_id, access_token, refresh_token, created_by | Has login_credentials in separate table |
-| content_upload_queue_tasks | id, uuid, channel_id, status(0-4), scheduled_at | TaskStatus IntEnum |
+| platform_channels | id, uuid, console_id, access_token, refresh_token, created_by | Has login_credentials in separate table. `created_by` used for user-scoped filtering |
+| content_upload_queue_tasks | id, uuid, channel_id, status(0-4), scheduled_at, created_by | TaskStatus IntEnum. `created_by` used for user-scoped filtering |
 | platform_oauth_credentials | id, project_id, client_id, client_secret | OAuth consoles |
 | platform_channel_login_credentials | channel_id, login_email, login_password, totp_secret | RPA credentials for reauth |
 | channel_reauth_audit_logs | channel_id, status, trigger_reason, error_message | Audit trail |
-| schedule_templates + slots | template → slots (day_of_week, time_utc, channel_id) | Publishing schedule |
+| schedule_templates + slots | template → slots (day_of_week, time_utc, channel_id), created_by | Publishing schedule. `created_by` used for user-scoped filtering |
