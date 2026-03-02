@@ -204,7 +204,7 @@ def update_task_status(
     error_message: str | None = None,
     completed_at: datetime | None = None,
 ) -> bool:
-    if completed_at is None and status == TaskStatus.COMPLETED:
+    if completed_at is None and status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
         completed_at = datetime.now()
     sql = text(
         "UPDATE content_upload_queue_tasks "
