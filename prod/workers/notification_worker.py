@@ -30,7 +30,8 @@ if __name__ == "__main__":
 
     from shared.queue.config import get_redis, QUEUE_NOTIFICATIONS
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from shared.logging_config import setup_logging
+    setup_logging(service_name="cff-notification")
     redis_conn = get_redis()
     worker = Worker([QUEUE_NOTIFICATIONS], connection=redis_conn)
     worker.work()

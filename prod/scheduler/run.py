@@ -9,6 +9,7 @@ import time
 import shared.env  # noqa: F401 — load .env files before anything else
 
 from scheduler.jobs import enqueue_pending_tasks
+from shared.logging_config import setup_logging
 
 POLL_INTERVAL = 60  # seconds
 
@@ -23,10 +24,7 @@ def _handle_signal(signum, frame):
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
+    setup_logging(service_name="cff-scheduler")
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 

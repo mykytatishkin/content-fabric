@@ -45,6 +45,6 @@ def enqueue_pending_tasks() -> int:
         except Exception:
             logger.exception("Failed to enqueue task %d", t["id"])
             # Reset back to pending so it can be retried
-            task_repo.update_task_status(t["id"], TaskStatus.PENDING)
+            task_repo.update_task_status(t["id"], TaskStatus.PENDING.value)
 
     return count

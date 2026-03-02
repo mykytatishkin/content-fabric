@@ -106,7 +106,7 @@ def get_pending_tasks(limit: int | None = None) -> list[dict[str, Any]]:
     t = content_upload_queue_tasks
     stmt = (
         select(*_task_cols())
-        .where(t.c.status == TaskStatus.PENDING, t.c.scheduled_at <= func.now())
+        .where(t.c.status == TaskStatus.PENDING.value, t.c.scheduled_at <= func.now())
         .order_by(t.c.scheduled_at.asc())
     )
     if limit:
@@ -163,7 +163,7 @@ def get_token_related_failed_tasks(channel_id: int) -> list[dict[str, Any]]:
     stmt = (
         select(*_task_cols())
         .where(
-            t.c.status == TaskStatus.FAILED,
+            t.c.status == TaskStatus.FAILED.value,
             t.c.channel_id == channel_id,
             t.c.error_message.isnot(None),
         )
@@ -192,7 +192,7 @@ def update_task_status(
     )
     with get_connection() as conn:
         result = conn.execute(sql, {
-            "status": status,
+            "status": int(status),
             "completed_at": completed_at,
             "error_message": error_message,
             "tid": task_id,
@@ -203,7 +203,7 @@ def update_task_status(
 
 
 def mark_task_processing(task_id: int) -> bool:
-    return update_task_status(task_id, TaskStatus.PROCESSING)
+    return update_task_status(task_id, TaskStatus.PROCESSING.value)
 
 
 def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
@@ -225,7 +225,7 @@ def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
 
 def mark_task_failed(task_id: int, error_message: str | None = None) -> bool:
     logger.warning("Marking task %s failed: %s", task_id, truncate_error(error_message) or "no message")
-    return update_task_status(task_id, TaskStatus.FAILED, error_message=error_message)
+    return update_task_status(task_id, TaskStatus.FAILED.value, error_message=error_message)
 
 
 def update_task_upload_id(task_id: int, upload_id: str) -> bool:
