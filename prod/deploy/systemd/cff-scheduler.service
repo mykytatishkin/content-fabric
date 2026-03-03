@@ -1,0 +1,24 @@
+[Unit]
+Description=Content Fabric Scheduler (polls DB for pending tasks)
+After=network.target mysql.service redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/content-fabric/prod
+EnvironmentFile=/opt/content-fabric/.env
+EnvironmentFile=-/opt/content-fabric/prod/.env
+ExecStart=/opt/content-fabric/prod/venv/bin/python -m scheduler.run
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=10
+StandardOutput=append:/var/log/cff-scheduler.log
+StandardError=append:/var/log/cff-scheduler.log
+SyslogIdentifier=cff-scheduler
+MemoryMax=512M
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

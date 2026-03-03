@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Health Check{% endblock %}
+
+{% block head %}
+<style>
+    .health-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; }
+    .health-ok { background: #16a34a; }
+    .health-error { background: #dc2626; }
+    .health-warning { background: #f59e0b; }
+    .health-unknown { background: #94a3b8; }
+    .metric { font-size: 0.85rem; color: #64748b; }
+    .progress-bar { background: #e2e8f0; border-radius: 4px; height: 8px; overflow: hidden; margin-top: 4px; }
+    .progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+    .fill-green { background: #16a34a; }
+    .fill-yellow { background: #f59e0b; }
+    .fill-red { background: #dc2626; }
+    .service-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .service-card { background: #fff; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .service-card h4 { font-size: 0.9rem; margin-bottom: 0.5rem; }
+    .service-card .detail { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
+    .auto-refresh { font-size: 0.75rem; color: #94a3b8; float: right; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>Health Check <span class="auto-refresh" id="refresh-timer">auto-refresh: 30s</span></h2>
+
+<!-- Overall status -->
+<div class="cards">
+    <div class="card">
+        <div class="label">Status</div>
+        <div class="value">
+            <span class="health-indicator {{ 'health-ok' if status == 'healthy' else 'health-error' }}"></span>
+            {{ status|upper }}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">Uptime</div>
+        <div class="value">{{ uptime }}</div>
+    </div>
+    <div class="card">
+        <div class="label">API PID</div>
+        <div class="value">{{ process.pid if process else '—' }}</div>
+    </div>
+    <div class="card">
+        <div class="label">API Memory</div>
+        <div class="value">{{ process.memory_mb if process else '—' }} MB</div>
+    </div>
+</div>
+
+<!-- Service checks -->
+<div class="section">
+    <h3>Services</h3>
+    <div class="service-grid">
+        {% for name, check in checks.items() %}
+        <div class="service-card">
+            <h4>
+                <span class="health-indicator health-{{ check.status }}"></span>
+                {{ name }}
+            </h4>
+            {% if check.latency_ms is not none %}
+            <div class="detail">Latency: {{ check.latency_ms }}ms</div>
+            {% endif %}
+            {% if check.error %}
+            <div class="detail" style="color: #dc2626;">{{ check.error }}</div>
+            {% endif %}
+            {% if check.extra %}
+            {% for k, v in check.extra.items() %}
+            <div class="detail">{{ k }}: {{ v }}</div>
+            {% endfor %}
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Systemd services -->
+{% if services %}
+<div class="section">
+    <h3>Systemd Services</h3>
+    <table>
+        <tr>
+            <th>Service</th>
+            <th>Status</th>
+            <th>Memory</th>
+            <th>Uptime</th>
+        </tr>
+        {% for svc in services %}
+        <tr>
+            <td>{{ svc.name }}</td>
+            <td>
+                <span class="badge {{ 'badge-green' if svc.active == 'active' else 'badge-red' }}">
+                    {{ svc.active }}
+                </span>
+            </td>
+            <td>{{ svc.memory or '—' }}</td>
+            <td>{{ svc.uptime or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+<!-- System resources -->
+{% if disk %}
+<div class="section">
+    <h3>System Resources</h3>
+    <div class="service-grid">
+        <div class="service-card">
+            <h4>Disk Usage</h4>
+            <div class="detail">{{ disk.used_gb }} GB / {{ disk.total_gb }} GB ({{ disk.used_pct }}%)</div>
+            <div class="progress-bar">
+                <div class="progress-fill {{ 'fill-red' if disk.used_pct > 90 else ('fill-yellow' if disk.used_pct > 75 else 'fill-green') }}"
+                     style="width: {{ disk.used_pct }}%"></div>
+            </div>
+            <div class="detail">Free: {{ disk.free_gb }} GB</div>
+        </div>
+        {% if memory %}
+        <div class="service-card">
+            <h4>Memory Usage</h4>
+            <div class="detail">{{ memory.used_gb }} GB / {{ memory.total_gb }} GB ({{ memory.used_pct }}%)</div>
+            <div class="progress-bar">
+                <div class="progress-fill {{ 'fill-red' if memory.used_pct > 90 else ('fill-yellow' if memory.used_pct > 75 else 'fill-green') }}"
+                     style="width: {{ memory.used_pct }}%"></div>
+            </div>
+            <div class="detail">Available: {{ memory.available_gb }} GB</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Queue status -->
+{% if queues %}
+<div class="section">
+    <h3>Job Queues</h3>
+    <table>
+        <tr>
+            <th>Queue</th>
+            <th>Jobs</th>
+        </tr>
+        {% for name, count in queues.items() %}
+        <tr>
+            <td>{{ name }}</td>
+            <td>
+                {% if count > 0 %}
+                <span class="badge {{ 'badge-red' if name == 'failed' else 'badge-blue' }}">{{ count }}</span>
+                {% else %}
+                <span class="badge badge-gray">0</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let countdown = 30;
+    const timer = document.getElementById('refresh-timer');
+    setInterval(() => {
+        countdown--;
+        if (countdown <= 0) { location.reload(); return; }
+        timer.textContent = 'auto-refresh: ' + countdown + 's';
+    }, 1000);
+</script>
+{% endblock %}

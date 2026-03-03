@@ -1,0 +1,46 @@
+# Dependencies & caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+venv/
+env/
+.venv/
+node_modules/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
+build/
+dist/
+*.so
+*.egg
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Large vendored files
+prod/cpp/video/third_party/nlohmann/json.hpp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+data/logs/
+
+# Uploads
+uploads/
+
+# Docker volumes
+mysql_data/
+redis_data/

@@ -1,0 +1,58 @@
+{% extends "app_base.html" %}
+{% block title %}Add Channel — Content Fabric{% endblock %}
+{% block content %}
+<h2>Add Channel</h2>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="form-card">
+    <form method="POST" action="/app/channels/add">
+        <div class="form-group">
+            <label>Channel Name</label>
+            <input type="text" name="name" required placeholder="e.g. my-youtube-channel">
+        </div>
+        <div class="form-group">
+            <label>YouTube Channel ID or @Handle</label>
+            <input type="text" name="platform_channel_id" required placeholder="UCxxxxxx or @handle">
+        </div>
+        <div class="form-group">
+            <label>OAuth Console</label>
+            <select name="console_id" required>
+                <option value="">— Select —</option>
+                {% for c in consoles %}
+                <option value="{{ c.id }}">{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="enabled" value="true" checked>
+                Enabled
+            </label>
+        </div>
+
+        <details style="margin-bottom:1rem;">
+            <summary style="cursor:pointer;font-size:0.85rem;color:#64748b;">RPA Login Credentials (optional)</summary>
+            <div style="margin-top:0.75rem;">
+                <div class="form-group">
+                    <label>Login Email</label>
+                    <input type="email" name="login_email" placeholder="google@gmail.com">
+                </div>
+                <div class="form-group">
+                    <label>Login Password</label>
+                    <input type="password" name="login_password">
+                </div>
+                <div class="form-group">
+                    <label>TOTP Secret (base32)</label>
+                    <input type="text" name="totp_secret" placeholder="JBSWY3DPEHPK3PXP">
+                </div>
+            </div>
+        </details>
+
+        <button type="submit" class="btn btn-primary">Create Channel</button>
+        <a href="/app/channels" style="margin-left:1rem;font-size:0.85rem;color:#64748b;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

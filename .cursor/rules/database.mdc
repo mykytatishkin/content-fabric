@@ -1,0 +1,99 @@
+---
+description: Database patterns — SQLAlchemy Core, repos, models
+globs: prod/shared/db/**/*.py, prod/app/repositories/**/*.py
+alwaysApply: false
+---
+
+# Database Conventions
+
+## SQLAlchemy Core (NOT ORM)
+
+We use SQLAlchemy Core with raw `Table` definitions, NOT the ORM. No `Session`, no `Base.metadata`, no mapped classes.
+
+### Connection pattern
+```python
+from shared.db.connection import get_connection
+
+with get_connection() as conn:
+    result = conn.execute(stmt)
+    # auto-commits on exit
+```
+
+### IntEnum CRITICAL BUG
+MySQL does NOT auto-convert Python IntEnum to int. ALWAYS use `.value`:
+```python
+# WRONG:
+.where(t.c.status == TaskStatus.PENDING)
+# CORRECT:
+.where(t.c.status == TaskStatus.PENDING.value)
+```
+
+### Repository pattern
+Each repo file has:
+1. Module-level imports of table + get_connection
+2. Functions that build `select()`/`insert()`/`text()` statements
+3. Manual `_row_to_dict()` for positional row tuple mapping
+4. Returns `dict | None` for single, `list[dict]` for multiple
+
+### JSON columns
+```python
+from shared.db.utils import serialize_json, deserialize_json
+
+# Writing:
+stmt = insert(table).values(metadata=serialize_json(my_dict))
+
+# Reading in _row_to_dict:
+"metadata": deserialize_json(row[N])
+```
+
+### The metadata_ column
+In `models.py`, JSON columns named `metadata` use:
+```python
+Column("metadata_", JSON, key="metadata")
+```
+This avoids conflict with SQLAlchemy's `MetaData`. In raw SQL (`text()`), use `metadata_` as the column name.
+
+### Dynamic UPDATE helper
+```python
+from shared.db.utils import build_update
+sql, params = build_update("platform_channels", {"name": "new"}, where="id = :id", id=5)
+conn.execute(text(sql), params)
+```
+
+### Duplicate key detection
+```python
+from shared.db.utils import is_duplicate_key_error
+try:
+    conn.execute(insert_stmt)
+except Exception as e:
+    if is_duplicate_key_error(e):
+        return None  # graceful duplicate handling
+    raise
+```
+
+## Tables Reference
+
+| Table | Key columns | Notes |
+|-------|------------|-------|
+| platform_users | id, uuid, email, password_hash, status(IntEnum), totp_* | UserStatus: 0=inactive, 1=admin, 10=active |
+| platform_channels | id, uuid, console_id, access_token, refresh_token, created_by | Has login_credentials in separate table. `created_by` used for user-scoped filtering |
+| content_upload_queue_tasks | id, uuid, channel_id, status(0-4), scheduled_at, created_by | TaskStatus IntEnum. `created_by` used for user-scoped filtering |
+| platform_oauth_credentials | id, project_id, client_id, client_secret | OAuth consoles |
+| platform_channel_login_credentials | channel_id, login_email, login_password, totp_secret, proxy_host, proxy_port, backup_codes, browser_profile_path, user_agent, last_attempt_at, enabled, last_success_at, last_error | RPA credentials for reauth. Portal channel detail displays all columns via `credential_repo.get_credentials()` |
+| channel_reauth_audit_logs | channel_id, status, trigger_reason, error_message | Audit trail |
+| schedule_templates + slots | template → slots (day_of_week, time_utc, channel_id), created_by | Publishing schedule. `created_by` used for user-scoped filtering |
+
+### Portal-displayed credential columns
+
+The channel detail page (`/app/channels/{uuid}`) uses `credential_repo.get_credentials(channel_id)` to display the full credential record. The following columns from `platform_channel_login_credentials` are shown on the portal:
+
+- `login_email` — login email for the Google account
+- `totp_secret` — whether TOTP is configured (shown as has/doesn't have, not the actual secret)
+- `proxy_host`, `proxy_port` — proxy configuration
+- `backup_codes` — backup verification codes
+- `browser_profile_path` — path to Playwright browser profile
+- `user_agent` — browser user agent string
+- `last_attempt_at` — last reauth attempt timestamp
+- `enabled` — whether credentials are active
+- `last_success_at` — last successful reauth
+- `last_error` — last error message from reauth

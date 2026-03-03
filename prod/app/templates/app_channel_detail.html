@@ -1,0 +1,161 @@
+{% extends "app_base.html" %}
+{% block title %}{{ channel.name }} — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>{{ channel.name }}</h2>
+    <div>
+        <a href="/app/channels" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back to Channels</a>
+        <a href="/app/channels/{{ channel.uuid }}/edit" class="btn btn-primary btn-sm">Edit Channel</a>
+        <form method="POST" action="/app/channels/{{ channel.uuid }}/delete" style="display:inline;"
+              data-name="{{ channel.name }}" onsubmit="return confirm('Delete channel ' + this.dataset.name + '? This cannot be undone.')">
+            <button type="submit" class="btn btn-danger btn-sm">Delete Channel</button>
+        </form>
+    </div>
+</div>
+
+<!-- Channel Info -->
+<div class="cards" style="margin-bottom:1.5rem;">
+    <div class="card">
+        <div class="label">YouTube ID</div>
+        <div class="value" style="font-size:0.9rem;">{{ channel.platform_channel_id }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Enabled</div>
+        <div class="value">
+            {% if channel.enabled %}<span class="badge badge-green">Yes</span>
+            {% else %}<span class="badge badge-gray">No</span>{% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">OAuth Tokens</div>
+        <div class="value">
+            {% if channel.access_token %}<span class="badge badge-green">OK</span>
+            {% else %}<span class="badge badge-red">Missing</span>{% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">Token Expires</div>
+        <div class="value" style="font-size:0.85rem;">
+            {% if channel.token_expires_at %}
+                {{ channel.token_expires_at }}
+            {% elif channel.access_token %}
+                <span style="color:#d97706;">Unknown</span>
+            {% else %}
+                <span style="color:#64748b;">—</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">OAuth Console</div>
+        <div class="value" style="font-size:0.85rem;">
+            {% if console %}{{ console.name }}{% else %}<span style="color:#64748b;">—</span>{% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="label">Created</div>
+        <div class="value" style="font-size:0.85rem;">{{ channel.created_at }}</div>
+    </div>
+</div>
+
+<!-- Task Statistics -->
+<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Task Statistics</h3>
+<div class="cards" style="margin-bottom:1.5rem;">
+    <div class="card">
+        <div class="label">Total</div>
+        <div class="value">{{ stats.get('total', 0) }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Pending</div>
+        <div class="value" style="color:#d97706;">{{ stats.get('pending', 0) }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Processing</div>
+        <div class="value" style="color:#2563eb;">{{ stats.get('processing', 0) }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Completed</div>
+        <div class="value" style="color:#16a34a;">{{ stats.get('completed', 0) }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Failed</div>
+        <div class="value" style="color:#dc2626;">{{ stats.get('failed', 0) }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Cancelled</div>
+        <div class="value" style="color:#64748b;">{{ stats.get('cancelled', 0) }}</div>
+    </div>
+</div>
+
+<!-- Login Credentials -->
+{% if credentials %}
+<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Login Credentials</h3>
+<div class="form-card" style="margin-bottom:1.5rem;max-width:100%;">
+    <table style="box-shadow:none;">
+        <tr><td style="font-weight:600;width:160px;">Email</td><td>{{ credentials.login_email or '—' }}</td></tr>
+        <tr><td style="font-weight:600;">Status</td><td>{% if credentials.enabled %}<span class="badge badge-green">Enabled</span>{% else %}<span class="badge badge-gray">Disabled</span>{% endif %}</td></tr>
+        <tr><td style="font-weight:600;">TOTP</td><td>{% if credentials.totp_secret %}<span class="badge badge-green">Configured</span>{% else %}<span class="badge badge-gray">No</span>{% endif %}</td></tr>
+        <tr><td style="font-weight:600;">Backup Codes</td><td>{% if credentials.backup_codes %}<span class="badge badge-green">{{ credentials.backup_codes|length }} codes</span>{% else %}<span class="badge badge-gray">No</span>{% endif %}</td></tr>
+        <tr>
+            <td style="font-weight:600;">Proxy</td>
+            <td>
+                {% if credentials.proxy_host %}
+                    {{ credentials.proxy_host }}{% if credentials.proxy_port %}:{{ credentials.proxy_port }}{% endif %}
+                    {% if credentials.proxy_username %} (auth: {{ credentials.proxy_username }}){% endif %}
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+        </tr>
+        {% if credentials.profile_path %}
+        <tr><td style="font-weight:600;">Browser Profile</td><td style="font-size:0.8rem;word-break:break-all;">{{ credentials.profile_path }}</td></tr>
+        {% endif %}
+        {% if credentials.user_agent %}
+        <tr><td style="font-weight:600;">User Agent</td><td style="font-size:0.8rem;word-break:break-all;">{{ credentials.user_agent }}</td></tr>
+        {% endif %}
+        <tr><td style="font-weight:600;">Last Attempt</td><td>{{ credentials.last_attempt_at or '—' }}</td></tr>
+        <tr><td style="font-weight:600;">Last Success</td><td>{{ credentials.last_success_at or '—' }}</td></tr>
+        {% if credentials.last_error %}
+        <tr><td style="font-weight:600;">Last Error</td><td style="color:#dc2626;font-size:0.8rem;">{{ credentials.last_error }}</td></tr>
+        {% endif %}
+    </table>
+</div>
+{% endif %}
+
+<!-- Recent Tasks -->
+<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Recent Tasks ({{ recent_tasks|length }})</h3>
+{% if recent_tasks %}
+<table>
+    <thead>
+        <tr><th>ID</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for t in recent_tasks %}
+        <tr>
+            <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
+            <td>{{ (t.title or '—')[:50] }}</td>
+            <td>
+                {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
+                {% elif t.status == 1 %}<span class="badge badge-green">Completed</span>
+                {% elif t.status == 2 %}<span class="badge badge-red">Failed</span>
+                {% elif t.status == 3 %}<span class="badge badge-blue">Processing</span>
+                {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
+                {% endif %}
+            </td>
+            <td>{{ t.scheduled_at or '—' }}</td>
+            <td>{{ t.created_at }}</td>
+            <td style="font-size:0.75rem;color:#991b1b;max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:80] }}</td>
+            <td>
+                {% if t.status == 0 %}
+                <form method="POST" action="/app/tasks/{{ t.uuid }}/cancel" style="display:inline;">
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;">No tasks for this channel yet. <a href="/app/tasks/new" style="color:#0ea5e9;">Create one</a></p>
+{% endif %}
+{% endblock %}

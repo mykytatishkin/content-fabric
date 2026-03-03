@@ -1,0 +1,65 @@
+---
+description: Testing conventions — pytest, mocking, fixtures
+globs: prod/tests/**/*.py
+alwaysApply: false
+---
+
+# Testing Conventions
+
+## Setup
+- pytest with `pythonpath = .` (imports from prod root)
+- `conftest.py` sets env vars BEFORE imports (JWT_SECRET_KEY, MySQL test DB, etc.)
+- Heavy deps mocked at module level: `rq`, `googleapiclient`, `google.oauth2`
+
+## Fixtures (conftest.py)
+
+```python
+TEST_USER = {
+    "id": 1, "email": "test@cff.local", "username": "testuser",
+    "status": 10, "display_name": "Test", "password_hash": "hashed",
+    "totp_enabled": 0, "totp_secret": None, "totp_backup_codes": None,
+}
+
+ADMIN_USER = {**TEST_USER, "id": 99, "email": "admin@cff.local", "status": 1}
+```
+
+- `app_client` — FastAPI TestClient with mocked DB connections
+- `auth_headers` — `{"Authorization": "Bearer <valid_jwt>"}`
+- `admin_headers` — `{"Authorization": "Bearer <admin_jwt>"}`
+
+## CRITICAL: Patch at IMPORT SITE
+
+When mocking, patch where the function is IMPORTED, not where it's defined:
+
+```python
+# WRONG — patches the definition, but endpoint already imported it:
+@patch("shared.db.repositories.channel_repo.get_channel_by_id")
+
+# CORRECT — patches at the import site:
+@patch("app.api.endpoints.channels.get_channel_by_id")
+```
+
+## Repo test pattern
+
+Use `_patch_repo()` context manager to patch `get_connection`:
+
+```python
+CONSOLE_MOD = "shared.db.repositories.console_repo"
+
+@contextmanager
+def _patch_repo(module_path: str, conn):
+    @contextmanager
+    def _fake():
+        yield conn
+    with patch(f"{module_path}.get_connection", _fake):
+        yield
+```
+
+Mock data tuples must match the column order in the repo's `select()` / `_row_to_dict()`.
+
+## Running tests
+```bash
+cd prod && python -m pytest tests/ -v --tb=short
+```
+
+204 tests, all should pass. No real DB needed (everything mocked).

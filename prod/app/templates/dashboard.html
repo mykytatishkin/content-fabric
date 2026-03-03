@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="cards">
+    <div class="card">
+        <div class="label">Каналы (активных)</div>
+        <div class="value">{{ channels_active }} / {{ channels_total }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Пользователей</div>
+        <div class="value">{{ users_total }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Задач в очереди</div>
+        <div class="value">{{ tasks_pending }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Выполнено</div>
+        <div class="value" style="color: #16a34a">{{ tasks_completed }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Ошибки</div>
+        <div class="value" style="color: #dc2626">{{ tasks_failed }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Redis Queues</div>
+        <div class="value">{{ queue_total }}</div>
+    </div>
+</div>
+
+{% if recent_failures %}
+<div class="section">
+    <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">Последние ошибки</h3>
+    <table>
+        <tr><th>ID</th><th>Канал</th><th>Заголовок</th><th>Ошибка</th><th>Когда</th></tr>
+        {% for t in recent_failures %}
+        <tr>
+            <td>{{ t.id }}</td>
+            <td>{{ t.channel_id }}</td>
+            <td>{{ t.title or '—' }}</td>
+            <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.error_message or '—' }}</td>
+            <td>{{ t.completed_at or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+{% if reauth_channels %}
+<div class="section">
+    <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">Каналы требующие реавторизации</h3>
+    <table>
+        <tr><th>ID</th><th>Канал</th><th>Email</th><th>TOTP</th><th>Последняя ошибка</th></tr>
+        {% for ch in reauth_channels %}
+        <tr>
+            <td>{{ ch.id }}</td>
+            <td>{{ ch.name }}</td>
+            <td>{{ ch.login_email or '—' }}</td>
+            <td>{% if ch.has_totp %}<span class="badge badge-green">Да</span>{% else %}<span class="badge badge-gray">Нет</span>{% endif %}</td>
+            <td style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ ch.last_error or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+{% endblock %}

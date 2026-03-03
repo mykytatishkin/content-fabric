@@ -1,0 +1,23 @@
+[Unit]
+Description=Content Fabric Voice Worker (voice change processing)
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/content-fabric/prod
+EnvironmentFile=/opt/content-fabric/.env
+EnvironmentFile=-/opt/content-fabric/prod/.env
+ExecStart=/opt/content-fabric/prod/venv/bin/python -m workers.voice_worker
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
+StandardOutput=append:/var/log/cff-voice-worker.log
+StandardError=append:/var/log/cff-voice-worker.log
+SyslogIdentifier=cff-voice
+MemoryMax=4G
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
