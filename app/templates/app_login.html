@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Content Fabric</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .login-card { background: #1e293b; border-radius: 12px; padding: 2rem; width: 100%; max-width: 400px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+        .login-card h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #f8fafc; }
+        .login-card p { font-size: 0.85rem; color: #94a3b8; margin-bottom: 1.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.3rem; color: #94a3b8; }
+        .form-group input { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #334155; border-radius: 6px; font-size: 0.9rem; background: #0f172a; color: #f8fafc; }
+        .form-group input:focus { outline: none; border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,0.2); }
+        .btn { width: 100%; padding: 0.7rem; border-radius: 6px; font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer; }
+        .btn-primary { background: #0ea5e9; color: #fff; }
+        .btn-primary:hover { background: #0284c7; }
+        .alert-error { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); padding: 0.6rem 0.8rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; }
+        .links { text-align: center; margin-top: 1rem; font-size: 0.85rem; }
+        .links a { color: #0ea5e9; text-decoration: none; }
+        .links a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>Content Fabric</h1>
+        <p>Sign in to your account</p>
+
+        {% if error %}
+        <div class="alert-error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/app/login">
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" name="email" value="{{ email|default('') }}" required autofocus>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" required>
+            </div>
+            <div class="form-group">
+                <label>2FA Code (if enabled)</label>
+                <input type="text" name="totp_code" placeholder="Optional" autocomplete="off">
+            </div>
+            <button type="submit" class="btn btn-primary">Sign In</button>
+        </form>
+
+        <div class="links">
+            Don't have an account? <a href="/app/register">Register</a>
+        </div>
+    </div>
+</body>
+</html>

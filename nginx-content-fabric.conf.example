@@ -1,0 +1,15 @@
+# Nginx reverse proxy для Content Fabric prod (FastAPI/uvicorn на порту 8000)
+# Копировать в /etc/nginx/sites-available/content-fabric или /etc/nginx/conf.d/content-fabric.conf
+
+server {
+    listen 80;
+    server_name 46.21.250.43 _;   # IP сервера или замени на свой домен
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

@@ -1,0 +1,54 @@
+{% extends "app_base.html" %}
+{% block title %}Edit {{ channel.name }} — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Edit Channel</h2>
+    <a href="/app/channels/{{ channel.uuid }}" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back</a>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <form method="POST" action="/app/channels/{{ channel.uuid }}/edit">
+        <div class="form-group">
+            <label>Channel Name *</label>
+            <input type="text" name="name" required value="{{ channel.name }}">
+        </div>
+        <div class="form-group">
+            <label>YouTube Channel ID</label>
+            <input type="text" value="{{ channel.platform_channel_id }}" disabled
+                   style="background:#f1f5f9;color:#64748b;">
+            <p style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Cannot be changed after creation</p>
+        </div>
+        <div class="form-group">
+            <label style="display:flex;align-items:center;gap:0.5rem;">
+                <input type="checkbox" name="enabled" value="true" {{ 'checked' if channel.enabled }}
+                       style="width:auto;">
+                Enabled
+            </label>
+        </div>
+
+        <h3 style="font-size:0.95rem;margin:1.5rem 0 1rem;padding-top:1rem;border-top:1px solid #e2e8f0;">RPA Credentials</h3>
+        <div class="form-group">
+            <label>Login Email</label>
+            <input type="email" name="login_email" value="{{ credentials.login_email if credentials else '' }}" placeholder="channel@gmail.com">
+        </div>
+        <div class="form-group">
+            <label>Login Password</label>
+            <input type="password" name="login_password" value="" placeholder="Leave empty to keep current">
+        </div>
+        <div class="form-group">
+            <label>TOTP Secret (base32)</label>
+            <input type="password" name="totp_secret" value="" placeholder="{{ 'Configured (leave empty to keep)' if credentials and credentials.totp_secret else 'Base32 TOTP secret for 2FA' }}">
+        </div>
+
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <a href="/app/channels/{{ channel.uuid }}" style="margin-left:1rem;font-size:0.85rem;color:#64748b;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

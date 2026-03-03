@@ -1,0 +1,21 @@
+/var/log/cff-*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su root root
+}
+
+/var/log/cff-audit.log {
+    weekly
+    rotate 52
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su root root
+}

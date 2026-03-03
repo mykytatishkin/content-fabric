@@ -1,0 +1,111 @@
+{% extends "app_base.html" %}
+{% block title %}{{ template.name }} — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>{{ template.name }}</h2>
+    <div>
+        <a href="/app/templates" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back</a>
+        <form method="POST" action="/app/templates/{{ template.uuid }}/delete" style="display:inline;"
+              onsubmit="return confirm('Delete this template and all its slots?')">
+            <button type="submit" class="btn btn-danger btn-sm">Delete Template</button>
+        </form>
+    </div>
+</div>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+<!-- Template Info -->
+<div class="cards" style="margin-bottom:1.5rem;">
+    <div class="card">
+        <div class="label">Timezone</div>
+        <div class="value" style="font-size:0.9rem;">{{ template.timezone or 'UTC' }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Slots</div>
+        <div class="value">{{ slots|length }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Status</div>
+        <div class="value">
+            {% if template.is_active %}<span class="badge badge-green">Active</span>
+            {% else %}<span class="badge badge-gray">Inactive</span>{% endif %}
+        </div>
+    </div>
+</div>
+
+{% if template.description %}
+<p style="color:#64748b;font-size:0.85rem;margin-bottom:1.5rem;">{{ template.description }}</p>
+{% endif %}
+
+<!-- Slots -->
+<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Time Slots</h3>
+{% if slots %}
+<table style="margin-bottom:1.5rem;">
+    <thead>
+        <tr><th>Day</th><th>Time</th><th>Channel</th><th>Media</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for s in slots %}
+        <tr>
+            <td><strong>{{ day_names.get(s.day_of_week, s.day_of_week) }}</strong></td>
+            <td>{{ s.time_utc }}</td>
+            <td>
+                {% if s.channel_id and s.channel_uuid %}
+                <a href="/app/channels/{{ s.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ s.channel_name }}</a>
+                {% elif s.channel_id %}
+                <span>Channel #{{ s.channel_id }}</span>
+                {% else %}
+                <span style="color:#64748b;">Any</span>
+                {% endif %}
+            </td>
+            <td>{{ s.media_type or 'video' }}</td>
+            <td>
+                <form method="POST" action="/app/templates/{{ template.uuid }}/slots/{{ s.id }}/delete" style="display:inline;">
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Remove this slot?')">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;margin-bottom:1.5rem;">No slots yet. Add one below.</p>
+{% endif %}
+
+<!-- Add Slot Form -->
+<div class="form-card">
+    <h3 style="font-size:1rem;margin-bottom:1rem;">Add Slot</h3>
+    <form method="POST" action="/app/templates/{{ template.uuid }}/slots">
+        <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Day of Week *</label>
+                <select name="day_of_week" required>
+                    <option value="0">Monday</option>
+                    <option value="1">Tuesday</option>
+                    <option value="2">Wednesday</option>
+                    <option value="3">Thursday</option>
+                    <option value="4">Friday</option>
+                    <option value="5">Saturday</option>
+                    <option value="6">Sunday</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Time (UTC) *</label>
+                <input type="time" name="time_utc" required>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Channel (optional)</label>
+                <select name="channel_id">
+                    <option value="0">Any channel</option>
+                    {% for ch in channels %}
+                    <option value="{{ ch.id }}">{{ ch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-bottom:0;">Add Slot</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

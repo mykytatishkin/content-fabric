@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Оплата{% endblock %}
+
+{% block content %}
+<h2>Оплата и подписки</h2>
+
+<div class="stub-notice">
+    <strong>⚠️ Заглушка — требуется ручная доработка</strong><br>
+    Этот раздел подготовлен как UI-заглушка. Для полноценной работы необходимо:
+    <ul style="margin-top: 0.5rem; padding-left: 1.25rem;">
+        <li>Подключить платёжный провайдер (LiqPay / Stripe / Fondy)</li>
+        <li>Создать таблицы <code>subscriptions</code>, <code>payments</code>, <code>plans</code> в БД</li>
+        <li>Реализовать webhook для подтверждения оплаты</li>
+        <li>Добавить логику ограничения по плану (лимит каналов, задач, хранилища)</li>
+    </ul>
+</div>
+
+<div class="section">
+    <h3 style="margin-bottom: 1rem; font-size: 1rem;">Тарифные планы</h3>
+    <div class="cards">
+        <div class="card" style="border: 2px solid #e2e8f0;">
+            <div class="label">Free</div>
+            <div class="value">$0</div>
+            <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
+                3 канала, 50 задач/мес, 5 GB хранилища
+            </p>
+            <span class="badge badge-green" style="margin-top: 0.5rem;">Текущий план</span>
+        </div>
+        <div class="card" style="border: 2px solid #0ea5e9;">
+            <div class="label">Pro</div>
+            <div class="value">$29/мес</div>
+            <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
+                20 каналов, 500 задач/мес, 50 GB, приоритетная очередь
+            </p>
+            <button class="btn btn-primary" disabled style="margin-top: 0.5rem; opacity: 0.5;">Недоступно</button>
+        </div>
+        <div class="card" style="border: 2px solid #8b5cf6;">
+            <div class="label">Enterprise</div>
+            <div class="value">$99/мес</div>
+            <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
+                Безлимит каналов, задач, 500 GB, выделенный воркер
+            </p>
+            <button class="btn btn-primary" disabled style="margin-top: 0.5rem; opacity: 0.5;">Недоступно</button>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">История платежей</h3>
+    <div class="alert alert-info">Платежи пока не подключены. Для настройки обратитесь к @mykytatishkin.</div>
+    <table>
+        <tr><th>Дата</th><th>Сумма</th><th>План</th><th>Статус</th></tr>
+        <tr><td colspan="4" style="text-align: center; color: #94a3b8; padding: 2rem;">Нет данных</td></tr>
+    </table>
+</div>
+{% endblock %}

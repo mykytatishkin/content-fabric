@@ -1,0 +1,56 @@
+version: "3.8"
+
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  depends_on:
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  # ── API Gateway ──────────────────────────────────────────────
+  api:
+    <<: *app-common
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+  # ── Workers ──────────────────────────────────────────────────
+  publishing-worker:
+    <<: *app-common
+    command: python -m workers.publishing_worker
+
+  notification-worker:
+    <<: *app-common
+    command: python -m workers.notification_worker
+
+  voice-worker:
+    <<: *app-common
+    command: python -m workers.voice_worker
+
+  # ── Scheduler ────────────────────────────────────────────────
+  scheduler:
+    <<: *app-common
+    command: python -m scheduler.run
+
+  # ── Infrastructure ───────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis_data:

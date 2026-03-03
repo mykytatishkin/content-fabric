@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+
+{% block head %}
+<style>
+    .log-controls { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; }
+    .log-controls select, .log-controls input { padding: 0.4rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.85rem; }
+    .log-container { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 1rem; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.78rem; line-height: 1.6; max-height: 70vh; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .log-line { padding: 1px 0; }
+    .log-line:hover { background: rgba(255,255,255,0.05); }
+    .log-error { color: #fca5a5; }
+    .log-warning { color: #fde68a; }
+    .log-info { color: #93c5fd; }
+    .log-debug { color: #94a3b8; }
+    .log-stats { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.8rem; color: #64748b; }
+    .log-stats span { font-weight: 600; }
+    .auto-refresh { font-size: 0.75rem; color: #94a3b8; float: right; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>Application Logs <span class="auto-refresh" id="refresh-timer">auto-refresh: 10s</span></h2>
+
+<div class="log-controls">
+    <select id="service-select" onchange="location.href='/panel/logs?service='+this.value+'&level='+document.getElementById('level-select').value+'&lines='+document.getElementById('lines-input').value">
+        {% for svc in available_services %}
+        <option value="{{ svc }}" {{ 'selected' if svc == current_service }}>{{ svc }}</option>
+        {% endfor %}
+    </select>
+    <select id="level-select" onchange="location.href='/panel/logs?service='+document.getElementById('service-select').value+'&level='+this.value+'&lines='+document.getElementById('lines-input').value">
+        <option value="all" {{ 'selected' if current_level == 'all' }}>All levels</option>
+        <option value="ERROR" {{ 'selected' if current_level == 'ERROR' }}>ERROR only</option>
+        <option value="WARNING" {{ 'selected' if current_level == 'WARNING' }}>WARNING+</option>
+        <option value="INFO" {{ 'selected' if current_level == 'INFO' }}>INFO+</option>
+    </select>
+    <input type="number" id="lines-input" value="{{ lines }}" min="50" max="1000" style="width: 80px;"
+           onchange="location.href='/panel/logs?service='+document.getElementById('service-select').value+'&level='+document.getElementById('level-select').value+'&lines='+this.value">
+    <span style="font-size: 0.8rem; color: #64748b;">lines</span>
+</div>
+
+<div class="log-stats">
+    <div>Total lines: <span>{{ log_lines|length }}</span></div>
+    <div>Errors: <span style="color: #dc2626;">{{ error_count }}</span></div>
+    <div>Warnings: <span style="color: #f59e0b;">{{ warning_count }}</span></div>
+</div>
+
+<div class="log-container" id="log-container">
+{% for line in log_lines %}
+<div class="log-line {{ 'log-error' if ' ERROR ' in line else ('log-warning' if ' WARNING ' in line else ('log-info' if ' INFO ' in line else 'log-debug')) }}">{{ line }}</div>
+{% endfor %}
+{% if not log_lines %}
+<div class="log-line log-debug">No log entries found.</div>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-scroll to bottom
+    const container = document.getElementById('log-container');
+    container.scrollTop = container.scrollHeight;
+
+    // Auto-refresh every 10 seconds
+    let countdown = 10;
+    const timer = document.getElementById('refresh-timer');
+    setInterval(() => {
+        countdown--;
+        if (countdown <= 0) { location.reload(); return; }
+        timer.textContent = 'auto-refresh: ' + countdown + 's';
+    }, 1000);
+</script>
+{% endblock %}
