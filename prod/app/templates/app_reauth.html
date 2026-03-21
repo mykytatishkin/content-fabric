@@ -1,0 +1,96 @@
+{% extends "app_base.html" %}
+{% block title %}Re-authorization — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Channel Authorization ({{ channels|length }})</h2>
+</div>
+
+{% if authorized_uuid %}
+<div class="alert alert-success">
+    Channel <strong>{{ authorized_uuid }}</strong> authorized successfully.
+</div>
+{% endif %}
+
+{% set needs_auth = channels|selectattr("has_tokens", "equalto", false)|list %}
+{% set has_auth = channels|selectattr("has_tokens")|list %}
+
+<div class="cards" style="margin-bottom:1.5rem;">
+    <div class="card">
+        <div class="label">Total Channels</div>
+        <div class="value">{{ channels|length }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Need Authorization</div>
+        <div class="value" style="color:#dc2626;">{{ needs_auth|length }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Authorized</div>
+        <div class="value" style="color:#16a34a;">{{ has_auth|length }}</div>
+    </div>
+</div>
+
+{% if channels %}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Channel</th>
+            <th>YouTube ID</th>
+            <th>Status</th>
+            <th>Token Expires</th>
+            <th>Console</th>
+            <th style="text-align:center;">Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ch in channels %}
+        <tr{% if not ch.has_tokens %} style="background:#fef2f2;"{% endif %}>
+            <td>{{ ch.id }}</td>
+            <td style="font-weight:600;">
+                <a href="/app/channels/{{ ch.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ ch.name }}</a>
+            </td>
+            <td style="font-size:0.75rem;color:#64748b;">{{ ch.platform_channel_id }}</td>
+            <td>
+                {% if ch.has_tokens %}
+                    <span class="badge badge-green">OK</span>
+                {% else %}
+                    <span class="badge badge-red">No Tokens</span>
+                {% endif %}
+                {% if not ch.enabled %}
+                    <span class="badge badge-gray">Disabled</span>
+                {% endif %}
+            </td>
+            <td style="font-size:0.75rem;">
+                {% if ch.token_expires_at %}
+                    <span style="color:#64748b;">{{ ch.token_expires_at }}</span>
+                {% elif ch.has_tokens %}
+                    <span style="color:#d97706;">Unknown</span>
+                {% else %}
+                    <span style="color:#64748b;">&mdash;</span>
+                {% endif %}
+            </td>
+            <td style="font-size:0.75rem;">
+                {% if ch.console_id %}
+                    <span class="badge badge-blue">#{{ ch.console_id }}</span>
+                {% else %}
+                    <span class="badge badge-red">None</span>
+                {% endif %}
+            </td>
+            <td style="text-align:center;">
+                {% if ch.console_id %}
+                    <a href="/app/channels/{{ ch.uuid }}/authorize?redirect_to=reauth"
+                       class="btn btn-primary btn-sm">
+                        {% if ch.has_tokens %}Re-authorize{% else %}Authorize{% endif %}
+                    </a>
+                {% else %}
+                    <span style="font-size:0.75rem;color:#94a3b8;">No console</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;">No channels found. <a href="/app/channels/add" style="color:#0ea5e9;">Add your first channel</a></p>
+{% endif %}
+{% endblock %}

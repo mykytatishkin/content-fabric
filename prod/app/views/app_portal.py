@@ -1,7 +1,12 @@
 """User-facing web portal — SSR pages with cookie-based JWT auth."""
 
 import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlencode
+
+import requests
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -323,6 +328,329 @@ async def channel_add_submit(
         )
 
     return RedirectResponse("/app/channels", status_code=302)
+
+
+# ── OAuth Authorization ──────────────────────────────────────────────
+
+OAUTH_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+]
+
+
+@router.get("/channels/{channel_uuid}/authorize")
+async def channel_authorize(request: Request, channel_uuid: str):
+    """Redirect to Google OAuth consent for channel authorization."""
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import channel_repo, console_repo
+
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
+    if not channel:
+        return RedirectResponse("/app/channels", status_code=302)
+    if not is_admin(user) and channel.get("created_by") != user["id"]:
+        return RedirectResponse("/app/channels", status_code=302)
+
+    console_id = channel.get("console_id")
+    if not console_id:
+        return RedirectResponse(
+            f"/app/channels/{channel_uuid}?error=no_console",
+            status_code=302,
+        )
+
+    console = console_repo.get_console_by_id(console_id)
+    if not console:
+        return RedirectResponse(
+            f"/app/channels/{channel_uuid}?error=no_console",
+            status_code=302,
+        )
+
+    client_id = console.get("client_id")
+    client_secret = console.get("client_secret")
+    if not client_id or not client_secret:
+        return RedirectResponse(
+            f"/app/channels/{channel_uuid}?error=no_oauth_creds",
+            status_code=302,
+        )
+
+    from app.core.config import settings
+
+    base_url = (settings.BASE_URL or str(request.base_url)).rstrip("/")
+    redirect_uri = f"{base_url}/app/oauth/callback"
+
+    redirect_to = request.query_params.get("redirect_to", "")
+    state_suffix = secrets.token_urlsafe(16)
+    state = f"{channel_uuid}_{state_suffix}"
+    if redirect_to:
+        state = f"{channel_uuid}|{redirect_to}_{state_suffix}"
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": " ".join(OAUTH_SCOPES),
+        "response_type": "code",
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    }
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    return RedirectResponse(auth_url, status_code=302)
+
+
+@router.get("/oauth/callback")
+async def oauth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    """Handle Google OAuth callback: exchange code for tokens, save to channel, redirect."""
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    if error:
+        logger.warning("OAuth callback error: %s - %s", error, error_description)
+        return RedirectResponse(
+            f"/app/channels?error={requests.utils.quote(error_description or error)}",
+            status_code=302,
+        )
+
+    if not code or not state:
+        return RedirectResponse("/app/channels?error=missing_code_or_state", status_code=302)
+
+    # State format: "{channel_uuid}_{random}" or "{channel_uuid}|{redirect_to}_{random}"
+    redirect_after = None
+    state_main = state.split("_", 1)[0] if state else ""
+    if "|" in state_main:
+        channel_uuid, redirect_after = state_main.split("|", 1)
+    else:
+        channel_uuid = state_main
+
+    if not channel_uuid:
+        return RedirectResponse("/app/channels?error=invalid_state", status_code=302)
+
+    from shared.db.repositories import channel_repo, console_repo
+
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
+    if not channel:
+        return RedirectResponse("/app/channels?error=channel_not_found", status_code=302)
+    if not is_admin(user) and channel.get("created_by") != user["id"]:
+        return RedirectResponse("/app/channels", status_code=302)
+
+    console_id = channel.get("console_id")
+    if not console_id:
+        return RedirectResponse(
+            f"/app/channels/{channel_uuid}?error=no_console",
+            status_code=302,
+        )
+
+    console = console_repo.get_console_by_id(console_id)
+    if not console:
+        return RedirectResponse(
+            f"/app/channels/{channel_uuid}?error=no_console",
+            status_code=302,
+        )
+
+    from app.core.config import settings
+
+    base_url = (settings.BASE_URL or str(request.base_url)).rstrip("/")
+    redirect_uri = f"{base_url}/app/oauth/callback"
+
+    token_endpoint = "https://oauth2.googleapis.com/token"
+    data = {
+        "client_id": console["client_id"],
+        "client_secret": console["client_secret"],
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri,
+    }
+
+    response = requests.post(token_endpoint, data=data, timeout=30)
+    if not response.ok:
+        logger.error("Token exchange failed: %s", response.text)
+        return RedirectResponse(
+            f"/app/channels/{channel_uuid}?error=token_exchange_failed",
+            status_code=302,
+        )
+
+    payload = response.json()
+    access_token = payload.get("access_token")
+    refresh_token = payload.get("refresh_token")
+    expires_in = payload.get("expires_in")
+
+    if not access_token or not refresh_token:
+        logger.warning("OAuth response missing access_token or refresh_token for channel %s", channel_uuid)
+        return RedirectResponse(
+            f"/app/channels/{channel_uuid}?error=no_refresh_token",
+            status_code=302,
+        )
+
+    token_expires_at = None
+    if expires_in:
+        token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+    channel_repo.update_channel_tokens(
+        channel_id=channel["id"],
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_expires_at=token_expires_at,
+    )
+    logger.info("OAuth tokens saved for channel %s (id=%d)", channel_uuid, channel["id"])
+
+    if redirect_after == "reauth":
+        return RedirectResponse(f"/app/reauth?authorized={channel_uuid}", status_code=302)
+
+    return RedirectResponse(
+        f"/app/channels/{channel_uuid}?authorized=1",
+        status_code=302,
+    )
+
+
+# ── Batch Reauth ─────────────────────────────────────────────────────
+
+@router.get("/reauth", response_class=HTMLResponse)
+async def reauth_page(request: Request):
+    """Batch re-authorization page: lists channels needing OAuth tokens."""
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text
+
+    ch_where, ch_params = scoped_where(user, "c")
+    channels = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(text(f"""
+                SELECT c.id, c.uuid, c.name, c.platform_channel_id, c.console_id,
+                       c.access_token IS NOT NULL AND c.refresh_token IS NOT NULL as has_tokens,
+                       c.token_expires_at, c.enabled
+                FROM platform_channels c WHERE {ch_where}
+                ORDER BY
+                    (c.access_token IS NULL OR c.refresh_token IS NULL) DESC,
+                    c.name
+            """), ch_params).fetchall()
+            channels = [
+                {
+                    "id": r[0], "uuid": r[1], "name": r[2],
+                    "platform_channel_id": r[3], "console_id": r[4],
+                    "has_tokens": bool(r[5]), "token_expires_at": r[6],
+                    "enabled": bool(r[7]),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("Reauth page error: %s", e)
+
+    authorized_uuid = request.query_params.get("authorized")
+
+    return templates.TemplateResponse("app_reauth.html", {
+        "request": request, "user": user, "active": "reauth",
+        "channels": channels, "authorized_uuid": authorized_uuid,
+    })
+
+
+# ── TOTP Credentials Management ─────────────────────────────────────
+
+@router.get("/totp", response_class=HTMLResponse)
+async def totp_page(request: Request):
+    """Manage TOTP secrets for channel login credentials."""
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text
+
+    ch_where, ch_params = scoped_where(user, "c")
+    channels = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(text(f"""
+                SELECT c.id, c.uuid, c.name,
+                       lc.login_email, lc.totp_secret IS NOT NULL as has_totp,
+                       lc.totp_secret, lc.enabled as cred_enabled
+                FROM platform_channels c
+                LEFT JOIN platform_channel_login_credentials lc ON lc.channel_id = c.id
+                WHERE {ch_where}
+                ORDER BY c.name
+            """), ch_params).fetchall()
+            channels = [
+                {
+                    "id": r[0], "uuid": r[1], "name": r[2],
+                    "login_email": r[3], "has_totp": bool(r[4]),
+                    "totp_secret_masked": _mask_secret(r[5]) if r[5] else None,
+                    "has_credentials": r[3] is not None,
+                    "cred_enabled": bool(r[6]) if r[6] is not None else False,
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("TOTP page error: %s", e)
+
+    success = request.query_params.get("success")
+    error = request.query_params.get("error")
+
+    return templates.TemplateResponse("app_totp.html", {
+        "request": request, "user": user, "active": "totp",
+        "channels": channels, "success": success, "error": error,
+    })
+
+
+@router.post("/totp", response_class=HTMLResponse)
+@_limiter.limit("30/minute")
+async def totp_save(request: Request, channel_id: int = Form(...), totp_secret: str = Form("")):
+    """Save or clear TOTP secret for a channel."""
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import channel_repo, credential_repo
+
+    channel = channel_repo.get_channel_by_id(channel_id)
+    if not channel:
+        return RedirectResponse("/app/totp?error=Channel+not+found", status_code=302)
+    if not is_admin(user) and channel.get("created_by") != user["id"]:
+        return RedirectResponse("/app/totp?error=Access+denied", status_code=302)
+
+    totp_secret = totp_secret.strip().replace(" ", "")
+
+    if totp_secret:
+        try:
+            import pyotp
+            pyotp.TOTP(totp_secret).now()
+        except Exception:
+            return RedirectResponse("/app/totp?error=Invalid+TOTP+secret", status_code=302)
+
+    creds = credential_repo.get_credentials(channel_id, include_disabled=True)
+    if not creds:
+        return RedirectResponse(
+            f"/app/totp?error=No+login+credentials+for+channel+{channel_id}.+Add+email/password+first.",
+            status_code=302,
+        )
+
+    credential_repo.update_totp_secret(
+        channel_id=channel_id,
+        totp_secret=totp_secret or None,
+    )
+
+    ch_name = channel.get("name", f"#{channel_id}")
+    action = "saved" if totp_secret else "cleared"
+    logger.info("TOTP secret %s for channel %d (%s) by user %d", action, channel_id, ch_name, user["id"])
+
+    return RedirectResponse(f"/app/totp?success=TOTP+{action}+for+{ch_name}", status_code=302)
+
+
+def _mask_secret(secret: str) -> str:
+    if len(secret) <= 6:
+        return "*" * len(secret)
+    return secret[:3] + "*" * (len(secret) - 6) + secret[-3:]
 
 
 @router.get("/channels/{channel_uuid}", response_class=HTMLResponse)

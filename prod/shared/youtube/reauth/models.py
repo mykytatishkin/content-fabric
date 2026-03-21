@@ -1,20 +1,8 @@
-"""Typed models for the YouTube OAuth re-authentication automation."""
+"""Typed models for the YouTube OAuth re-authentication."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional, Sequence
-
-
-class MFAChallengeError(Exception):
-    """Raised when an MFA/security challenge is detected during login.
-
-    The caller should skip the current channel and continue with the next one.
-    """
-
-    def __init__(self, message: str, screenshot_path: Optional[str] = None) -> None:
-        super().__init__(message)
-        self.screenshot_path = screenshot_path
+from typing import Dict, Optional
 
 
 class ReauthStatus(str, Enum):
@@ -23,46 +11,6 @@ class ReauthStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"
-
-
-@dataclass
-class ProxyConfig:
-    """Proxy configuration for Playwright browser sessions."""
-
-    host: str
-    port: int
-    username: Optional[str] = None
-    password: Optional[str] = None
-
-
-@dataclass
-class BrowserConfig:
-    """Configuration options for Playwright browser sessions."""
-
-    headless: bool = False
-    slow_mo_ms: int = 50
-    navigation_timeout_ms: int = 60000
-    human_delay_range_ms: tuple[int, int] = (200, 400)
-
-
-@dataclass
-class AutomationCredential:
-    """Credential bundle required to automate a YouTube OAuth login."""
-
-    channel_name: str
-    login_email: str
-    login_password: str
-    profile_path: str
-    client_id: str
-    client_secret: str
-    channel_id: Optional[str] = None  # YouTube channel ID (UC...) for channel selection
-    totp_secret: Optional[str] = None
-    backup_codes: Optional[Sequence[str]] = None
-    proxy: Optional[ProxyConfig] = None
-    user_agent: Optional[str] = None
-    last_success_at: Optional[datetime] = None
-    last_attempt_at: Optional[datetime] = None
-    enabled: bool = True
 
 
 @dataclass

@@ -1,10 +1,15 @@
 """CLI entry point for YouTube OAuth re-authorization.
 
+Uses Selenium + undetected-chromedriver for automated login when credentials
+are available, otherwise opens a browser for manual authorization.
+
 Usage:
     python -m cli.reauth --channel-id 9
     python -m cli.reauth --channel-id 9 46 49
     python -m cli.reauth --all-failed
     python -m cli.reauth --all
+    python -m cli.reauth --channel-id 9 --no-browser   # remote server (print URL only)
+    python -m cli.reauth --channel-id 9 --port 9090     # custom callback port
 """
 
 from __future__ import annotations
@@ -15,8 +20,8 @@ import sys
 import shared.env  # noqa: F401 — load .env files
 
 from shared.logging_config import setup_logging
-from shared.youtube.reauth.service import YouTubeReauthService, ServiceConfig
-from shared.youtube.reauth.models import BrowserConfig, ReauthStatus
+from shared.youtube.reauth.service import YouTubeReauthService, ServiceConfig, OAuthSettings
+from shared.youtube.reauth.models import ReauthStatus
 from shared.db.repositories import channel_repo, audit_repo
 
 import logging
@@ -32,7 +37,6 @@ def get_failed_channel_ids() -> list[int]:
         if not ch.get("access_token") or not ch.get("refresh_token"):
             failed_ids.append(ch["id"])
             continue
-        # Check recent audit logs for failures
         audits = audit_repo.get_recent_reauth_audits(ch["id"], limit=1)
         if audits and audits[0].get("status") in ("failed", "skipped"):
             failed_ids.append(ch["id"])
@@ -42,12 +46,22 @@ def get_failed_channel_ids() -> list[int]:
 def main() -> None:
     setup_logging(service_name="cff-reauth")
 
-    parser = argparse.ArgumentParser(description="YouTube OAuth re-authorization")
+    parser = argparse.ArgumentParser(
+        description="YouTube OAuth re-authorization (opens browser for manual auth)"
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--channel-id", type=int, nargs="+", help="Channel ID(s) to re-authorize")
     group.add_argument("--all-failed", action="store_true", help="Re-authorize all channels with failed tokens")
     group.add_argument("--all", action="store_true", help="Re-authorize all enabled channels")
-    parser.add_argument("--headless", action="store_true", help="Run browser in headless mode")
+    parser.add_argument(
+        "--no-browser", action="store_true",
+        help="Don't open browser automatically (print URL for remote server usage)",
+    )
+    parser.add_argument(
+        "--headless", action="store_true",
+        help="Run Selenium in headless mode (no visible browser window)",
+    )
+    parser.add_argument("--port", type=int, default=8080, help="OAuth callback port (default: 8080)")
     parser.add_argument("--timeout", type=int, default=300, help="OAuth timeout in seconds (default: 300)")
     args = parser.parse_args()
 
@@ -57,6 +71,7 @@ def main() -> None:
         channel_ids = get_failed_channel_ids()
         if not channel_ids:
             logger.info("No channels with failed tokens found")
+            print("No channels with failed tokens found.")
             return
         logger.info("Found %d channels with failed tokens: %s", len(channel_ids), channel_ids)
     elif args.all:
@@ -64,6 +79,7 @@ def main() -> None:
         channel_ids = [ch["id"] for ch in channels]
         if not channel_ids:
             logger.info("No enabled channels found")
+            print("No enabled channels found.")
             return
         logger.info("Re-authorizing all %d enabled channels", len(channel_ids))
     else:
@@ -71,14 +87,22 @@ def main() -> None:
         sys.exit(1)
 
     config = ServiceConfig(
-        browser=BrowserConfig(headless=args.headless),
+        oauth_settings=OAuthSettings(
+            redirect_port=args.port,
+            timeout_seconds=args.timeout,
+        ),
+        open_browser=not args.no_browser,
+        headless=args.headless,
     )
-    config.oauth_settings.timeout_seconds = args.timeout
+
+    if args.no_browser:
+        print("\nРежим без браузера: відкрийте посилання вручну.")
+        print("Для віддаленого сервера використовуйте SSH тунель:")
+        print(f"  ssh -L {args.port}:localhost:{args.port} user@server\n")
 
     service = YouTubeReauthService(service_config=config)
     results = service.run_sync(channel_ids)
 
-    # Print summary
     success = sum(1 for r in results if r.status == ReauthStatus.SUCCESS)
     failed = sum(1 for r in results if r.status == ReauthStatus.FAILED)
     skipped = sum(1 for r in results if r.status == ReauthStatus.SKIPPED)

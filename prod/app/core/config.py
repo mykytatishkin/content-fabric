@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "FastAPI App"
     DEBUG: bool = False
     CORS_ORIGINS: list[str] = ["http://46.21.250.43"]
+    BASE_URL: str = ""  # e.g. "http://46.21.250.43" — used for OAuth redirect_uri
 
     # MySQL (loaded from prod/.env/.env.db only)
     MYSQL_HOST: str

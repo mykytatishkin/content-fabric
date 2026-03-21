@@ -1,0 +1,143 @@
+{% extends "app_base.html" %}
+{% block title %}TOTP Management — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>TOTP Secrets</h2>
+</div>
+
+{% if success %}
+<div class="alert alert-success">{{ success }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% set with_totp = channels|selectattr("has_totp")|list %}
+{% set with_creds = channels|selectattr("has_credentials")|list %}
+
+<div class="cards" style="margin-bottom:1.5rem;">
+    <div class="card">
+        <div class="label">Total Channels</div>
+        <div class="value">{{ channels|length }}</div>
+    </div>
+    <div class="card">
+        <div class="label">With Credentials</div>
+        <div class="value">{{ with_creds|length }}</div>
+    </div>
+    <div class="card">
+        <div class="label">TOTP Configured</div>
+        <div class="value" style="color:#16a34a;">{{ with_totp|length }}</div>
+    </div>
+    <div class="card">
+        <div class="label">TOTP Missing</div>
+        <div class="value" style="color:#dc2626;">{{ with_creds|length - with_totp|length }}</div>
+    </div>
+</div>
+
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:1rem;margin-bottom:1rem;">Add / Update TOTP Secret</h3>
+    <form method="POST" action="/app/totp">
+        <div class="form-group">
+            <label for="channel_id">Channel</label>
+            <select name="channel_id" id="channel_id" required>
+                <option value="">— Select channel —</option>
+                {% for ch in channels %}
+                {% if ch.has_credentials %}
+                <option value="{{ ch.id }}">{{ ch.name }} ({{ ch.login_email }}){% if ch.has_totp %} ✓{% endif %}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="totp_secret">TOTP Secret Key</label>
+            <input type="text" name="totp_secret" id="totp_secret"
+                   placeholder="e.g. JBSWY3DPEHPK3PXP" autocomplete="off"
+                   style="font-family:monospace;letter-spacing:0.05em;">
+            <div style="font-size:0.75rem;color:#64748b;margin-top:0.3rem;">
+                Get this from Google Account &rarr; Security &rarr; 2-Step Verification &rarr; Authenticator &rarr; "Can't scan it?"<br>
+                Leave empty to clear the TOTP secret.
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Save TOTP Secret</button>
+    </form>
+</div>
+
+{% if channels %}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Channel</th>
+            <th>Login Email</th>
+            <th>TOTP</th>
+            <th>Secret (masked)</th>
+            <th>Credentials</th>
+            <th style="text-align:center;">Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ch in channels %}
+        <tr>
+            <td>{{ ch.id }}</td>
+            <td style="font-weight:600;">
+                <a href="/app/channels/{{ ch.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ ch.name }}</a>
+            </td>
+            <td style="font-size:0.8rem;">
+                {% if ch.login_email %}
+                    {{ ch.login_email }}
+                {% else %}
+                    <span style="color:#94a3b8;">&mdash;</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if ch.has_totp %}
+                    <span class="badge badge-green">Configured</span>
+                {% elif ch.has_credentials %}
+                    <span class="badge badge-yellow">Missing</span>
+                {% else %}
+                    <span class="badge badge-gray">No creds</span>
+                {% endif %}
+            </td>
+            <td style="font-family:monospace;font-size:0.75rem;color:#64748b;">
+                {% if ch.totp_secret_masked %}
+                    {{ ch.totp_secret_masked }}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </td>
+            <td>
+                {% if ch.has_credentials %}
+                    {% if ch.cred_enabled %}
+                        <span class="badge badge-green">Active</span>
+                    {% else %}
+                        <span class="badge badge-red">Disabled</span>
+                    {% endif %}
+                {% else %}
+                    <span class="badge badge-gray">None</span>
+                {% endif %}
+            </td>
+            <td style="text-align:center;">
+                {% if ch.has_totp %}
+                    <form method="POST" action="/app/totp" style="display:inline;">
+                        <input type="hidden" name="channel_id" value="{{ ch.id }}">
+                        <input type="hidden" name="totp_secret" value="">
+                        <button type="submit" class="btn btn-danger btn-sm"
+                                onclick="return confirm('Clear TOTP for {{ ch.name }}?')">Clear</button>
+                    </form>
+                {% elif ch.has_credentials %}
+                    <a href="#" class="btn btn-primary btn-sm"
+                       onclick="document.getElementById('channel_id').value='{{ ch.id }}';document.getElementById('totp_secret').focus();window.scrollTo(0,0);return false;">
+                        Set TOTP
+                    </a>
+                {% else %}
+                    <span style="font-size:0.75rem;color:#94a3b8;">Add credentials first</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color:#64748b;">No channels found.</p>
+{% endif %}
+{% endblock %}

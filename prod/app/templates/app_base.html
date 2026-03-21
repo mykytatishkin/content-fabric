@@ -68,6 +68,8 @@
                 <a href="/app/tasks" class="{{ 'active' if active == 'tasks' }}">&#128203; <span>Tasks</span></a>
                 <a href="/app/templates" class="{{ 'active' if active == 'templates' }}">&#128197; <span>Templates</span></a>
                 <a href="/app/settings" class="{{ 'active' if active == 'settings' }}">&#9881; <span>Settings</span></a>
+                <a href="/app/reauth" class="{{ 'active' if active == 'reauth' }}">&#128274; <span>Auth</span></a>
+                <a href="/app/totp" class="{{ 'active' if active == 'totp' }}">&#128272; <span>TOTP</span></a>
             </nav>
             <div class="sidebar-bottom">
                 {% if user and user.status == 1 %}
