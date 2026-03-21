@@ -123,7 +123,7 @@ platform_channels = Table(
     Column("token_expires_at", DateTime),
     Column("enabled", TINYINT(1), nullable=False, server_default="1"),
     Column("processing_status", TINYINT(1), nullable=False, server_default="0"),
-    Column("metadata_", JSON, key="metadata"),
+    Column("metadata", JSON, key="meta"),
     Column("created_at", TIMESTAMP, nullable=False),
     Column("updated_at", TIMESTAMP, nullable=False),
 )
@@ -178,7 +178,7 @@ content_upload_queue_tasks = Table(
     Column("description", Text),
     Column("keywords", Text),
     Column("post_comment", Text),
-    Column("metadata_", JSON, key="metadata"),
+    Column("metadata", JSON, key="meta"),
     Column("scheduled_at", DateTime, nullable=False),
     Column("started_at", DateTime),
     Column("completed_at", DateTime),
@@ -206,7 +206,7 @@ channel_daily_statistics = Table(
     Column("videos", BigInteger),
     Column("likes", BigInteger),
     Column("comments", BigInteger),
-    Column("metadata_", JSON, key="metadata"),
+    Column("metadata", JSON, key="meta"),
     Column("created_at", TIMESTAMP, nullable=False),
 )
 
@@ -220,7 +220,7 @@ channel_reauth_audit_logs = Table(
     Column("trigger_reason", String(100)),
     Column("error_message", Text),
     Column("error_code", String(100)),
-    Column("metadata_", JSON, key="metadata"),
+    Column("metadata", JSON, key="meta"),
     Column("created_at", TIMESTAMP, nullable=False),
 )
 

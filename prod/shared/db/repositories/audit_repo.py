@@ -30,7 +30,7 @@ def create_reauth_audit(
         "channel_id": channel_id,
         "initiated_at": initiated_at,
         "status": status,
-        "metadata": metadata_json,
+        "meta": metadata_json,
     }
     if trigger_reason is not None:
         values["trigger_reason"] = trigger_reason
@@ -60,7 +60,7 @@ def complete_reauth_audit(
         "status = :status, "
         "error_message = :error_message, "
         "error_code = COALESCE(:error_code, error_code), "
-        "metadata_ = COALESCE(:metadata, metadata_) "
+        "metadata = COALESCE(:metadata, metadata) "
         "WHERE id = :aid"
     )
     with get_connection() as conn:
@@ -69,7 +69,7 @@ def complete_reauth_audit(
             "status": status,
             "error_message": error_message,
             "error_code": error_code,
-            "metadata": metadata_json,
+            "meta": metadata_json,
             "aid": audit_id,
         })
         ok = result.rowcount > 0
@@ -88,7 +88,7 @@ def get_recent_reauth_audits(
         t.c.initiated_at, t.c.completed_at,
         t.c.status, t.c.trigger_reason,
         t.c.error_message, t.c.error_code,
-        t.c.metadata, t.c.created_at,
+        t.c.meta, t.c.created_at,
     ]
     stmt = (
         select(*cols)
