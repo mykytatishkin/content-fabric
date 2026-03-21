@@ -69,7 +69,7 @@ def complete_reauth_audit(
             "status": status,
             "error_message": error_message,
             "error_code": error_code,
-            "meta": metadata_json,
+            "metadata": metadata_json,
             "aid": audit_id,
         })
         ok = result.rowcount > 0
