@@ -775,6 +775,7 @@ async def channel_edit_submit(
     channel_uuid: str,
     name: str = Form(...),
     enabled: bool = Form(False),
+    console_id: str = Form(""),
     login_email: str = Form(""),
     login_password: str = Form(""),
     totp_secret: str = Form(""),
@@ -790,7 +791,8 @@ async def channel_edit_submit(
         return RedirectResponse("/app/channels", status_code=302)
 
     channel_id = channel["id"]
-    channel_repo.update_channel(channel_id, name=name.strip(), enabled=enabled)
+    parsed_console_id = int(console_id) if console_id else None
+    channel_repo.update_channel(channel_id, name=name.strip(), enabled=enabled, console_id=parsed_console_id)
 
     if login_email:
         updated = channel_repo.update_login_credentials(

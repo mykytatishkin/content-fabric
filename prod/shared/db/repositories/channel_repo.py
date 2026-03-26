@@ -239,7 +239,7 @@ def update_channel_tokens(
         return ok
 
 
-def update_channel(channel_id: int, name: str | None = None, enabled: bool | None = None) -> bool:
+def update_channel(channel_id: int, name: str | None = None, enabled: bool | None = None, console_id: int | None = None) -> bool:
     """Update channel fields."""
     parts = []
     params: dict[str, Any] = {"cid": channel_id}
@@ -249,6 +249,9 @@ def update_channel(channel_id: int, name: str | None = None, enabled: bool | Non
     if enabled is not None:
         parts.append("enabled = :enabled")
         params["enabled"] = int(enabled)
+    if console_id is not None:
+        parts.append("console_id = :console_id")
+        params["console_id"] = console_id
     if not parts:
         return False
     sql = text(f"UPDATE platform_channels SET {', '.join(parts)} WHERE id = :cid")

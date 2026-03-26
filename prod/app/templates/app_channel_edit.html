@@ -26,6 +26,15 @@
             <p style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Cannot be changed after creation</p>
         </div>
         <div class="form-group">
+            <label>OAuth Console</label>
+            <select name="console_id">
+                <option value="">— Not set —</option>
+                {% for c in consoles %}
+                <option value="{{ c.id }}" {{ 'selected' if channel.console_id == c.id }}>{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
             <label style="display:flex;align-items:center;gap:0.5rem;">
                 <input type="checkbox" name="enabled" value="true" {{ 'checked' if channel.enabled }}
                        style="width:auto;">
