@@ -46,12 +46,27 @@ def run_automated_oauth(
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.common.exceptions import TimeoutException
 
-    options = uc.ChromeOptions()
+    # Use virtual display (Xvfb) instead of --headless to avoid Google's
+    # "This browser or app may not be secure" block.
+    vdisplay = None
     if headless:
+        try:
+            from pyvirtualdisplay import Display
+            vdisplay = Display(visible=False, size=(1920, 1080))
+            vdisplay.start()
+            logger.info("Selenium: started Xvfb virtual display")
+        except ImportError:
+            logger.warning("pyvirtualdisplay not installed, falling back to --headless=new")
+
+    options = uc.ChromeOptions()
+    if headless and vdisplay is None:
         options.add_argument("--headless=new")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
 
     chrome_ver = _detect_chrome_version()
     logger.info("Selenium: detected Chrome version_main=%s", chrome_ver)
@@ -78,9 +93,7 @@ def run_automated_oauth(
 
         # --- Step 5: Wait for redirect to localhost (InstalledAppFlow captures it) ---
         logger.info("Selenium: waiting for localhost redirect…")
-        WebDriverWait(driver, timeout).until(
-            lambda d: "localhost" in d.current_url or "127.0.0.1" in d.current_url
-        )
+        WebDriverWait(driver, timeout).until(_url_is_localhost_redirect)
         logger.info("Selenium: redirect captured — %s", driver.current_url.split("?")[0])
 
     except TimeoutException:
@@ -96,6 +109,11 @@ def run_automated_oauth(
             driver.quit()
         except Exception:
             pass
+        if vdisplay is not None:
+            try:
+                vdisplay.stop()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +162,8 @@ def _handle_security_challenge(driver, totp_secret: Optional[str]) -> None:
 
     time.sleep(_HUMAN_DELAY)
 
+    logger.info("Selenium: after password, current URL = %s", driver.current_url.split("?")[0])
+
     # Check if we landed on a challenge page at all
     if _is_on_consent_or_redirect(driver):
         logger.debug("Selenium: no security challenge, already on consent/redirect")
@@ -153,18 +173,30 @@ def _handle_security_challenge(driver, totp_secret: Optional[str]) -> None:
     if totp_secret and _try_enter_totp(driver, totp_secret):
         return
 
-    # Case 2: "Try another way" link present (phone verify, etc.)
-    if _click_try_another_way(driver):
-        time.sleep(_HUMAN_DELAY)
-
-        # Look for authenticator/TOTP option on the methods page
-        if totp_secret and _select_totp_method(driver):
+    # Case 2: Navigate through "Try another way" pages to find TOTP option.
+    # Google may show multiple levels: challenge/dp → selection → TOTP.
+    # Keep clicking "Try another way" until we find the authenticator option.
+    for attempt in range(3):
+        if _click_try_another_way(driver):
             time.sleep(_HUMAN_DELAY)
-            if _try_enter_totp(driver, totp_secret):
+            logger.info("Selenium: 'Try another way' attempt %d, URL = %s",
+                        attempt + 1, driver.current_url.split("?")[0])
+
+            # Check if TOTP input appeared directly
+            if totp_secret and _try_enter_totp(driver, totp_secret):
                 return
 
+            # Try to select authenticator/TOTP option from method list
+            if totp_secret and _select_totp_method(driver):
+                time.sleep(_HUMAN_DELAY)
+                if _try_enter_totp(driver, totp_secret):
+                    return
+        else:
+            break
+
     # Case 3: Unknown challenge — save screenshot and wait for manual action
-    logger.warning("Selenium: unhandled security challenge, waiting for manual intervention")
+    logger.warning("Selenium: unhandled security challenge at URL=%s, waiting for manual intervention",
+                   driver.current_url.split("?")[0])
     _save_screenshot(driver, "challenge")
 
     # Wait up to 120s for user to complete the challenge manually
@@ -179,14 +211,21 @@ def _handle_security_challenge(driver, totp_secret: Optional[str]) -> None:
         raise
 
 
+def _url_is_localhost_redirect(driver) -> bool:
+    """Check if the browser has actually redirected to localhost (not just a URL param)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(driver.current_url)
+    return parsed.hostname in ("localhost", "127.0.0.1")
+
+
 def _is_on_consent_or_redirect(driver) -> bool:
     """Check if the browser is on the consent screen or already redirected."""
-    url = driver.current_url
-    if "localhost" in url or "127.0.0.1" in url:
+    if _url_is_localhost_redirect(driver):
         return True
+    url = driver.current_url
     if "/o/oauth2/v2/auth/oauthchooseaccount" in url:
         return False
-    if "/signin/oauth/consent" in url or "/consent" in url:
+    if "/signin/oauth/consent" in url:
         return True
     # Check page content for consent indicators
     try:
@@ -230,21 +269,45 @@ def _click_try_another_way(driver) -> bool:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.common.exceptions import TimeoutException
 
-    try_texts = ["Try another way", "Другой способ", "Інший спосіб", "try another way"]
+    try_texts = ["Try another way", "Другой способ", "Інший спосіб"]
     for text in try_texts:
         try:
+            # Find the deepest element whose direct text() matches, then click
+            # it or its closest clickable ancestor. Avoids matching <html>/<body>.
             link = WebDriverWait(driver, 3).until(
                 EC.element_to_be_clickable((
                     By.XPATH,
-                    f"//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text.lower()}')] | "
-                    f"//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text.lower()}')]"
+                    f"//*[not(self::html) and not(self::body)][.//text()[contains(., '{text}')] or contains(text(), '{text}')]"
+                    f"[not(.//*[.//text()[contains(., '{text}')] or contains(text(), '{text}')])]"
                 ))
             )
-            logger.info("Selenium: clicking '%s'", text)
+            logger.info("Selenium: clicking 'Try another way' (tag=%s, text=%.60s)", link.tag_name, link.text.strip())
             link.click()
             return True
         except TimeoutException:
             continue
+
+    # Fallback: find by JavaScript to get the most specific element
+    try:
+        result = driver.execute_script("""
+            const texts = ['Try another way', 'Другой способ', 'Інший спосіб'];
+            for (const text of texts) {
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                while (walker.nextNode()) {
+                    if (walker.currentNode.textContent.trim().toLowerCase().includes(text.toLowerCase())) {
+                        let el = walker.currentNode.parentElement;
+                        if (el) { el.click(); return true; }
+                    }
+                }
+            }
+            return false;
+        """)
+        if result:
+            logger.info("Selenium: clicked 'Try another way' via JS fallback")
+            return True
+    except Exception as e:
+        logger.debug("Selenium: JS fallback for 'Try another way' failed: %s", e)
+
     return False
 
 
@@ -255,24 +318,54 @@ def _select_totp_method(driver) -> bool:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.common.exceptions import TimeoutException
 
+    # Keywords specific to the TOTP/Authenticator app option.
     totp_keywords = [
-        "authenticator", "google authenticator", "verification code",
-        "аутентификатор", "автентифікатор", "код подтверждения",
-        "get a verification code", "use your authenticator app",
+        "authenticator app",
+        "google authenticator",
+        "authenticator",
+        "аутентификатор",
+        "автентифікатор",
     ]
+
+    # First try: JS-based click on the deepest element matching keyword text
     for keyword in totp_keywords:
         try:
-            option = WebDriverWait(driver, 2).until(
-                EC.element_to_be_clickable((
-                    By.XPATH,
-                    f"//*[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')]"
-                ))
-            )
-            logger.info("Selenium: selecting TOTP method via '%s'", keyword)
-            option.click()
-            return True
-        except TimeoutException:
-            continue
+            result = driver.execute_script(f"""
+                const keyword = '{keyword}'.toLowerCase();
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                while (walker.nextNode()) {{
+                    if (walker.currentNode.textContent.trim().toLowerCase().includes(keyword)) {{
+                        let el = walker.currentNode.parentElement;
+                        // Walk up to find a clickable list item or div
+                        for (let i = 0; i < 5 && el; i++) {{
+                            if (el.tagName === 'LI' || el.getAttribute('role') === 'link' ||
+                                el.getAttribute('role') === 'button' || el.tagName === 'A' ||
+                                el.tagName === 'BUTTON' || el.dataset.action) {{
+                                el.click();
+                                return el.textContent.trim().substring(0, 80);
+                            }}
+                            el = el.parentElement;
+                        }}
+                        // Fallback: click the parent element directly
+                        walker.currentNode.parentElement.click();
+                        return walker.currentNode.textContent.trim().substring(0, 80);
+                    }}
+                }}
+                return null;
+            """)
+            if result:
+                logger.info("Selenium: selecting TOTP method via '%s' (text: %s)", keyword, result)
+                return True
+        except Exception as e:
+            logger.debug("Selenium: JS click for TOTP keyword '%s' failed: %s", keyword, e)
+
+    # Log available options for debugging
+    try:
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        logger.info("Selenium: page text for TOTP method search:\n%s", body_text[:500])
+    except Exception:
+        pass
+
     logger.warning("Selenium: TOTP/Authenticator option not found in verification methods")
     return False
 
