@@ -1,228 +1,341 @@
-# Гайд: Авторизация YouTube каналов на сервере
+# Авторизация YouTube каналов на сервере
 
-## Обзор каналов
-
-### Группа A: Каналы с токенами и credentials (автоматический reauth)
-
-Эти каналы имеют email/пароль в базе и привязанный Google Console. Reauth работает автоматически через Selenium.
-
-| ID | Канал | Email | Console | TOTP | Токен истекает |
-|----|-------|-------|---------|------|----------------|
-| 5 | audiokniga-one | audioknigaone@gmail.com | Console 1 | - | 2026-02-25 |
-| 6 | Popadanciaudio | popadanciaudio@gmail.com | Console 1 | - | 2026-03-02 |
-| 7 | onlineaudioknigicom | knigiaudio.biz@gmail.com | Console 1 | - | 2026-02-28 |
-| 8 | chitaemvslux | wiktordrozdowicz78@gmail.com | mir-knig-info | - | 2026-02-28 |
-| 12 | knigionlineclub | paraknigorg81@gmail.com | mir-knig-info | - | 2026-03-02 |
-| 13 | paraknigorgonline | paraknigorg77@gmail.com | mir-knig-info | - | 2026-03-02 |
-| 17 | Readbooks-online | readliclubinfo@gmail.com | mir-knig-info | - | 2026-02-26 |
-| 21 | knigabooks | knigabooks.ru@gmail.com | YouTube Stats | TOTP | 2026-02-26 |
-| 26 | bazaknig_net | ytubaza6@gmail.com | content-fabric | - | 2026-03-02 |
-| 28 | xobiATVUA | 5481184@gmail.com | Console 1 | - | 2026-02-28* |
-| 29 | bazaknig1 | bazaknig21@gmail.com | Console 1 | - | 2026-03-02 |
-| 31 | babysmilevlog | babysmilevlog@gmail.com | Console 1 | - | 2026-02-28 |
-| 32 | knigbaza7 | knigbaza3@gmail.com | mybooks_club | - | 2026-03-02 |
-| 47 | knigbaza | knigbaza56@gmail.com | Console 1 | - | 2026-03-02 |
-| 48 | knigovabaza | knigbaza56@gmail.com | Console 1 | - | 2026-02-25 |
-
-### Группа B: Каналы без токенов (нужна первичная авторизация)
-
-Включены (`enabled=1`), есть email/пароль, но **нет токенов** и **нет Google Console** (`console_id=NULL`).
-
-| ID | Канал | Email | Проблема |
-|----|-------|-------|----------|
-| 46 | girl_vibestv | blogeri789@gmail.com | Нет console_id |
-| 49 | youtubebaza-h8s | y7728700@gmail.com | Нет console_id |
-| 50 | ytub-b9i | y7728700@gmail.com | Нет console_id |
-| 51 | YouTube9 | u60962770@gmail.com | Нет console_id |
-| 52 | YouTube11 | u608502@gmail.com | Нет console_id |
-| 53 | YouTube7_0 | utub86520@gmail.com | Нет console_id |
-| 54 | Дитячі канали | ditacikanali@gmail.com | Нет console_id |
-| 55 | Канали новин | kanalinovin831@gmail.com | Нет console_id |
-| 56 | Блог чоловіки | blogericoloviki24@gmail.com | Нет console_id |
-| 57 | Блогери жінки | blogerizinki@gmail.com | Нет console_id |
-| 58 | Топ шоу ру | topsooru@gmail.com | Нет console_id |
-
-### Группа C: Отключенные каналы (`enabled=0`)
-
-ID: 2, 3, 4, 9, 19, 20, 23, 25, 27, 30, 33 — пропускаем.
+Гайд для переавторизации каналов. Можно делать вдвоём (один на сервере, другой с телефонами) или одному человеку с базовыми знаниями терминала.
 
 ---
 
-## Пошаговый алгоритм
+## Что происходит и зачем
 
-### Шаг 1: Подготовка — назначить Google Console каналам Группы B
+YouTube токены периодически истекают. Когда токен истёк — канал не может загружать видео. Нужно заново "войти" в Google аккаунт каждого канала, чтобы получить свежий токен.
 
-Каналы 46–58 не имеют `console_id`. Без него reauth не знает какой `client_id`/`client_secret` использовать.
+На сервере есть скрипт, который автоматически:
+1. Открывает браузер (невидимый)
+2. Вводит email и пароль аккаунта
+3. Проходит проверку Google (если может)
+4. Сохраняет новый токен в базу
 
-**Вариант 1** — использовать fallback из `.env` (`YOUTUBE_MAIN_CLIENT_ID`). Уже настроено, но нужно проверить что этот client_id имеет YouTube Data API v3 включённый.
+**Но:** Google иногда просит подтвердить вход на телефоне — тогда нужен человек с доступом к телефону.
 
-**Вариант 2** — назначить console_id через админку или SQL:
+---
 
-```sql
--- Пример: назначить Console 1 (id=1) всем каналам без console_id
-UPDATE platform_channels
-SET console_id = 1
-WHERE id IN (46,49,50,51,52,53,54,55,56,57,58)
-AND console_id IS NULL;
-```
+## Какие каналы есть
 
-### Шаг 2: Reauth каналов Группы A (автоматический)
+### Готовы к автоматической авторизации (15 каналов)
 
-Подключиться к серверу:
+У этих каналов есть всё необходимое — email, пароль, настройки Google Console:
+
+| # | Канал | Google аккаунт |
+|---|-------|---------------|
+| 1 | audiokniga-one | audioknigaone@gmail.com |
+| 2 | Popadanciaudio | popadanciaudio@gmail.com |
+| 3 | onlineaudioknigicom | knigiaudio.biz@gmail.com |
+| 4 | chitaemvslux | wiktordrozdowicz78@gmail.com |
+| 5 | knigionlineclub | paraknigorg81@gmail.com |
+| 6 | paraknigorgonline | paraknigorg77@gmail.com |
+| 7 | Readbooks-online | readliclubinfo@gmail.com |
+| 8 | **knigabooks** | knigabooks.ru@gmail.com |
+| 9 | bazaknig_net | ytubaza6@gmail.com |
+| 10 | xobiATVUA | 5481184@gmail.com |
+| 11 | bazaknig1 | bazaknig21@gmail.com |
+| 12 | babysmilevlog | babysmilevlog@gmail.com |
+| 13 | knigbaza7 | knigbaza3@gmail.com |
+| 14 | knigbaza | knigbaza56@gmail.com |
+| 15 | knigovabaza | knigbaza56@gmail.com |
+
+**Канал knigabooks** (строка 8) — особый случай, у него включена двухфакторная аутентификация (TOTP). Подробнее — в разделе "Особый случай".
+
+### Нужна предварительная настройка (11 каналов)
+
+Эти каналы ещё **не привязаны к Google Console** — скрипт не сможет их авторизовать без этого:
+
+| Канал | Google аккаунт |
+|-------|---------------|
+| girl_vibestv | blogeri789@gmail.com |
+| youtubebaza-h8s | y7728700@gmail.com |
+| ytub-b9i | y7728700@gmail.com |
+| YouTube9 | u60962770@gmail.com |
+| YouTube11 | u608502@gmail.com |
+| YouTube7_0 | utub86520@gmail.com |
+| Дитячі канали | ditacikanali@gmail.com |
+| Канали новин | kanalinovin831@gmail.com |
+| Блог чоловіки | blogericoloviki24@gmail.com |
+| Блогери жінки | blogerizinki@gmail.com |
+| Топ шоу ру | topsooru@gmail.com |
+
+Что нужно сделать — описано в Этапе 1.
+
+### Отключённые каналы (не трогаем)
+
+Andrew Garle, Ютуб5.0, Ютуб 6.0, BazaAudioKnig, funnydaysnow, yumornayaminuta, booksonlineinfo, knigza30sekund, bazaknignet, BazaKnignett, knigba3a — выключены, пропускаем.
+
+---
+
+## Что нужно для работы
+
+- Доступ к серверу по SSH (адрес: `46.21.250.43`, логин: `root`)
+- Телефоны с Google аккаунтами каналов (для подтверждения входа)
+- ~1-2 часа времени
+
+---
+
+## Этап 1: Подготовка (делает технический специалист)
+
+> Этот этап нужно сделать один раз перед первым запуском.
+
+### 1.1 Привязать каналы к Google Console
+
+11 каналов из второй таблицы не привязаны. Нужно зайти на сервер и выполнить:
 
 ```bash
 ssh root@46.21.250.43
 ```
 
-Запустить reauth для всех активных каналов:
+```bash
+mysql -u content_fabric_user -pmysqlpassword content_fabric -e "
+UPDATE platform_channels
+SET console_id = 1
+WHERE id IN (46,49,50,51,52,53,54,55,56,57,58)
+AND console_id IS NULL;
+"
+```
+
+Это привяжет их к Console 1. Если для каких-то каналов нужна другая консоль — поменять `console_id = 1` на нужный ID.
+
+### 1.2 Убедиться что всё на месте
 
 ```bash
 cd /opt/content-fabric/prod
 source venv/bin/activate
+```
 
-# Все активные каналы (которые имеют credentials)
+Эти две команды нужно выполнить **один раз** после подключения к серверу. Дальше все команды reauth запускаются из этой же сессии.
+
+---
+
+## Этап 2: Авторизация каналов (основная работа)
+
+### Как это выглядит
+
+Вы запускаете команду на сервере. Скрипт идёт по каналам один за другим. Для каждого канала возможны три результата:
+
+| Результат | Что увидите в терминале | Что делать |
+|-----------|------------------------|------------|
+| Успех | `[+] имя_канала: success` | Ничего, идём дальше |
+| Нужен телефон | Скрипт "зависает" на 2 минуты | Подтвердить на телефоне (см. ниже) |
+| Ошибка | `[X] имя_канала: failed` + описание | Записать, разберёмся потом |
+
+### 2.1 Запуск для всех каналов сразу
+
+```bash
 python -m cli.reauth --all --headless --no-browser
 ```
 
-Или по одному для контроля:
+Скрипт пойдёт по всем включённым каналам. Это может занять 20-40 минут.
+
+### 2.2 Или запуск по одному каналу (для контроля)
+
+Если хотите делать по одному и видеть результат:
 
 ```bash
-# Каналы без TOTP (должны пройти автоматически)
+# Пример: авторизовать канал audiokniga-one (ID 5)
+python -m cli.reauth --channel-id 5 --headless --no-browser
+```
+
+### 2.3 Или запуск пачкой (без knigabooks)
+
+```bash
 python -m cli.reauth --channel-id 5 6 7 8 12 13 17 26 28 29 31 32 47 48 --headless --no-browser
 ```
 
-**Что произойдёт:**
-- Selenium откроет Chrome в виртуальном дисплее
-- Автоматически введёт email → пароль
-- Если Google не запросит доп. проверку — авторизация пройдёт
-- Если Google запросит "Tap Yes on phone" — см. Шаг 4
+---
 
-### Шаг 3: Reauth канала knigabooks (ID 21, с TOTP)
+## Этап 3: Подтверждение на телефоне
+
+Это ключевой момент, где нужен человек с телефонами.
+
+### Когда Google просит подтверждение
+
+При входе с нового устройства (сервера) Google показывает такой экран:
+
+![Google 2-Step Verification](reauth_guide_images/02_2step_selection.png)
+
+Скрипт не может нажать "Yes" за вас — это должен сделать человек.
+
+### Что делать пошагово
+
+```
+КООРДИНАЦИЯ МЕЖДУ ДВУМЯ ЛЮДЬМИ:
+
+Человек на сервере                     Человек с телефоном
+─────────────────                      ──────────────────
+1. Запускает reauth для канала
+2. Говорит: "Запустил для
+   audioknigaone@gmail.com"
+                                       3. Берёт телефон с этим аккаунтом
+                                       4. Ждёт push-уведомление от Google
+                                          (приходит в течение 10-30 сек)
+                                       5. Нажимает "Yes, it's me" / "Да"
+                                       6. Говорит: "Подтвердил"
+7. Ждёт результат в терминале
+8. Видит [+] success
+9. Переходит к следующему каналу
+```
+
+### Если уведомление не приходит
+
+- Убедитесь что телефон подключён к интернету
+- Откройте приложение Google (или Gmail) — иногда уведомление появляется внутри приложения
+- Подождите до 1 минуты
+- Если так и не пришло — скрипт покажет ошибку timeout, переходите к следующему каналу
+
+### Если работаете в одиночку
+
+Запускайте по одному каналу. После запуска команды у вас есть ~2 минуты чтобы взять нужный телефон и подтвердить. Порядок:
+
+1. Положите все телефоны рядом
+2. Запустите: `python -m cli.reauth --channel-id 5 --headless --no-browser`
+3. Возьмите телефон с аккаунтом `audioknigaone@gmail.com`
+4. Подтвердите вход
+5. Дождитесь результата в терминале
+6. Повторите для следующего канала
+
+---
+
+## Особый случай: канал knigabooks (ID 21)
+
+У этого канала включена двухфакторная аутентификация через Google Authenticator (TOTP). Скрипт умеет вводить код автоматически, **но** Google при входе с сервера не предлагает Authenticator как вариант — вместо этого просит подтвердить на телефоне.
+
+### Вариант А: Подтвердить на телефоне (просто)
+
+Точно так же как в Этапе 3:
 
 ```bash
 python -m cli.reauth --channel-id 21 --headless --no-browser
 ```
 
-**Известная проблема:** Google не предлагает Authenticator как метод верификации при входе с сервера. Вместо этого показывает device protection challenge:
+Подтвердить вход на телефоне с аккаунтом `knigabooks.ru@gmail.com`.
 
-![2-Step Verification selection page](reauth_guide_images/02_2step_selection.png)
+### Вариант Б: Сделать сервер "доверенным" (один раз, потом будет автоматически)
 
-*На скрине: Google показывает варианты "Tap Yes on phone", SMS (недоступен), Passkey, но НЕ показывает "Google Authenticator".*
+Это сложнее, но после этого все будущие reauth для этого канала будут проходить полностью автоматически (скрипт сам введёт TOTP код).
 
-**Решение:** см. Шаг 4 или Шаг 5.
+Нужен технический специалист. Суть: один раз зайти в Google аккаунт через браузер на сервере и поставить галку "Не спрашивать на этом устройстве".
 
-### Шаг 4: Ручное подтверждение через телефон
+Подробности:
 
-Для каналов, где Google требует "Tap Yes on your phone":
-
-1. Запустить reauth на сервере
-2. В течение 2 минут открыть телефон с аккаунтом Google
-3. Нажать "Yes, it's me" на push-уведомлении Google
-4. Selenium подхватит редирект и завершит авторизацию
-
-**Важно:** нужен доступ к телефону, привязанному к каждому Google аккаунту.
-
-### Шаг 5: Однократный вход для "доверенного устройства"
-
-Чтобы сервер стал "доверенным" и в будущем Google не запрашивал device protection:
-
-1. Установить VNC на сервере (если нет):
+1. На сервере установить VNC (для удалённого рабочего стола):
 ```bash
+ssh root@46.21.250.43
 apt install -y tigervnc-standalone-server
-vncpasswd  # задать пароль
+vncpasswd
+# Ввести пароль для VNC (любой, например тот же что и от сервера)
 vncserver :1 -geometry 1920x1080
 ```
 
-2. Подключиться к VNC с локальной машины:
+2. На своём компьютере подключиться к серверу через VNC:
 ```bash
 ssh -L 5901:localhost:5901 root@46.21.250.43
-# Открыть VNC viewer на localhost:5901
 ```
+Открыть любой VNC-клиент (например TigerVNC Viewer, RealVNC) и подключиться к `localhost:5901`.
 
-3. В VNC открыть Chrome:
+3. В появившемся рабочем столе открыть браузер:
 ```bash
-DISPLAY=:1 chromium-browser
+chromium-browser
 ```
 
-4. Зайти в Google аккаунт вручную, пройти все проверки, поставить галку "Don't ask again on this device"
+4. Зайти на https://accounts.google.com, войти под `knigabooks.ru@gmail.com`, пройти все проверки, поставить галку **"Don't ask again on this device"** / **"Больше не спрашивать на этом устройстве"**.
 
-5. После этого автоматический reauth должен работать без device protection.
+5. Закрыть VNC:
+```bash
+vncserver -kill :1
+```
 
-### Шаг 6: Reauth каналов Группы B
+После этого запустить reauth — должен пройти автоматически.
 
-После назначения `console_id` (Шаг 1):
+---
+
+## Этап 4: Авторизация новых каналов (Группа B)
+
+После выполнения Этапа 1 (привязка к Google Console):
 
 ```bash
 python -m cli.reauth --channel-id 46 49 50 51 52 53 54 55 56 57 58 --headless --no-browser
 ```
 
-### Шаг 7: Проверка результатов
+Процесс такой же — для каждого канала может потребоваться подтверждение на телефоне.
+
+---
+
+## Этап 5: Проверка что всё прошло успешно
+
+### Быстрая проверка (в терминале сервера)
 
 ```bash
-# Проверить статус токенов в БД
 mysql -u content_fabric_user -pmysqlpassword content_fabric -e "
 SELECT id, name,
-  CASE WHEN access_token IS NOT NULL THEN 'OK' ELSE 'MISSING' END as token,
+  CASE WHEN access_token IS NOT NULL AND access_token != '' THEN 'OK' ELSE 'НЕТ ТОКЕНА' END as token_status,
   token_expires_at
 FROM platform_channels
 WHERE enabled = 1
 ORDER BY token_expires_at;
 "
+```
 
-# Проверить логи последних reauth
-mysql -u content_fabric_user -pmysqlpassword content_fabric -e "
-SELECT channel_id, status, error_message, initiated_at
-FROM channel_reauth_audit_logs
-ORDER BY initiated_at DESC LIMIT 20;
-"
+В колонке `token_status` должно быть **OK** для всех каналов. В `token_expires_at` — дата в будущем (примерно через час после авторизации).
 
-# Скриншоты ошибок Selenium
-ls -la data/logs/reauth_failures/
+### Если у канала "НЕТ ТОКЕНА"
+
+Значит авторизация не прошла. Запустите reauth для этого канала отдельно:
+
+```bash
+python -m cli.reauth --channel-id <ID> --headless --no-browser
+```
+
+### Посмотреть скриншоты ошибок
+
+Если скрипт упал — он сохраняет скриншот того, что видел браузер:
+
+```bash
+ls -la /opt/content-fabric/prod/data/logs/reauth_failures/
+```
+
+Можно скачать скриншот на свой компьютер чтобы посмотреть:
+
+```bash
+# На своём компьютере:
+scp root@46.21.250.43:/opt/content-fabric/prod/data/logs/reauth_failures/FILENAME.png ~/Desktop/
 ```
 
 ---
 
-## Типичные ошибки и решения
+## Чеклист
 
-### "This browser or app may not be secure"
+Распечатайте или скопируйте — отмечайте по мере выполнения:
 
-![Browser not secure error](reauth_guide_images/01_browser_not_secure.png)
-
-**Причина:** Google заблокировал headless Chrome.
-**Решение:** Уже исправлено — используется Xvfb виртуальный дисплей вместо `--headless`.
-
-### "Timed out waiting for response from authorization server"
-
-**Причина:** Selenium не смог пройти Google проверку, и OAuth callback на localhost не получил код авторизации.
-**Решение:**
-- Проверить скриншоты в `data/logs/reauth_failures/`
-- Скорее всего Google требует подтверждение на телефоне (Шаг 4)
-
-### "OAuth credentials not configured"
-
-**Причина:** У канала нет `console_id` и нет `YOUTUBE_MAIN_CLIENT_ID` в `.env`.
-**Решение:** Назначить `console_id` каналу (Шаг 1).
-
-### Google Authenticator (TOTP) не появляется как опция
-
-![Recovery page without TOTP](reauth_guide_images/04_recovery_page.png)
-
-**Причина:** При входе с нового устройства Google показывает device protection, а не стандартную 2FA.
-**Решение:**
-1. Зайти в [настройки аккаунта Google](https://myaccount.google.com/signinoptions/two-step-verification) и убедиться что Authenticator app включён
-2. Сделать сервер "доверенным устройством" (Шаг 5)
+- [ ] Привязать каналы 46-58 к Google Console (Этап 1)
+- [ ] Подготовить телефоны с Google аккаунтами
+- [ ] Запустить reauth для каналов 5,6,7,8,12,13,17,26,28,29,31,32,47,48
+- [ ] Подтвердить на телефонах где нужно
+- [ ] Запустить reauth для knigabooks (ID 21)
+- [ ] Подтвердить на телефоне knigabooks.ru@gmail.com
+- [ ] Запустить reauth для каналов 46-58
+- [ ] Подтвердить на телефонах где нужно
+- [ ] Проверить результаты (Этап 5)
+- [ ] Записать какие каналы не прошли — для разбора
 
 ---
 
-## Порядок выполнения (чеклист)
+## Типичные ошибки
 
-- [ ] **1.** Назначить `console_id` каналам 46–58 (Группа B)
-- [ ] **2.** Запустить reauth для каналов без TOTP (Группа A без ID 21):
-  ```
-  python -m cli.reauth --channel-id 5 6 7 8 12 13 17 26 28 29 31 32 47 48 --headless --no-browser
-  ```
-- [ ] **3.** Для каналов, потребовавших phone confirmation — подтвердить на телефоне и перезапустить
-- [ ] **4.** Сделать сервер "доверенным" для `knigabooks.ru@gmail.com` (Шаг 5)
-- [ ] **5.** Запустить reauth для ID 21 (knigabooks)
-- [ ] **6.** Запустить reauth для каналов Группы B (46–58)
-- [ ] **7.** Проверить результаты (Шаг 7)
+| Ошибка | Что значит | Что делать |
+|--------|-----------|------------|
+| `[+] success` | Всё ок | Ничего |
+| `[X] failed: Timed out` | Google ждал подтверждения, но никто не нажал | Перезапустить и подтвердить на телефоне |
+| `[X] failed: OAuth credentials not configured` | Канал не привязан к Google Console | Выполнить Этап 1 для этого канала |
+| Скрипт завис надолго | Ждёт подтверждения на телефоне | Подтвердить или подождать 5 минут (сам отвалится) |
+
+### Скриншот ошибки "This browser or app may not be secure"
+
+![Browser not secure](reauth_guide_images/01_browser_not_secure.png)
+
+Эта ошибка уже исправлена в коде. Если вдруг увидите — сообщите разработчику.
