@@ -34,9 +34,10 @@ def build_credentials(
             expiry = datetime.fromisoformat(token_expires_at)
         else:
             expiry = token_expires_at
-        # Ensure expiry is always timezone-aware (UTC)
-        if expiry and expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
+        # google-auth internally uses naive UTC datetimes (utcnow without tzinfo),
+        # so expiry must also be naive UTC to avoid comparison errors.
+        if expiry and expiry.tzinfo is not None:
+            expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
 
     return Credentials(
         token=access_token,
@@ -62,7 +63,7 @@ def ensure_fresh_credentials(
     if creds.expired:
         needs_refresh = True
     elif creds.expiry:
-        if creds.expiry - datetime.now(timezone.utc) < TOKEN_REFRESH_MARGIN:
+        if creds.expiry - datetime.utcnow() < TOKEN_REFRESH_MARGIN:
             needs_refresh = True
     else:
         needs_refresh = True  # no expiry info → refresh to be safe
