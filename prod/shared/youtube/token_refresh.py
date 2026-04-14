@@ -34,6 +34,9 @@ def build_credentials(
             expiry = datetime.fromisoformat(token_expires_at)
         else:
             expiry = token_expires_at
+        # Ensure expiry is always timezone-aware (UTC)
+        if expiry and expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
 
     return Credentials(
         token=access_token,
