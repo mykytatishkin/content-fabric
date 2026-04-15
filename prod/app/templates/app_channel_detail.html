@@ -17,7 +17,9 @@
 <div class="cards" style="margin-bottom:1.5rem;">
     <div class="card">
         <div class="label">YouTube ID</div>
-        <div class="value" style="font-size:0.9rem;">{{ channel.platform_channel_id }}</div>
+        <div class="value" style="font-size:0.9rem;">
+            <a href="https://www.youtube.com/channel/{{ channel.platform_channel_id }}" target="_blank" style="color:#0ea5e9;text-decoration:none;">{{ channel.platform_channel_id }}</a>
+        </div>
     </div>
     <div class="card">
         <div class="label">Enabled</div>
