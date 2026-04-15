@@ -74,7 +74,7 @@
         <tr><td style="font-weight:600;">Post Comment</td><td style="font-size:0.8rem;">{{ task.post_comment }}</td></tr>
         {% endif %}
         {% if task.upload_id %}
-        <tr><td style="font-weight:600;">Upload ID</td><td><code>{{ task.upload_id }}</code></td></tr>
+        <tr><td style="font-weight:600;">Upload ID</td><td><a href="https://www.youtube.com/watch?v={{ task.upload_id }}" target="_blank" style="color:#0ea5e9;text-decoration:none;"><code>{{ task.upload_id }}</code></a></td></tr>
         {% endif %}
         {% if task.completed_at %}
         <tr><td style="font-weight:600;">Completed At</td><td>{{ task.completed_at }}</td></tr>
