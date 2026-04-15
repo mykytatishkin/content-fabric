@@ -550,9 +550,11 @@ async def reauth_page(request: Request):
 
     authorized_uuid = request.query_params.get("authorized")
 
+    from datetime import datetime
     return templates.TemplateResponse("app_reauth.html", {
         "request": request, "user": user, "active": "reauth",
         "channels": channels, "authorized_uuid": authorized_uuid,
+        "now": datetime.utcnow(),
     })
 
 
