@@ -79,7 +79,7 @@
             <td style="text-align:center;">
                 {% if ch.console_id %}
                     <a href="/app/channels/{{ ch.uuid }}/authorize?redirect_to=reauth"
-                       class="btn btn-primary btn-sm">
+                       class="btn btn-primary btn-sm" target="_blank">
                         {% if ch.has_tokens %}Re-authorize{% else %}Authorize{% endif %}
                     </a>
                 {% else %}
