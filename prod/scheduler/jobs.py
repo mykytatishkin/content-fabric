@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 
 from shared.db.models import TaskStatus
-from shared.db.repositories import task_repo, channel_repo
+from shared.db.repositories import task_repo, channel_repo, console_repo
 from shared.queue.publisher import enqueue_video_upload
 from shared.queue.types import VideoUploadPayload
+from shared.youtube.token_refresh import build_credentials, ensure_fresh_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -48,3 +49,45 @@ def enqueue_pending_tasks() -> int:
             task_repo.update_task_status(t["id"], TaskStatus.PENDING.value)
 
     return count
+
+
+def validate_channel_tokens() -> tuple[int, int]:
+    """Try to refresh credentials for all enabled channels with tokens.
+
+    Returns (success_count, failure_count).
+    """
+    channels = channel_repo.get_channels_with_tokens()
+    if not channels:
+        logger.info("Token validation: no channels with tokens found")
+        return 0, 0
+
+    success = 0
+    failure = 0
+    for ch in channels:
+        try:
+            console = console_repo.get_console_by_id(ch["console_id"])
+            if not console:
+                logger.warning("Channel %s (%s): console_id=%s not found",
+                               ch["id"], ch["name"], ch["console_id"])
+                channel_repo.update_token_check(ch["id"], ok=False)
+                failure += 1
+                continue
+
+            creds = build_credentials(
+                access_token=ch["access_token"],
+                refresh_token=ch["refresh_token"],
+                client_id=console["client_id"],
+                client_secret=console["client_secret"],
+                token_expires_at=ch["token_expires_at"],
+            )
+            ensure_fresh_credentials(creds, channel_id=ch["id"])
+            channel_repo.update_token_check(ch["id"], ok=True)
+            success += 1
+            logger.info("Token OK: channel %s (%s)", ch["id"], ch["name"])
+        except Exception:
+            logger.exception("Token FAILED: channel %s (%s)", ch["id"], ch["name"])
+            channel_repo.update_token_check(ch["id"], ok=False)
+            failure += 1
+
+    logger.info("Token validation: %d ok, %d failed", success, failure)
+    return success, failure

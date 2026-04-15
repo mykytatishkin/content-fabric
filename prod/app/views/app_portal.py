@@ -530,7 +530,8 @@ async def reauth_page(request: Request):
             rows = conn.execute(text(f"""
                 SELECT c.id, c.uuid, c.name, c.platform_channel_id, c.console_id,
                        c.access_token IS NOT NULL AND c.refresh_token IS NOT NULL as has_tokens,
-                       c.token_expires_at, c.enabled
+                       c.token_expires_at, c.enabled,
+                       c.token_checked_at, c.token_check_ok
                 FROM platform_channels c WHERE {ch_where}
                 ORDER BY
                     (c.access_token IS NULL OR c.refresh_token IS NULL) DESC,
@@ -542,6 +543,8 @@ async def reauth_page(request: Request):
                     "platform_channel_id": r[3], "console_id": r[4],
                     "has_tokens": bool(r[5]), "token_expires_at": r[6],
                     "enabled": bool(r[7]),
+                    "token_checked_at": r[8],
+                    "token_check_ok": bool(r[9]) if r[9] is not None else None,
                 }
                 for r in rows
             ]
@@ -550,11 +553,12 @@ async def reauth_page(request: Request):
 
     authorized_uuid = request.query_params.get("authorized")
 
-    from datetime import datetime
+    from datetime import datetime, timedelta
     return templates.TemplateResponse("app_reauth.html", {
         "request": request, "user": user, "active": "reauth",
         "channels": channels, "authorized_uuid": authorized_uuid,
         "now": datetime.utcnow(),
+        "freshness_cutoff": datetime.utcnow() - timedelta(days=7),
     })
 
 

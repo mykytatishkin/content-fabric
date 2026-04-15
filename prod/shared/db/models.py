@@ -123,6 +123,8 @@ platform_channels = Table(
     Column("token_expires_at", DateTime),
     Column("enabled", TINYINT(1), nullable=False, server_default="1"),
     Column("processing_status", TINYINT(1), nullable=False, server_default="0"),
+    Column("token_checked_at", DateTime),
+    Column("token_check_ok", TINYINT(1)),
     Column("metadata", JSON, key="meta"),
     Column("created_at", TIMESTAMP, nullable=False),
     Column("updated_at", TIMESTAMP, nullable=False),

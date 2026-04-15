@@ -288,6 +288,47 @@ def update_login_credentials(
         return result.rowcount > 0
 
 
+def get_channels_with_tokens() -> list[dict[str, Any]]:
+    """Return enabled channels that have OAuth tokens and a console_id."""
+    cols = [
+        platform_channels.c.id,
+        platform_channels.c.name,
+        platform_channels.c.console_id,
+        platform_channels.c.access_token,
+        platform_channels.c.refresh_token,
+        platform_channels.c.token_expires_at,
+    ]
+    stmt = (
+        select(*cols)
+        .where(platform_channels.c.enabled == 1)
+        .where(platform_channels.c.access_token.isnot(None))
+        .where(platform_channels.c.refresh_token.isnot(None))
+        .where(platform_channels.c.console_id.isnot(None))
+    )
+    with get_connection() as conn:
+        rows = conn.execute(stmt).fetchall()
+    return [
+        {
+            "id": r[0], "name": r[1], "console_id": r[2],
+            "access_token": r[3], "refresh_token": r[4],
+            "token_expires_at": r[5],
+        }
+        for r in rows
+    ]
+
+
+def update_token_check(channel_id: int, ok: bool) -> bool:
+    """Record the result of a daily token validation check."""
+    sql = text(
+        "UPDATE platform_channels "
+        "SET token_checked_at = NOW(), token_check_ok = :ok "
+        "WHERE id = :cid"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"ok": int(ok), "cid": channel_id})
+        return result.rowcount > 0
+
+
 def delete_channel(channel_id: int) -> bool:
     """Delete channel and its login credentials."""
     with get_connection() as conn:

@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import signal
 import time
+from datetime import date
 
 import shared.env  # noqa: F401 — load .env files before anything else
 
-from scheduler.jobs import enqueue_pending_tasks
+from scheduler.jobs import enqueue_pending_tasks, validate_channel_tokens
 from shared.logging_config import setup_logging
 
 POLL_INTERVAL = 60  # seconds
@@ -30,6 +31,8 @@ def main() -> None:
 
     logger.info("Scheduler started — polling every %ds", POLL_INTERVAL)
 
+    last_token_check_date: date | None = None
+
     while _running:
         try:
             count = enqueue_pending_tasks()
@@ -37,6 +40,17 @@ def main() -> None:
                 logger.info("Enqueued %d task(s) this cycle", count)
         except Exception:
             logger.exception("Scheduler cycle failed")
+
+        # Daily token validation — run once per calendar day
+        today = date.today()
+        if last_token_check_date != today:
+            try:
+                logger.info("Running daily token validation...")
+                ok, fail = validate_channel_tokens()
+                last_token_check_date = today
+                logger.info("Daily token validation done: %d ok, %d failed", ok, fail)
+            except Exception:
+                logger.exception("Daily token validation failed")
 
         # Sleep in small increments to allow graceful shutdown
         for _ in range(POLL_INTERVAL):
