@@ -104,6 +104,15 @@ def process_upload(payload: VideoUploadPayload) -> dict[str, Any]:
 
             _set_progress(task_id, "completed", 100, bytes_uploaded=total_bytes, total_bytes=total_bytes)
 
+            # Clean up local files after successful upload
+            for fpath in (payload.source_file_path, payload.thumbnail_path):
+                if fpath:
+                    try:
+                        os.remove(fpath)
+                        logger.info("Deleted local file: %s", fpath)
+                    except OSError as rm_err:
+                        logger.warning("Failed to delete %s: %s", fpath, rm_err)
+
             logger.info("Task %d completed: video_id=%s", task_id, video_id)
             _audit_logger.info("task.completed task_id=%d channel_id=%d video_id=%s", task_id, channel_id, video_id)
             return {"ok": True, "video_id": video_id}
