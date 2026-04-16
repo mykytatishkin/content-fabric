@@ -977,6 +977,20 @@ async def task_cancel(request: Request, task_uuid: str):
     return RedirectResponse("/app/tasks", status_code=302)
 
 
+@router.post("/channels/{channel_uuid}/retry-all-failed")
+async def channel_retry_all_failed(request: Request, channel_uuid: str):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import task_repo, channel_repo
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
+    if not channel or (not is_admin(user) and channel.get("created_by") != user["id"]):
+        return RedirectResponse("/app/channels", status_code=302)
+    task_repo.retry_all_failed_by_channel(channel["id"])
+    return RedirectResponse(f"/app/channels/{channel_uuid}", status_code=302)
+
+
 @router.post("/tasks/{task_uuid}/retry")
 async def task_retry(request: Request, task_uuid: str):
     user, redirect = require_user(request)

@@ -124,7 +124,12 @@
 {% endif %}
 
 <!-- Recent Tasks -->
-<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Recent Tasks ({{ recent_tasks|length }})</h3>
+<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
+    <h3 style="font-size:1.1rem;margin:0;">Recent Tasks ({{ recent_tasks|length }})</h3>
+    {% if stats.get('failed', 0) > 0 %}
+    <button class="btn btn-danger btn-sm" onclick="retryAllFailed(this)">Retry All Failed ({{ stats.get('failed', 0) }})</button>
+    {% endif %}
+</div>
 {% if recent_tasks %}
 <table>
     <thead>
@@ -164,6 +169,14 @@
 {% endif %}
 
 <script>
+function retryAllFailed(btn) {
+    if (!confirm('Retry all failed tasks for this channel?')) return;
+    btn.disabled = true;
+    btn.textContent = '...';
+    fetch('/app/channels/{{ channel.uuid }}/retry-all-failed', {method: 'POST'})
+        .then(function() { location.reload(); })
+        .catch(function() { btn.disabled = false; btn.textContent = 'Retry All Failed'; });
+}
 function retryTask(btn, uuid) {
     btn.disabled = true;
     btn.textContent = '...';

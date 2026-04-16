@@ -249,6 +249,18 @@ def retry_task(task_id: int) -> bool:
         return result.rowcount > 0
 
 
+def retry_all_failed_by_channel(channel_id: int) -> int:
+    """Reset all failed/cancelled tasks for a channel back to pending."""
+    sql = text(
+        "UPDATE content_upload_queue_tasks "
+        "SET status = 0, error_message = NULL, retry_count = retry_count + 1 "
+        "WHERE channel_id = :cid AND status IN (2, 4)"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"cid": channel_id})
+        return result.rowcount
+
+
 def cancel_task(task_id: int) -> bool:
     """Cancel a task (set status=4). Only allowed if status in (0, 3)."""
     sql = text(
