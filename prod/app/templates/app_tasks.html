@@ -68,9 +68,7 @@
                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel</button>
                 </form>
                 {% elif t.status in [2, 4] %}
-                <form method="POST" action="/app/tasks/{{ t.uuid }}/retry" style="display:inline;">
-                    <button type="submit" class="btn btn-primary btn-sm">Retry</button>
-                </form>
+                <button class="btn btn-primary btn-sm" onclick="retryTask(this, '{{ t.uuid }}')">Retry</button>
                 {% endif %}
             </td>
         </tr>
@@ -80,4 +78,14 @@
 {% else %}
 <p style="color:#64748b;">No tasks found.</p>
 {% endif %}
+
+<script>
+function retryTask(btn, uuid) {
+    btn.disabled = true;
+    btn.textContent = '...';
+    fetch('/app/tasks/' + uuid + '/retry', {method: 'POST'})
+        .then(function() { location.reload(); })
+        .catch(function() { btn.disabled = false; btn.textContent = 'Retry'; });
+}
+</script>
 {% endblock %}
