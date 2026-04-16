@@ -21,15 +21,21 @@
         </div>
         <button type="submit" class="btn btn-primary btn-sm">Apply</button>
         <div style="display:flex;gap:0.4rem;">
-            {% set today = date_to %}
-            <a href="?from={{ (date_to | default('2026-04-16'))[:4] }}-{{ '%02d' % ((date_to | default('2026-04-16'))[5:7]|int) }}-{{ '%02d' % ((date_to | default('2026-04-16'))[8:10]|int) }}&to={{ date_to }}" class="btn btn-sm" style="background:#e2e8f0;color:#334155;" onclick="this.href=setRange(7);return true;">7d</a>
-            <a href="#" class="btn btn-sm" style="background:#e2e8f0;color:#334155;" onclick="this.href=setRange(14);return true;">14d</a>
-            <a href="#" class="btn btn-sm" style="background:#e2e8f0;color:#334155;" onclick="this.href=setRange(30);return true;">30d</a>
-            <a href="#" class="btn btn-sm" style="background:#e2e8f0;color:#334155;" onclick="this.href=setRange(60);return true;">60d</a>
-            <a href="#" class="btn btn-sm" style="background:#e2e8f0;color:#334155;" onclick="this.href=setRange(90);return true;">90d</a>
+            {% for d in [7, 14, 30, 60, 90] %}
+            <a href="javascript:void(0)" class="btn btn-sm" style="background:#e2e8f0;color:#334155;" onclick="goRange({{ d }})">{{ d }}d</a>
+            {% endfor %}
         </div>
     </form>
 </div>
+
+<script>
+function goRange(days) {
+    var to = new Date();
+    var from = new Date();
+    from.setDate(from.getDate() - days);
+    window.location.href = '?from=' + from.toISOString().slice(0,10) + '&to=' + to.toISOString().slice(0,10);
+}
+</script>
 
 {% if not has_data %}
 <div class="form-card" style="max-width:100%;text-align:center;padding:3rem;">
@@ -124,13 +130,6 @@
 <script>
 var data = {{ chart_json|safe }};
 
-function setRange(days) {
-    var to = new Date();
-    var from = new Date();
-    from.setDate(from.getDate() - days);
-    return '?from=' + from.toISOString().slice(0,10) + '&to=' + to.toISOString().slice(0,10);
-}
-
 var baseOpts = {
     responsive: true,
     interaction: { mode: 'index', intersect: false },
@@ -144,30 +143,38 @@ var baseOpts = {
     },
     scales: {
         x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 15 } },
-        y: { ticks: { font: { size: 11 }, callback: function(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v; } } }
+        y: {
+            beginAtZero: false,
+            ticks: { font: { size: 11 }, callback: function(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v; } }
+        }
     }
 };
 
 function makeChart(id, label, dataArr, color) {
+    // If only 1 data point, use a bar chart so the value is visible
+    var chartType = dataArr.length <= 1 ? 'bar' : 'line';
     new Chart(document.getElementById(id), {
-        type: 'line',
+        type: chartType,
         data: {
             labels: data.dates,
             datasets: [{
                 label: label,
                 data: dataArr,
                 borderColor: color,
-                backgroundColor: color + '15',
-                tension: 0.3, pointRadius: 3, borderWidth: 2, fill: true,
+                backgroundColor: chartType === 'bar' ? color + '40' : color + '15',
+                tension: 0.3, pointRadius: 4, borderWidth: 2, fill: true,
+                barPercentage: 0.3,
             }]
         },
         options: baseOpts,
     });
 }
 
-makeChart('subsChart', 'Subscribers', data.subscribers, '#8b5cf6');
-makeChart('viewsChart', 'Views', data.views, '#0ea5e9');
-makeChart('videosChart', 'Videos', data.videos, '#10b981');
+if (data.dates.length > 0) {
+    makeChart('subsChart', 'Subscribers', data.subscribers, '#8b5cf6');
+    makeChart('viewsChart', 'Views', data.views, '#0ea5e9');
+    makeChart('videosChart', 'Videos', data.videos, '#10b981');
+}
 </script>
 {% endif %}
 {% endblock %}
