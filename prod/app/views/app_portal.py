@@ -806,13 +806,14 @@ async def channel_detail(request: Request, channel_uuid: str):
 
             # Recent tasks
             task_rows = conn.execute(text(
-                "SELECT id, uuid, title, status, scheduled_at, created_at, error_message "
+                "SELECT id, uuid, title, status, scheduled_at, created_at, error_message, upload_id "
                 "FROM content_upload_queue_tasks WHERE channel_id = :cid "
                 "ORDER BY created_at DESC LIMIT 20"
             ), {"cid": channel_id}).fetchall()
             recent_tasks = [
                 {"id": r[0], "uuid": r[1], "title": r[2], "status": r[3],
-                 "scheduled_at": r[4], "created_at": r[5], "error_message": r[6]}
+                 "scheduled_at": r[4], "created_at": r[5], "error_message": r[6],
+                 "upload_id": r[7]}
                 for r in task_rows
             ]
     except Exception as e:
