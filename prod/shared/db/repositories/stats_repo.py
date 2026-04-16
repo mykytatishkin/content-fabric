@@ -26,6 +26,52 @@ def get_channel_stats(channel_id: int, days: int = 30) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def get_channel_stats_range(channel_id: int, date_from: str, date_to: str) -> list[dict[str, Any]]:
+    """Get daily statistics for a channel between two dates (YYYY-MM-DD)."""
+    sql = text(
+        "SELECT snapshot_date, subscribers, views, videos, likes, comments "
+        "FROM channel_daily_statistics "
+        "WHERE channel_id = :cid AND snapshot_date >= :dfrom AND snapshot_date <= :dto "
+        "ORDER BY snapshot_date ASC"
+    )
+    with get_connection() as conn:
+        rows = conn.execute(sql, {"cid": channel_id, "dfrom": date_from, "dto": date_to}).mappings().fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_video_stats_by_channel(channel_id: int, date_from: str, date_to: str) -> list[dict[str, Any]]:
+    """Get latest video stats for all videos of a channel, within a date range."""
+    sql = text(
+        "SELECT vs.task_id, vs.upload_id, vs.views, vs.likes, vs.comments, "
+        "t.title, t.uuid, t.created_at as task_created "
+        "FROM video_statistics vs "
+        "INNER JOIN ("
+        "  SELECT task_id, MAX(snapshot_date) as max_date "
+        "  FROM video_statistics "
+        "  WHERE channel_id = :cid AND snapshot_date >= :dfrom AND snapshot_date <= :dto "
+        "  GROUP BY task_id"
+        ") latest ON vs.task_id = latest.task_id AND vs.snapshot_date = latest.max_date "
+        "INNER JOIN content_upload_queue_tasks t ON vs.task_id = t.id "
+        "ORDER BY vs.views DESC"
+    )
+    with get_connection() as conn:
+        rows = conn.execute(sql, {"cid": channel_id, "dfrom": date_from, "dto": date_to}).mappings().fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_video_stats_range(task_id: int, date_from: str, date_to: str) -> list[dict[str, Any]]:
+    """Get daily video stats between two dates."""
+    sql = text(
+        "SELECT snapshot_date, views, likes, dislikes, comments, favorites "
+        "FROM video_statistics "
+        "WHERE task_id = :tid AND snapshot_date >= :dfrom AND snapshot_date <= :dto "
+        "ORDER BY snapshot_date ASC"
+    )
+    with get_connection() as conn:
+        rows = conn.execute(sql, {"tid": task_id, "dfrom": date_from, "dto": date_to}).mappings().fetchall()
+    return [dict(r) for r in rows]
+
+
 def record_stats(
     channel_id: int,
     platform_channel_id: str,

@@ -5,6 +5,7 @@
     <h2>{{ channel.name }}</h2>
     <div>
         <a href="/app/channels" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Back to Channels</a>
+        <a href="/app/channels/{{ channel.uuid }}/stats" class="btn btn-sm" style="background:#8b5cf6;color:#fff;">Statistics</a>
         <a href="/app/channels/{{ channel.uuid }}/edit" class="btn btn-primary btn-sm">Edit Channel</a>
         <form method="POST" action="/app/channels/{{ channel.uuid }}/delete" style="display:inline;"
               data-name="{{ channel.name }}" onsubmit="return confirm('Delete channel ' + this.dataset.name + '? This cannot be undone.')">

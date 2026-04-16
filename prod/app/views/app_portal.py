@@ -826,6 +826,82 @@ async def channel_detail(request: Request, channel_uuid: str):
     })
 
 
+@router.get("/channels/{channel_uuid}/stats", response_class=HTMLResponse)
+async def channel_stats_page(request: Request, channel_uuid: str):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import channel_repo, stats_repo
+    from datetime import date, timedelta
+
+    channel = channel_repo.get_channel_by_uuid(channel_uuid)
+    if not channel:
+        return RedirectResponse("/app/channels", status_code=302)
+    if not is_admin(user) and channel.get("created_by") != user["id"]:
+        return RedirectResponse("/app/channels", status_code=302)
+
+    # Date range from query params
+    date_to = request.query_params.get("to", "")
+    date_from = request.query_params.get("from", "")
+    try:
+        dt_to = date.fromisoformat(date_to)
+    except (ValueError, TypeError):
+        dt_to = date.today()
+    try:
+        dt_from = date.fromisoformat(date_from)
+    except (ValueError, TypeError):
+        dt_from = dt_to - timedelta(days=30)
+
+    date_from_str = dt_from.isoformat()
+    date_to_str = dt_to.isoformat()
+
+    # Channel daily stats
+    channel_data = stats_repo.get_channel_stats_range(channel["id"], date_from_str, date_to_str)
+
+    # Video stats for this channel
+    video_list = stats_repo.get_video_stats_by_channel(channel["id"], date_from_str, date_to_str)
+
+    # Summary
+    summary = {}
+    if channel_data:
+        first = channel_data[0]
+        latest = channel_data[-1]
+        summary = {
+            "subscribers": latest.get("subscribers") or 0,
+            "views": latest.get("views") or 0,
+            "videos": latest.get("videos") or 0,
+            "sub_delta": (latest.get("subscribers") or 0) - (first.get("subscribers") or 0),
+            "view_delta": (latest.get("views") or 0) - (first.get("views") or 0),
+            "video_delta": (latest.get("videos") or 0) - (first.get("videos") or 0),
+        }
+
+    # Total video views/likes/comments
+    total_video_views = sum(v.get("views") or 0 for v in video_list)
+    total_video_likes = sum(v.get("likes") or 0 for v in video_list)
+    total_video_comments = sum(v.get("comments") or 0 for v in video_list)
+
+    import json
+    chart_json = json.dumps({
+        "dates": [str(d["snapshot_date"]) for d in channel_data],
+        "subscribers": [d.get("subscribers") or 0 for d in channel_data],
+        "views": [d.get("views") or 0 for d in channel_data],
+        "videos": [d.get("videos") or 0 for d in channel_data],
+    }, default=str)
+
+    return templates.TemplateResponse("app_channel_stats.html", {
+        "request": request, "user": user, "active": "channels",
+        "channel": channel, "summary": summary,
+        "date_from": date_from_str, "date_to": date_to_str,
+        "channel_data": channel_data, "video_list": video_list,
+        "total_video_views": total_video_views,
+        "total_video_likes": total_video_likes,
+        "total_video_comments": total_video_comments,
+        "chart_json": chart_json,
+        "has_data": bool(channel_data),
+    })
+
+
 @router.post("/channels/{channel_uuid}/delete")
 async def channel_delete(request: Request, channel_uuid: str):
     user, redirect = require_user(request)
