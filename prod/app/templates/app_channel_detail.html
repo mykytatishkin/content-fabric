@@ -141,10 +141,10 @@
         <tr>
             <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
             <td>
-                {{ (t.title or '—')[:50] }}
                 {% if t.upload_id %}
                 <a href="https://www.youtube.com/watch?v={{ t.upload_id }}" target="_blank" rel="noopener" style="color:#dc2626;text-decoration:none;margin-left:0.3rem;" title="Watch on YouTube">&#9654;</a>
                 {% endif %}
+                {{ (t.title or '—')[:50] }}
             </td>
             <td>
                 {% if t.status == 0 %}<span class="badge badge-yellow">Pending</span>
