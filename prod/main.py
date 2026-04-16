@@ -82,6 +82,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"detail": "Too many requests"})
 
 
+from starlette.staticfiles import StaticFiles
+import pathlib
+_static_dir = pathlib.Path(__file__).parent / "app" / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 app.include_router(router, prefix="/api/v1")
 app.include_router(panel_router, prefix="/panel", tags=["panel"])
 app.include_router(app_portal_router, prefix="/app", tags=["portal"])
