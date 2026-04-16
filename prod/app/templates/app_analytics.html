@@ -1,0 +1,135 @@
+{% extends "app_base.html" %}
+{% block title %}Analytics — Content Fabric{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Channel Analytics</h2>
+    <div style="display:flex;gap:0.5rem;">
+        {% for d in [7, 14, 30, 60, 90] %}
+        <a href="/app/analytics?days={{ d }}" class="btn btn-sm {{ 'btn-primary' if days == d else '' }}" style="{{ '' if days == d else 'background:#e2e8f0;color:#334155;' }}">{{ d }}d</a>
+        {% endfor %}
+    </div>
+</div>
+
+{% if not has_data %}
+<div class="form-card" style="max-width:100%;text-align:center;padding:3rem;">
+    <p style="color:#64748b;font-size:1rem;margin-bottom:0.5rem;">No statistics collected yet.</p>
+    <p style="color:#94a3b8;font-size:0.85rem;">Stats are collected automatically once per day by the scheduler.</p>
+</div>
+{% else %}
+
+<!-- Summary Table -->
+<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Summary (last {{ days }} days)</h3>
+<table style="margin-bottom:2rem;">
+    <thead>
+        <tr>
+            <th>Channel</th>
+            <th style="text-align:right;">Subscribers</th>
+            <th style="text-align:right;">Change</th>
+            <th style="text-align:right;">Total Views</th>
+            <th style="text-align:right;">New Views</th>
+            <th style="text-align:right;">Videos</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in summary %}
+        <tr>
+            <td><a href="/app/channels/{{ s.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ s.name }}</a></td>
+            <td style="text-align:right;font-weight:600;">{{ "{:,}".format(s.subscribers) }}</td>
+            <td style="text-align:right;color:{{ '#16a34a' if s.sub_delta > 0 else '#dc2626' if s.sub_delta < 0 else '#64748b' }};">
+                {{ '+' if s.sub_delta > 0 else '' }}{{ "{:,}".format(s.sub_delta) }}
+            </td>
+            <td style="text-align:right;">{{ "{:,}".format(s.views) }}</td>
+            <td style="text-align:right;color:{{ '#16a34a' if s.view_delta > 0 else '#64748b' }};">
+                {{ '+' if s.view_delta > 0 else '' }}{{ "{:,}".format(s.view_delta) }}
+            </td>
+            <td style="text-align:right;">{{ "{:,}".format(s.videos) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Charts -->
+<div style="display:grid;gap:2rem;">
+    <div class="form-card" style="max-width:100%;padding:1.5rem;">
+        <h3 style="font-size:1rem;margin-bottom:1rem;">Subscribers Over Time</h3>
+        <canvas id="subscribersChart" height="80"></canvas>
+    </div>
+    <div class="form-card" style="max-width:100%;padding:1.5rem;">
+        <h3 style="font-size:1rem;margin-bottom:1rem;">Total Views Over Time</h3>
+        <canvas id="viewsChart" height="80"></canvas>
+    </div>
+    <div class="form-card" style="max-width:100%;padding:1.5rem;">
+        <h3 style="font-size:1rem;margin-bottom:1rem;">Videos Count Over Time</h3>
+        <canvas id="videosChart" height="80"></canvas>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+var chartData = {{ chart_data_json|safe }};
+var colors = ['#0ea5e9','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+
+function buildDatasets(metric) {
+    var datasets = [];
+    var i = 0;
+    for (var name in chartData) {
+        var ch = chartData[name];
+        datasets.push({
+            label: name,
+            data: ch[metric],
+            borderColor: colors[i % colors.length],
+            backgroundColor: colors[i % colors.length] + '20',
+            tension: 0.3,
+            pointRadius: 2,
+            borderWidth: 2,
+            fill: false,
+        });
+        i++;
+    }
+    return datasets;
+}
+
+function getLabels() {
+    for (var name in chartData) return chartData[name].dates;
+    return [];
+}
+
+var baseOpts = {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15, font: { size: 12 } } },
+        tooltip: {
+            callbacks: {
+                label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString(); }
+            }
+        }
+    },
+    scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 15 } },
+        y: { ticks: { font: { size: 11 }, callback: function(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v; } } }
+    }
+};
+
+var labels = getLabels();
+
+new Chart(document.getElementById('subscribersChart'), {
+    type: 'line',
+    data: { labels: labels, datasets: buildDatasets('subscribers') },
+    options: baseOpts,
+});
+
+new Chart(document.getElementById('viewsChart'), {
+    type: 'line',
+    data: { labels: labels, datasets: buildDatasets('views') },
+    options: baseOpts,
+});
+
+new Chart(document.getElementById('videosChart'), {
+    type: 'line',
+    data: { labels: labels, datasets: buildDatasets('videos') },
+    options: baseOpts,
+});
+</script>
+{% endif %}
+{% endblock %}

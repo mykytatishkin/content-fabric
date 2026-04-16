@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from shared.db.models import TaskStatus
-from shared.db.repositories import task_repo, channel_repo, console_repo
+from shared.db.repositories import task_repo, channel_repo, console_repo, stats_repo
 from shared.queue.publisher import enqueue_video_upload
 from shared.queue.types import VideoUploadPayload
 from shared.youtube.token_refresh import build_credentials, ensure_fresh_credentials
@@ -90,4 +90,70 @@ def validate_channel_tokens() -> tuple[int, int]:
             failure += 1
 
     logger.info("Token validation: %d ok, %d failed", success, failure)
+    return success, failure
+
+
+def collect_channel_stats() -> tuple[int, int]:
+    """Fetch YouTube channel statistics for all channels and store daily snapshots.
+
+    Uses YouTube Data API v3 (API key, no OAuth needed).
+    Returns (success_count, failure_count).
+    """
+    from app.core.config import api_settings
+
+    api_key = api_settings.YOUTUBE_API_KEY
+    if not api_key:
+        logger.warning("Stats collection skipped: YOUTUBE_API_KEY not set")
+        return 0, 0
+
+    channels = channel_repo.get_all_channels(enabled_only=True)
+    if not channels:
+        logger.info("Stats collection: no enabled channels")
+        return 0, 0
+
+    from googleapiclient.discovery import build as yt_build
+    youtube = yt_build("youtube", "v3", developerKey=api_key)
+
+    success = 0
+    failure = 0
+
+    # Batch channels in groups of 50 (API limit per request)
+    batch_size = 50
+    for i in range(0, len(channels), batch_size):
+        batch = channels[i:i + batch_size]
+        channel_ids = [ch["platform_channel_id"] for ch in batch]
+        # Map platform_channel_id -> our channel record
+        ch_map = {ch["platform_channel_id"]: ch for ch in batch}
+
+        try:
+            response = youtube.channels().list(
+                part="statistics",
+                id=",".join(channel_ids),
+                maxResults=batch_size,
+            ).execute()
+
+            for item in response.get("items", []):
+                yt_id = item["id"]
+                stats = item.get("statistics", {})
+                ch = ch_map.get(yt_id)
+                if not ch:
+                    continue
+                try:
+                    stats_repo.record_stats(
+                        channel_id=ch["id"],
+                        platform_channel_id=yt_id,
+                        subscribers=int(stats.get("subscriberCount", 0)),
+                        views=int(stats.get("viewCount", 0)),
+                        videos=int(stats.get("videoCount", 0)),
+                    )
+                    success += 1
+                except Exception:
+                    logger.exception("Failed to record stats for channel %s (%s)", ch["id"], ch["name"])
+                    failure += 1
+
+        except Exception:
+            logger.exception("YouTube API batch request failed for channels %d-%d", i, i + len(batch))
+            failure += len(batch)
+
+    logger.info("Stats collection: %d ok, %d failed", success, failure)
     return success, failure

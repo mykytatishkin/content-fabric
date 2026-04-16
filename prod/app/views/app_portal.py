@@ -228,6 +228,83 @@ async def dashboard(request: Request):
     return templates.TemplateResponse("app_dashboard.html", ctx)
 
 
+# ── Analytics ────────────────────────────────────────────────────────
+
+@router.get("/analytics", response_class=HTMLResponse)
+async def analytics_page(request: Request):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from shared.db.repositories import stats_repo
+    from sqlalchemy import text
+
+    days = int(request.query_params.get("days", "30"))
+    if days not in (7, 14, 30, 60, 90):
+        days = 30
+
+    ch_where, ch_params = scoped_where(user)
+    channels = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(text(
+                f"SELECT id, uuid, name, platform_channel_id "
+                f"FROM platform_channels WHERE {ch_where} ORDER BY name"
+            ), ch_params).fetchall()
+            channels = [
+                {"id": r[0], "uuid": r[1], "name": r[2], "platform_channel_id": r[3]}
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("Analytics channels error: %s", e)
+
+    # Gather stats for all channels
+    channel_stats = {}
+    for ch in channels:
+        stats = stats_repo.get_channel_stats(ch["id"], days=days)
+        if stats:
+            channel_stats[ch["id"]] = {
+                "name": ch["name"],
+                "platform_channel_id": ch["platform_channel_id"],
+                "data": sorted(stats, key=lambda s: s["snapshot_date"]),
+            }
+
+    # Build summary (latest stats per channel)
+    summary = []
+    for ch in channels:
+        cs = channel_stats.get(ch["id"])
+        if cs and cs["data"]:
+            latest = cs["data"][-1]
+            first = cs["data"][0]
+            summary.append({
+                "name": cs["name"],
+                "uuid": ch["uuid"],
+                "subscribers": latest.get("subscribers") or 0,
+                "views": latest.get("views") or 0,
+                "videos": latest.get("videos") or 0,
+                "sub_delta": (latest.get("subscribers") or 0) - (first.get("subscribers") or 0),
+                "view_delta": (latest.get("views") or 0) - (first.get("views") or 0),
+            })
+
+    import json
+    chart_data = {}
+    for ch_id, cs in channel_stats.items():
+        chart_data[cs["name"]] = {
+            "dates": [str(d["snapshot_date"]) for d in cs["data"]],
+            "subscribers": [d.get("subscribers") or 0 for d in cs["data"]],
+            "views": [d.get("views") or 0 for d in cs["data"]],
+            "videos": [d.get("videos") or 0 for d in cs["data"]],
+        }
+
+    return templates.TemplateResponse("app_analytics.html", {
+        "request": request, "user": user, "active": "analytics",
+        "days": days, "summary": summary,
+        "chart_data_json": json.dumps(chart_data, default=str),
+        "has_data": bool(channel_stats),
+    })
+
+
 # ── Channels ─────────────────────────────────────────────────────────
 
 @router.get("/channels", response_class=HTMLResponse)

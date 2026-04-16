@@ -9,7 +9,7 @@ from datetime import date
 
 import shared.env  # noqa: F401 — load .env files before anything else
 
-from scheduler.jobs import enqueue_pending_tasks, validate_channel_tokens
+from scheduler.jobs import enqueue_pending_tasks, validate_channel_tokens, collect_channel_stats
 from shared.logging_config import setup_logging
 
 POLL_INTERVAL = 60  # seconds
@@ -32,6 +32,7 @@ def main() -> None:
     logger.info("Scheduler started — polling every %ds", POLL_INTERVAL)
 
     last_token_check_date: date | None = None
+    last_stats_date: date | None = None
 
     while _running:
         try:
@@ -51,6 +52,16 @@ def main() -> None:
                 logger.info("Daily token validation done: %d ok, %d failed", ok, fail)
             except Exception:
                 logger.exception("Daily token validation failed")
+
+        # Daily stats collection — run once per calendar day
+        if last_stats_date != today:
+            try:
+                logger.info("Running daily stats collection...")
+                ok, fail = collect_channel_stats()
+                last_stats_date = today
+                logger.info("Daily stats collection done: %d ok, %d failed", ok, fail)
+            except Exception:
+                logger.exception("Daily stats collection failed")
 
         # Sleep in small increments to allow graceful shutdown
         for _ in range(POLL_INTERVAL):
