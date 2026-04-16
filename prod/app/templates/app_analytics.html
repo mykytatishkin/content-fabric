@@ -1,14 +1,36 @@
 {% extends "app_base.html" %}
 {% block title %}Analytics — Content Fabric{% endblock %}
 {% block content %}
-<div class="header-row">
-    <h2>Channel Analytics</h2>
-    <div style="display:flex;gap:0.5rem;">
-        {% for d in [7, 14, 30, 60, 90] %}
-        <a href="/app/analytics?days={{ d }}" class="btn btn-sm {{ 'btn-primary' if days == d else '' }}" style="{{ '' if days == d else 'background:#e2e8f0;color:#334155;' }}">{{ d }}d</a>
-        {% endfor %}
-    </div>
+<h2 style="margin-bottom:1rem;">Channel Analytics</h2>
+
+<!-- Date Range Filter -->
+<div class="form-card" style="max-width:100%;margin-bottom:1.5rem;padding:1rem 1.5rem;">
+    <form method="GET" style="display:flex;align-items:end;gap:1rem;flex-wrap:wrap;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label>From</label>
+            <input type="date" name="from" value="{{ date_from }}" style="max-width:180px;">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label>To</label>
+            <input type="date" name="to" value="{{ date_to }}" style="max-width:180px;">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        <div style="display:flex;gap:0.4rem;">
+            {% for d in [7, 14, 30, 60, 90] %}
+            <a href="javascript:void(0)" class="btn btn-sm" style="background:#e2e8f0;color:#334155;" onclick="goRange({{ d }})">{{ d }}d</a>
+            {% endfor %}
+        </div>
+    </form>
 </div>
+
+<script>
+function goRange(days) {
+    var to = new Date();
+    var from = new Date();
+    from.setDate(from.getDate() - days);
+    window.location.href = '/app/analytics?from=' + from.toISOString().slice(0,10) + '&to=' + to.toISOString().slice(0,10);
+}
+</script>
 
 {% if not has_data %}
 <div class="form-card" style="max-width:100%;text-align:center;padding:3rem;">
@@ -18,7 +40,7 @@
 {% else %}
 
 <!-- Summary Table -->
-<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Summary (last {{ days }} days)</h3>
+<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Summary ({{ date_from }} — {{ date_to }})</h3>
 <table style="margin-bottom:2rem;">
     <thead>
         <tr>

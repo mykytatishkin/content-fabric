@@ -239,10 +239,22 @@ async def analytics_page(request: Request):
     from shared.db.connection import get_connection
     from shared.db.repositories import stats_repo
     from sqlalchemy import text
+    from datetime import date, timedelta
 
-    days = int(request.query_params.get("days", "30"))
-    if days not in (7, 14, 30, 60, 90):
-        days = 30
+    # Date range from query params
+    date_to = request.query_params.get("to", "")
+    date_from = request.query_params.get("from", "")
+    try:
+        dt_to = date.fromisoformat(date_to)
+    except (ValueError, TypeError):
+        dt_to = date.today()
+    try:
+        dt_from = date.fromisoformat(date_from)
+    except (ValueError, TypeError):
+        dt_from = dt_to - timedelta(days=90)
+
+    date_from_str = dt_from.isoformat()
+    date_to_str = dt_to.isoformat()
 
     ch_where, ch_params = scoped_where(user)
     channels = []
@@ -262,12 +274,12 @@ async def analytics_page(request: Request):
     # Gather stats for all channels
     channel_stats = {}
     for ch in channels:
-        stats = stats_repo.get_channel_stats(ch["id"], days=days)
+        stats = stats_repo.get_channel_stats_range(ch["id"], date_from_str, date_to_str)
         if stats:
             channel_stats[ch["id"]] = {
                 "name": ch["name"],
                 "platform_channel_id": ch["platform_channel_id"],
-                "data": sorted(stats, key=lambda s: s["snapshot_date"]),
+                "data": stats,
             }
 
     # Build summary (latest stats per channel)
@@ -326,7 +338,8 @@ async def analytics_page(request: Request):
 
     return templates.TemplateResponse("app_analytics.html", {
         "request": request, "user": user, "active": "analytics",
-        "days": days, "summary": summary, "top_videos": top_videos,
+        "date_from": date_from_str, "date_to": date_to_str,
+        "summary": summary, "top_videos": top_videos,
         "chart_data_json": json.dumps(chart_data, default=str),
         "has_data": bool(channel_stats) or bool(top_videos),
     })
