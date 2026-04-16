@@ -92,6 +92,95 @@
 </div>
 {% endif %}
 
+<!-- Video Statistics -->
+{% if video_stats %}
+<div class="cards" style="margin-bottom:1.5rem;">
+    {% set latest = video_stats[-1] %}
+    <div class="card">
+        <div class="label">Views</div>
+        <div class="value" style="color:#0ea5e9;">{{ "{:,}".format(latest.views or 0) }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Likes</div>
+        <div class="value" style="color:#16a34a;">{{ "{:,}".format(latest.likes or 0) }}</div>
+    </div>
+    <div class="card">
+        <div class="label">Comments</div>
+        <div class="value" style="color:#f59e0b;">{{ "{:,}".format(latest.comments or 0) }}</div>
+    </div>
+</div>
+
+<div style="display:grid;gap:1.5rem;margin-bottom:1.5rem;">
+    <div class="form-card" style="max-width:100%;padding:1.5rem;">
+        <h3 style="font-size:1rem;margin-bottom:1rem;">Video Performance</h3>
+        <canvas id="videoChart" height="70"></canvas>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+var vStats = {{ video_stats_json|safe }};
+new Chart(document.getElementById('videoChart'), {
+    type: 'line',
+    data: {
+        labels: vStats.map(function(s) { return s.date; }),
+        datasets: [
+            {
+                label: 'Views',
+                data: vStats.map(function(s) { return s.views; }),
+                borderColor: '#0ea5e9',
+                backgroundColor: '#0ea5e920',
+                tension: 0.3, pointRadius: 2, borderWidth: 2,
+                yAxisID: 'y',
+            },
+            {
+                label: 'Likes',
+                data: vStats.map(function(s) { return s.likes; }),
+                borderColor: '#16a34a',
+                backgroundColor: '#16a34a20',
+                tension: 0.3, pointRadius: 2, borderWidth: 2,
+                yAxisID: 'y1',
+            },
+            {
+                label: 'Comments',
+                data: vStats.map(function(s) { return s.comments; }),
+                borderColor: '#f59e0b',
+                backgroundColor: '#f59e0b20',
+                tension: 0.3, pointRadius: 2, borderWidth: 2,
+                yAxisID: 'y1',
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15, font: { size: 12 } } },
+            tooltip: {
+                callbacks: {
+                    label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString(); }
+                }
+            }
+        },
+        scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 15 } },
+            y: {
+                position: 'left',
+                title: { display: true, text: 'Views', font: { size: 11 } },
+                ticks: { font: { size: 11 }, callback: function(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v; } }
+            },
+            y1: {
+                position: 'right',
+                title: { display: true, text: 'Likes / Comments', font: { size: 11 } },
+                grid: { drawOnChartArea: false },
+                ticks: { font: { size: 11 } }
+            }
+        }
+    }
+});
+</script>
+{% endif %}
+
 <!-- Reschedule (only for pending tasks) -->
 {% if task.status == 0 %}
 <div class="form-card">

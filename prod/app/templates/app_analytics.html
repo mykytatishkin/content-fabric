@@ -64,6 +64,35 @@
     </div>
 </div>
 
+<!-- Top Videos -->
+{% if top_videos %}
+<h3 style="font-size:1.1rem;margin:2rem 0 0.75rem;">Top Videos by Views</h3>
+<table style="margin-bottom:2rem;">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Channel</th>
+            <th style="text-align:right;">Views</th>
+            <th style="text-align:right;">Likes</th>
+            <th style="text-align:right;">Comments</th>
+            <th>YouTube</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for v in top_videos %}
+        <tr>
+            <td><a href="/app/tasks/{{ v.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ (v.title or '—')[:50] }}</a></td>
+            <td>{{ v.channel_name }}</td>
+            <td style="text-align:right;font-weight:600;">{{ "{:,}".format(v.views or 0) }}</td>
+            <td style="text-align:right;color:#16a34a;">{{ "{:,}".format(v.likes or 0) }}</td>
+            <td style="text-align:right;color:#f59e0b;">{{ "{:,}".format(v.comments or 0) }}</td>
+            <td><a href="https://www.youtube.com/watch?v={{ v.upload_id }}" target="_blank" style="color:#0ea5e9;text-decoration:none;font-size:0.8rem;">Watch</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
 var chartData = {{ chart_data_json|safe }};

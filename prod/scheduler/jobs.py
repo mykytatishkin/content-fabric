@@ -157,3 +157,72 @@ def collect_channel_stats() -> tuple[int, int]:
 
     logger.info("Stats collection: %d ok, %d failed", success, failure)
     return success, failure
+
+
+def collect_video_stats() -> tuple[int, int]:
+    """Fetch YouTube video statistics for all completed uploads.
+
+    Uses YouTube Data API v3 (API key, no OAuth needed).
+    Returns (success_count, failure_count).
+    """
+    from app.core.config import api_settings
+
+    api_key = api_settings.YOUTUBE_API_KEY
+    if not api_key:
+        logger.warning("Video stats collection skipped: YOUTUBE_API_KEY not set")
+        return 0, 0
+
+    tasks = stats_repo.get_completed_tasks_with_upload_id()
+    if not tasks:
+        logger.info("Video stats collection: no completed tasks with upload_id")
+        return 0, 0
+
+    from googleapiclient.discovery import build as yt_build
+    youtube = yt_build("youtube", "v3", developerKey=api_key)
+
+    success = 0
+    failure = 0
+
+    # Map upload_id -> task record
+    task_map = {t["upload_id"]: t for t in tasks}
+    upload_ids = list(task_map.keys())
+
+    # Batch in groups of 50
+    batch_size = 50
+    for i in range(0, len(upload_ids), batch_size):
+        batch = upload_ids[i:i + batch_size]
+        try:
+            response = youtube.videos().list(
+                part="statistics",
+                id=",".join(batch),
+                maxResults=batch_size,
+            ).execute()
+
+            for item in response.get("items", []):
+                vid = item["id"]
+                s = item.get("statistics", {})
+                t = task_map.get(vid)
+                if not t:
+                    continue
+                try:
+                    stats_repo.record_video_stats(
+                        task_id=t["id"],
+                        channel_id=t["channel_id"],
+                        upload_id=vid,
+                        views=int(s.get("viewCount", 0)),
+                        likes=int(s.get("likeCount", 0)),
+                        dislikes=int(s.get("dislikeCount", 0)),
+                        comments=int(s.get("commentCount", 0)),
+                        favorites=int(s.get("favoriteCount", 0)),
+                    )
+                    success += 1
+                except Exception:
+                    logger.exception("Failed to record video stats for task %s (video %s)", t["id"], vid)
+                    failure += 1
+
+        except Exception:
+            logger.exception("YouTube API video stats batch request failed for batch %d-%d", i, i + len(batch))
+            failure += len(batch)
+
+    logger.info("Video stats collection: %d ok, %d failed", success, failure)
+    return success, failure

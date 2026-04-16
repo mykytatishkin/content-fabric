@@ -297,11 +297,38 @@ async def analytics_page(request: Request):
             "videos": [d.get("videos") or 0 for d in cs["data"]],
         }
 
+    # Top videos by views (latest stats)
+    top_videos = []
+    try:
+        with get_connection() as conn:
+            ch_ids = [ch["id"] for ch in channels]
+            if ch_ids:
+                placeholders = ",".join([str(cid) for cid in ch_ids])
+                rows = conn.execute(text(
+                    f"SELECT vs.task_id, vs.upload_id, vs.views, vs.likes, vs.comments, "
+                    f"t.title, t.uuid, pc.name as channel_name "
+                    f"FROM video_statistics vs "
+                    f"INNER JOIN ("
+                    f"  SELECT task_id, MAX(snapshot_date) as max_date "
+                    f"  FROM video_statistics WHERE channel_id IN ({placeholders}) GROUP BY task_id"
+                    f") latest ON vs.task_id = latest.task_id AND vs.snapshot_date = latest.max_date "
+                    f"INNER JOIN content_upload_queue_tasks t ON vs.task_id = t.id "
+                    f"INNER JOIN platform_channels pc ON vs.channel_id = pc.id "
+                    f"ORDER BY vs.views DESC LIMIT 20"
+                )).fetchall()
+                top_videos = [
+                    {"task_id": r[0], "upload_id": r[1], "views": r[2], "likes": r[3],
+                     "comments": r[4], "title": r[5], "uuid": r[6], "channel_name": r[7]}
+                    for r in rows
+                ]
+    except Exception as e:
+        logger.error("Analytics top videos error: %s", e)
+
     return templates.TemplateResponse("app_analytics.html", {
         "request": request, "user": user, "active": "analytics",
-        "days": days, "summary": summary,
+        "days": days, "summary": summary, "top_videos": top_videos,
         "chart_data_json": json.dumps(chart_data, default=str),
-        "has_data": bool(channel_stats),
+        "has_data": bool(channel_stats) or bool(top_videos),
     })
 
 
@@ -1113,9 +1140,29 @@ async def task_detail(request: Request, task_uuid: str):
     task["channel_name"] = channel_name
     task["channel_uuid"] = channel_uuid
 
+    # Video stats for completed tasks
+    import json
+    video_stats = []
+    video_stats_json = "[]"
+    if task.get("upload_id") and task.get("status") == 1:
+        from shared.db.repositories import stats_repo
+        video_stats = stats_repo.get_video_stats(task["id"], days=90)
+        if video_stats:
+            video_stats_json = json.dumps([
+                {
+                    "date": str(s["snapshot_date"]),
+                    "views": s.get("views") or 0,
+                    "likes": s.get("likes") or 0,
+                    "comments": s.get("comments") or 0,
+                }
+                for s in video_stats
+            ], default=str)
+
     return templates.TemplateResponse("app_task_detail.html", {
         "request": request, "user": user, "active": "tasks",
         "task": task, "error": None, "message": None,
+        "video_stats": video_stats,
+        "video_stats_json": video_stats_json,
     })
 
 
