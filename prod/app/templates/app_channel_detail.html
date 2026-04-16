@@ -151,6 +151,8 @@
                 <form method="POST" action="/app/tasks/{{ t.uuid }}/cancel" style="display:inline;">
                     <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Cancel this task?')">Cancel</button>
                 </form>
+                {% elif t.status in [2, 4] %}
+                <button class="btn btn-primary btn-sm" onclick="retryTask(this, '{{ t.uuid }}')">Retry</button>
                 {% endif %}
             </td>
         </tr>
@@ -160,4 +162,14 @@
 {% else %}
 <p style="color:#64748b;">No tasks for this channel yet. <a href="/app/tasks/new" style="color:#0ea5e9;">Create one</a></p>
 {% endif %}
+
+<script>
+function retryTask(btn, uuid) {
+    btn.disabled = true;
+    btn.textContent = '...';
+    fetch('/app/tasks/' + uuid + '/retry', {method: 'POST'})
+        .then(function() { location.reload(); })
+        .catch(function() { btn.disabled = false; btn.textContent = 'Retry'; });
+}
+</script>
 {% endblock %}
