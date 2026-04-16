@@ -87,15 +87,15 @@ function goRange(days) {
 <div style="display:grid;gap:1.5rem;margin-bottom:2rem;">
     <div class="form-card" style="max-width:100%;padding:1.5rem;">
         <h3 style="font-size:1rem;margin-bottom:1rem;">Subscribers</h3>
-        <canvas id="subsChart" height="60"></canvas>
+        <div style="position:relative;height:250px;"><canvas id="subsChart"></canvas></div>
     </div>
     <div class="form-card" style="max-width:100%;padding:1.5rem;">
         <h3 style="font-size:1rem;margin-bottom:1rem;">Total Views</h3>
-        <canvas id="viewsChart" height="60"></canvas>
+        <div style="position:relative;height:250px;"><canvas id="viewsChart"></canvas></div>
     </div>
     <div class="form-card" style="max-width:100%;padding:1.5rem;">
         <h3 style="font-size:1rem;margin-bottom:1rem;">Videos Count</h3>
-        <canvas id="videosChart" height="60"></canvas>
+        <div style="position:relative;height:250px;"><canvas id="videosChart"></canvas></div>
     </div>
 </div>
 
@@ -126,55 +126,64 @@ function goRange(days) {
 </table>
 {% endif %}
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
-var data = {{ chart_json|safe }};
+(function() {
+    var chartData = {{ chart_json|safe }};
 
-var baseOpts = {
-    responsive: true,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-        legend: { display: false },
-        tooltip: {
-            callbacks: {
-                label: function(ctx) { return ctx.parsed.y.toLocaleString(); }
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js failed to load');
+        return;
+    }
+
+    var baseOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: function(ctx) { return ctx.parsed.y.toLocaleString(); }
+                }
+            }
+        },
+        scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 15 } },
+            y: {
+                beginAtZero: false,
+                ticks: { font: { size: 11 }, callback: function(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v; } }
             }
         }
-    },
-    scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 15 } },
-        y: {
-            beginAtZero: false,
-            ticks: { font: { size: 11 }, callback: function(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v; } }
-        }
+    };
+
+    function makeChart(id, label, dataArr, color) {
+        var el = document.getElementById(id);
+        if (!el) { console.error('Canvas not found: ' + id); return; }
+        var chartType = dataArr.length <= 1 ? 'bar' : 'line';
+        new Chart(el, {
+            type: chartType,
+            data: {
+                labels: chartData.dates,
+                datasets: [{
+                    label: label,
+                    data: dataArr,
+                    borderColor: color,
+                    backgroundColor: chartType === 'bar' ? color + '40' : color + '15',
+                    tension: 0.3, pointRadius: 3, borderWidth: 2, fill: true,
+                    barPercentage: 0.3,
+                }]
+            },
+            options: baseOpts,
+        });
     }
-};
 
-function makeChart(id, label, dataArr, color) {
-    // If only 1 data point, use a bar chart so the value is visible
-    var chartType = dataArr.length <= 1 ? 'bar' : 'line';
-    new Chart(document.getElementById(id), {
-        type: chartType,
-        data: {
-            labels: data.dates,
-            datasets: [{
-                label: label,
-                data: dataArr,
-                borderColor: color,
-                backgroundColor: chartType === 'bar' ? color + '40' : color + '15',
-                tension: 0.3, pointRadius: 4, borderWidth: 2, fill: true,
-                barPercentage: 0.3,
-            }]
-        },
-        options: baseOpts,
-    });
-}
-
-if (data.dates.length > 0) {
-    makeChart('subsChart', 'Subscribers', data.subscribers, '#8b5cf6');
-    makeChart('viewsChart', 'Views', data.views, '#0ea5e9');
-    makeChart('videosChart', 'Videos', data.videos, '#10b981');
-}
+    if (chartData.dates && chartData.dates.length > 0) {
+        makeChart('subsChart', 'Subscribers', chartData.subscribers, '#8b5cf6');
+        makeChart('viewsChart', 'Views', chartData.views, '#0ea5e9');
+        makeChart('videosChart', 'Videos', chartData.videos, '#10b981');
+    }
+})();
 </script>
 {% endif %}
 {% endblock %}

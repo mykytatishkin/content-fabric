@@ -52,15 +52,15 @@
 <div style="display:grid;gap:2rem;">
     <div class="form-card" style="max-width:100%;padding:1.5rem;">
         <h3 style="font-size:1rem;margin-bottom:1rem;">Subscribers Over Time</h3>
-        <canvas id="subscribersChart" height="80"></canvas>
+        <div style="position:relative;height:300px;"><canvas id="subscribersChart"></canvas></div>
     </div>
     <div class="form-card" style="max-width:100%;padding:1.5rem;">
         <h3 style="font-size:1rem;margin-bottom:1rem;">Total Views Over Time</h3>
-        <canvas id="viewsChart" height="80"></canvas>
+        <div style="position:relative;height:300px;"><canvas id="viewsChart"></canvas></div>
     </div>
     <div class="form-card" style="max-width:100%;padding:1.5rem;">
         <h3 style="font-size:1rem;margin-bottom:1rem;">Videos Count Over Time</h3>
-        <canvas id="videosChart" height="80"></canvas>
+        <div style="position:relative;height:300px;"><canvas id="videosChart"></canvas></div>
     </div>
 </div>
 
@@ -93,10 +93,13 @@
 </table>
 {% endif %}
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
+(function() {
 var chartData = {{ chart_data_json|safe }};
 var colors = ['#0ea5e9','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+
+if (typeof Chart === 'undefined') { console.error('Chart.js not loaded'); return; }
 
 function buildDatasets(metric) {
     var datasets = [];
@@ -125,6 +128,7 @@ function getLabels() {
 
 var baseOpts = {
     responsive: true,
+    maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
         legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15, font: { size: 12 } } },
@@ -159,6 +163,7 @@ new Chart(document.getElementById('videosChart'), {
     data: { labels: labels, datasets: buildDatasets('videos') },
     options: baseOpts,
 });
+})();
 </script>
 {% endif %}
 {% endblock %}
