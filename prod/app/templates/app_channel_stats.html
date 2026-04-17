@@ -28,19 +28,10 @@
     </form>
 </div>
 
-<script>
-function goRange(days) {
-    var to = new Date();
-    var from = new Date();
-    from.setDate(from.getDate() - days);
-    window.location.href = '?from=' + from.toISOString().slice(0,10) + '&to=' + to.toISOString().slice(0,10);
-}
-</script>
-
 {% if not has_data %}
 <div class="form-card" style="max-width:100%;text-align:center;padding:3rem;">
     <p style="color:#64748b;font-size:1rem;margin-bottom:0.5rem;">No statistics for this period.</p>
-    <p style="color:#94a3b8;font-size:0.85rem;">Stats are collected automatically once per day by the scheduler.</p>
+    <p style="color:#94a3b8;font-size:0.85rem;">Try selecting a wider date range, or wait for the scheduler to collect data.</p>
 </div>
 {% else %}
 
@@ -126,64 +117,11 @@ function goRange(days) {
 </table>
 {% endif %}
 
+<!-- Chart data passed via hidden element (no inline JS) -->
+<script type="application/json" id="channelChartData">{{ chart_json|safe }}</script>
 <script src="/static/js/chart.umd.min.js"></script>
-<script>
-(function() {
-    var chartData = {{ chart_json|safe }};
-
-    if (typeof Chart === 'undefined') {
-        console.error('Chart.js failed to load');
-        return;
-    }
-
-    var baseOpts = {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-            legend: { display: false },
-            tooltip: {
-                callbacks: {
-                    label: function(ctx) { return ctx.parsed.y.toLocaleString(); }
-                }
-            }
-        },
-        scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 15 } },
-            y: {
-                beginAtZero: false,
-                ticks: { font: { size: 11 }, callback: function(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v; } }
-            }
-        }
-    };
-
-    function makeChart(id, label, dataArr, color) {
-        var el = document.getElementById(id);
-        if (!el) { console.error('Canvas not found: ' + id); return; }
-        var chartType = dataArr.length <= 1 ? 'bar' : 'line';
-        new Chart(el, {
-            type: chartType,
-            data: {
-                labels: chartData.dates,
-                datasets: [{
-                    label: label,
-                    data: dataArr,
-                    borderColor: color,
-                    backgroundColor: chartType === 'bar' ? color + '40' : color + '15',
-                    tension: 0.3, pointRadius: 3, borderWidth: 2, fill: true,
-                    barPercentage: 0.3,
-                }]
-            },
-            options: baseOpts,
-        });
-    }
-
-    if (chartData.dates && chartData.dates.length > 0) {
-        makeChart('subsChart', 'Subscribers', chartData.subscribers, '#8b5cf6');
-        makeChart('viewsChart', 'Views', chartData.views, '#0ea5e9');
-        makeChart('videosChart', 'Videos', chartData.videos, '#10b981');
-    }
-})();
-</script>
+<script src="/static/js/channel-stats.js"></script>
 {% endif %}
+
+<script src="/static/js/date-range.js"></script>
 {% endblock %}
