@@ -108,9 +108,9 @@
 
 <!-- Chart data passed via hidden element (no inline JS needed) -->
 <script type="application/json" id="analyticsChartData">{{ chart_data_json|safe }}</script>
-<script src="/static/js/chart.umd.min.js"></script>
-<script src="/static/js/analytics.js"></script>
+<script src="/static/js/chart.umd.min.js?v=2"></script>
+<script src="/static/js/analytics.js?v=2"></script>
 {% endif %}
 
-<script src="/static/js/date-range.js"></script>
+<script src="/static/js/date-range.js?v=2"></script>
 {% endblock %}
