@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head><title>Chart Test</title></head>
+<body>
+<h1>Chart.js Test</h1>
+<div style="width:600px;height:300px;">
+    <canvas id="testChart"></canvas>
+</div>
+<div id="status">Loading...</div>
+<script src="/static/js/chart.umd.min.js"></script>
+<script src="/static/js/date-range.js"></script>
+<script>
+document.getElementById('status').textContent = 'Chart loaded: ' + (typeof Chart !== 'undefined');
+if (typeof Chart !== 'undefined') {
+    new Chart(document.getElementById('testChart'), {
+        type: 'line',
+        data: {
+            labels: ['Jan', 'Feb', 'Mar', 'Apr'],
+            datasets: [{
+                label: 'Test',
+                data: [10, 20, 15, 25],
+                borderColor: '#0ea5e9',
+                tension: 0.3
+            }]
+        }
+    });
+    document.getElementById('status').textContent = 'Chart rendered OK!';
+}
+</script>
+<br>
+<button onclick="goRange(7, '/app/analytics')">Test 7d button</button>
+<button onclick="goRange(30, '/app/analytics')">Test 30d button</button>
+</body>
+</html>
