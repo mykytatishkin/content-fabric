@@ -134,7 +134,7 @@
 {% if recent_tasks %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th><th></th></tr>
+        <tr><th data-sort="number">ID</th><th data-sort="string">Title</th><th data-sort="string">Status</th><th data-sort="date">Scheduled</th><th data-sort="date">Created</th><th data-sort="string">Error</th><th></th></tr>
     </thead>
     <tbody>
         {% for t in recent_tasks %}

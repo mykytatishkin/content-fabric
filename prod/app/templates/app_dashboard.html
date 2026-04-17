@@ -48,7 +48,7 @@
 <h3 style="font-size:1.1rem;margin:1.5rem 0 0.75rem;">Upcoming Tasks</h3>
 <table>
     <thead>
-        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Scheduled</th></tr>
+        <tr><th data-sort="number">ID</th><th data-sort="string">Channel</th><th data-sort="string">Title</th><th data-sort="date">Scheduled</th></tr>
     </thead>
     <tbody>
         {% for t in upcoming_tasks %}
@@ -67,7 +67,7 @@
 {% if recent_tasks %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Status</th><th>Scheduled</th><th>Created</th><th>Error</th></tr>
+        <tr><th data-sort="number">ID</th><th data-sort="string">Channel</th><th data-sort="string">Title</th><th data-sort="string">Status</th><th data-sort="date">Scheduled</th><th data-sort="date">Created</th><th data-sort="string">Error</th></tr>
     </thead>
     <tbody>
         {% for t in recent_tasks %}

@@ -41,7 +41,7 @@
 {% if tasks %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Channel</th><th>Title</th><th>Type</th><th>Status</th><th>Scheduled</th><th>Completed</th><th>Retries</th><th>Error</th><th></th></tr>
+        <tr><th data-sort="number">ID</th><th data-sort="string">Channel</th><th data-sort="string">Title</th><th data-sort="string">Type</th><th data-sort="string">Status</th><th data-sort="date">Scheduled</th><th data-sort="date">Completed</th><th data-sort="number">Retries</th><th data-sort="string">Error</th><th></th></tr>
     </thead>
     <tbody>
         {% for t in tasks %}
