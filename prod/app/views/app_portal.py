@@ -361,16 +361,37 @@ async def channels_page(request: Request):
     try:
         with get_connection() as conn:
             rows = conn.execute(text(f"""
-                SELECT id, uuid, name, platform_channel_id, enabled, processing_status,
-                       access_token IS NOT NULL as has_tokens, created_at,
-                       token_expires_at, updated_at
-                FROM platform_channels WHERE {ch_where} ORDER BY id
+                SELECT c.id, c.uuid, c.name, c.platform_channel_id, c.enabled,
+                       c.created_at, c.updated_at,
+                       COALESCE(ts.completed, 0) as tasks_completed,
+                       COALESCE(ts.failed, 0) as tasks_failed,
+                       COALESCE(ts.pending, 0) as tasks_pending,
+                       last_t.completed_at as last_upload_at,
+                       last_t.title as last_upload_title
+                FROM platform_channels c
+                LEFT JOIN (
+                    SELECT channel_id,
+                           SUM(status = 1) as completed,
+                           SUM(status = 2) as failed,
+                           SUM(status = 0) as pending
+                    FROM content_upload_queue_tasks GROUP BY channel_id
+                ) ts ON ts.channel_id = c.id
+                LEFT JOIN (
+                    SELECT t1.channel_id, t1.completed_at, t1.title
+                    FROM content_upload_queue_tasks t1
+                    INNER JOIN (
+                        SELECT channel_id, MAX(completed_at) as max_completed
+                        FROM content_upload_queue_tasks WHERE status = 1
+                        GROUP BY channel_id
+                    ) t2 ON t1.channel_id = t2.channel_id AND t1.completed_at = t2.max_completed
+                ) last_t ON last_t.channel_id = c.id
+                WHERE {ch_where} ORDER BY c.id
             """), ch_params).fetchall()
             channels = [
                 {"id": r[0], "uuid": r[1], "name": r[2], "platform_channel_id": r[3],
-                 "enabled": bool(r[4]), "processing_status": bool(r[5]),
-                 "has_tokens": bool(r[6]), "created_at": r[7],
-                 "token_expires_at": r[8], "updated_at": r[9]}
+                 "enabled": bool(r[4]), "created_at": r[5], "updated_at": r[6],
+                 "tasks_completed": r[7], "tasks_failed": r[8], "tasks_pending": r[9],
+                 "last_upload_at": r[10], "last_upload_title": r[11]}
                 for r in rows
             ]
     except Exception as e:

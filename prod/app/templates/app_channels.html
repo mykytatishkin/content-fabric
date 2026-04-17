@@ -9,7 +9,17 @@
 {% if channels %}
 <table>
     <thead>
-        <tr><th>ID</th><th>Name</th><th>YouTube ID</th><th>Enabled</th><th>Processing</th><th>Tokens</th><th>Token Expires</th><th>Updated</th><th></th></tr>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>YouTube ID</th>
+            <th>Enabled</th>
+            <th style="text-align:center;">Completed</th>
+            <th style="text-align:center;">Failed</th>
+            <th style="text-align:center;">Pending</th>
+            <th>Last Upload</th>
+            <th></th>
+        </tr>
     </thead>
     <tbody>
         {% for ch in channels %}
@@ -26,24 +36,17 @@
                 {% if ch.enabled %}<span class="badge badge-green">Yes</span>
                 {% else %}<span class="badge badge-gray">No</span>{% endif %}
             </td>
-            <td>
-                {% if ch.processing_status %}<span class="badge badge-green">Active</span>
-                {% else %}<span class="badge badge-yellow">Inactive</span>{% endif %}
-            </td>
-            <td>
-                {% if ch.has_tokens %}<span class="badge badge-green">OK</span>
-                {% else %}<span class="badge badge-red">Missing</span>{% endif %}
-            </td>
+            <td style="text-align:center;font-weight:600;color:#16a34a;">{{ ch.tasks_completed }}</td>
+            <td style="text-align:center;font-weight:600;color:{{ '#dc2626' if ch.tasks_failed > 0 else '#64748b' }};">{{ ch.tasks_failed }}</td>
+            <td style="text-align:center;font-weight:600;color:{{ '#d97706' if ch.tasks_pending > 0 else '#64748b' }};">{{ ch.tasks_pending }}</td>
             <td style="font-size:0.75rem;">
-                {% if ch.token_expires_at %}
-                    <span style="color:#64748b;">{{ ch.token_expires_at }}</span>
-                {% elif ch.has_tokens %}
-                    <span style="color:#d97706;">Unknown</span>
+                {% if ch.last_upload_at %}
+                    <span style="color:#64748b;">{{ ch.last_upload_at }}</span>
+                    <div style="color:#334155;font-size:0.7rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ (ch.last_upload_title or '')[:40] }}</div>
                 {% else %}
-                    <span style="color:#64748b;">—</span>
+                    <span style="color:#94a3b8;">—</span>
                 {% endif %}
             </td>
-            <td style="font-size:0.75rem;color:#64748b;">{{ ch.updated_at or ch.created_at }}</td>
             <td>
                 <form method="POST" action="/app/channels/{{ ch.uuid }}/delete" style="display:inline;"
                       data-name="{{ ch.name }}" onsubmit="return confirm('Delete ' + this.dataset.name + '?')">

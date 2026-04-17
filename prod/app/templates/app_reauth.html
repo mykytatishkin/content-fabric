@@ -43,6 +43,7 @@
             <th>Channel</th>
             <th>YouTube ID</th>
             <th>Status</th>
+            <th>Token Expires</th>
             <th>Token Health</th>
             <th>Console</th>
             <th style="text-align:center;">Action</th>
@@ -67,6 +68,15 @@
                 {% endif %}
                 {% if not ch.enabled %}
                     <span class="badge badge-gray">Disabled</span>
+                {% endif %}
+            </td>
+            <td style="font-size:0.75rem;">
+                {% if ch.token_expires_at %}
+                    <span style="color:{{ '#dc2626' if ch.token_expires_at < now else '#64748b' }};">{{ ch.token_expires_at }}</span>
+                {% elif ch.has_tokens %}
+                    <span style="color:#d97706;">Unknown</span>
+                {% else %}
+                    <span style="color:#94a3b8;">—</span>
                 {% endif %}
             </td>
             <td style="font-size:0.75rem;">
