@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}UpCast{% endblock %}</title>
+    <title>{% block title %}aiyoutube{% endblock %}</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -97,15 +97,14 @@
             color: #858587;
         }
         .user-info strong { color: #000; display: block; margin-bottom: 2px; font-weight: 500; font-size: 12px; }
-        .user-info a { color: #858587; font-size: 11px; text-decoration: none; }
-        .user-info a:hover { color: #5c5c60; }
+        .user-info:hover { background: rgba(0,0,0,0.04); }
 
         /* ── Main ── */
         .main {
             flex: 1;
             padding: 2rem 2.5rem;
             overflow-x: auto;
-            max-width: 1000px;
+            max-width: 100%;
             background: #fff;
             margin-left: 16px;
         }
@@ -145,23 +144,35 @@
         .card .value { font-size: 1.4rem; font-weight: 600; margin-top: 0.2rem; color: #000; }
 
         /* ── Tables ── */
+        .table-wrap {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 16px;
+            border: 1px solid rgba(0,0,0,0.075);
+            box-shadow: rgba(0,0,0,0.08) 0px 12px 24px -4px, rgba(0,0,0,0.04) 0px 8px 16px -4px;
+            margin-bottom: 1rem;
+        }
         table {
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
             background: #fff;
-            border-radius: 16px;
-            overflow: hidden;
-            border: 1px solid rgba(0,0,0,0.075);
-            box-shadow: rgba(0,0,0,0.08) 0px 12px 24px -4px, rgba(0,0,0,0.04) 0px 8px 16px -4px;
         }
-        th, td { text-align: left; padding: 0.55rem 0.8rem; font-size: 13px; }
+        .table-wrap table {
+            border: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        th, td { text-align: left; padding: 0.55rem 0.8rem; font-size: 13px; white-space: nowrap; }
         th { background: #f3f3f5; font-weight: 500; color: #9a9996; border-bottom: 1px solid rgba(0,0,0,0.075); font-size: 12px; }
         td { border-bottom: 1px solid rgba(0,0,0,0.04); color: #000; }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background: #f3f3f5; }
-        td a { color: rgb(74, 213, 95); text-decoration: none; font-weight: 500; }
+        td a { color: #E08A3C; text-decoration: none; font-weight: 500; }
         td a:hover { text-decoration: underline; }
+        /* Allow wrapping for long text columns */
+        td.wrap, th.wrap { white-space: normal; min-width: 120px; }
 
         /* ── Badges ── */
         .badge {
@@ -171,7 +182,7 @@
             font-size: 11px;
             font-weight: 500;
         }
-        .badge-green { background: rgba(74,213,95,0.15); color: #1a8f2d; }
+        .badge-green { background: rgba(224,138,60,0.15); color: #1a8f2d; }
         .badge-red { background: rgba(254,112,112,0.15); color: #c0392b; }
         .badge-yellow { background: rgba(224,205,99,0.15); color: #8a7a00; }
         .badge-blue { background: rgba(106,173,250,0.15); color: #2b60a0; }
@@ -192,7 +203,7 @@
             box-shadow: rgba(0,0,0,0.04) 0px 2px 8px -2px;
         }
         .btn-primary {
-            background: rgb(74, 213, 95);
+            background: #E08A3C;
             color: #fff;
             border-color: rgba(0,0,0,0.1);
             box-shadow: 0 0 1px rgba(0,0,0,0.4), inset 0 0 1px 1px rgba(255,255,255,0.8), 0 4px 24px rgba(0,0,0,0.075);
@@ -232,8 +243,8 @@
         }
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
             outline: none;
-            border-color: rgba(74,213,95,0.5);
-            box-shadow: 0 0 0 3px rgba(74,213,95,0.15), inset 0 0 0 1px rgba(74,213,95,0.3);
+            border-color: rgba(224,138,60,0.5);
+            box-shadow: 0 0 0 3px rgba(224,138,60,0.15), inset 0 0 0 1px rgba(224,138,60,0.3);
         }
         .form-group input::placeholder, .form-group textarea::placeholder {
             color: #9a9996;
@@ -251,7 +262,7 @@
         /* ── Alerts ── */
         .alert { padding: 0.6rem 0.85rem; border-radius: 16px; margin-bottom: 1rem; font-size: 13px; }
         .alert-error { background: rgba(254,112,112,0.1); color: #c0392b; border: 1px solid rgba(254,112,112,0.15); }
-        .alert-success { background: rgba(74,213,95,0.1); color: #1a8f2d; border: 1px solid rgba(74,213,95,0.15); }
+        .alert-success { background: rgba(224,138,60,0.1); color: #1a8f2d; border: 1px solid rgba(224,138,60,0.15); }
 
         .filter-bar { display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: end; }
         .filter-bar .form-group { margin-bottom: 0; }
@@ -263,20 +274,121 @@
         ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
 
+        /* ── Mobile header (hidden on desktop) ── */
+        .mobile-header {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 52px;
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+            z-index: 100;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+        }
+        .mobile-header-logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .mobile-header-logo span {
+            font-size: 17px;
+            font-weight: 600;
+            letter-spacing: -0.4px;
+            color: #1d1d1f;
+        }
+        .hamburger {
+            width: 36px; height: 36px;
+            border: none; background: none;
+            cursor: pointer; padding: 6px;
+            border-radius: 8px;
+            transition: background 160ms;
+        }
+        .hamburger:hover { background: rgba(0,0,0,0.05); }
+        .hamburger svg { display: block; }
+
+        /* ── Mobile overlay ── */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.3);
+            z-index: 200;
+            opacity: 0;
+            transition: opacity 250ms;
+        }
+        .sidebar-overlay.open { opacity: 1; }
+
         @media (max-width: 768px) {
-            .sidebar-wrapper { display: none; }
+            .mobile-header { display: flex; }
+            body { padding-top: 52px; }
+
+            .sidebar-wrapper {
+                position: fixed;
+                top: 0; left: 0; bottom: 0;
+                width: 270px;
+                transform: translateX(-100%);
+                transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+                z-index: 300;
+                border-radius: 0;
+                box-shadow: none;
+            }
+            .sidebar-wrapper.open {
+                transform: translateX(0);
+                box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+            }
             .sidebar-spacer { display: none; }
-            .main { padding: 1rem; margin-left: 0; }
-            .cards { grid-template-columns: 1fr 1fr; }
+
+            .layout { padding: 0; }
+            .main { padding: 1rem; margin-left: 0; max-width: 100%; }
+
+            .cards { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+            .header-row { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+
+            /* Responsive tables */
+            .table-wrap { border-radius: 12px; margin-left: -1rem; margin-right: -1rem; width: calc(100% + 2rem); border-left: none; border-right: none; border-radius: 0; }
+            th, td { padding: 0.5rem 0.6rem; font-size: 12px; }
+            /* Hide optional columns on mobile */
+            .hide-mobile { display: none; }
+
+            .filter-bar { flex-direction: column; gap: 0.5rem; }
+            .filter-bar .form-group { width: 100%; }
+            .filter-bar select { width: 100%; min-width: 0; }
+
+            .form-card { padding: 1rem; }
+        }
+
+        @media (max-width: 480px) {
+            .cards { grid-template-columns: 1fr; }
+            .card .value { font-size: 1.2rem; }
+            .main h2 { font-size: 18px; }
         }
     </style>
 </head>
 <body>
+    <!-- Mobile header -->
+    <div class="mobile-header">
+        <div class="mobile-header-logo">
+            <img src="/static/img/upcast-logo.svg?v=7" alt="aiyoutube" style="height:22px;">
+            <span>aiyoutube</span>
+        </div>
+        <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1d1d1f" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+    </div>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
     <div class="layout">
-        <div class="sidebar-wrapper">
+        <div class="sidebar-wrapper" id="sidebarWrapper">
         <div class="sidebar">
             <div class="sidebar-logo">
-                <img src="/static/img/upcast-logo.svg" alt="UpCast" style="height:24px;opacity:0.85;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <img src="/static/img/upcast-logo.svg?v=7" alt="aiyoutube" style="height:24px;">
+                    <span style="font-size:17px;font-weight:600;letter-spacing:-0.4px;color:#1d1d1f;">aiyoutube</span>
+                </div>
             </div>
             <nav>
                 <div class="sidebar-section">Main</div>
@@ -285,6 +397,7 @@
                 <a href="/app/tasks" class="{{ 'active' if active == 'tasks' }}">Tasks</a>
                 <a href="/app/templates" class="{{ 'active' if active == 'templates' }}">Templates</a>
                 <a href="/app/analytics" class="{{ 'active' if active == 'analytics' }}">Analytics</a>
+                <a href="/app/notifications" class="{{ 'active' if active == 'notifications' }}">Notifications{% if unread_count %} <span class="badge badge-red" style="font-size:10px;padding:2px 5px;vertical-align:middle;">{{ unread_count }}</span>{% endif %}</a>
 
                 <div class="sidebar-section" style="margin-top:0.6rem;">Tools</div>
                 <a href="/app/voice" class="{{ 'active' if active == 'voice' }}">Voice</a>
@@ -298,11 +411,11 @@
                 {% endif %}
             </nav>
             <div class="sidebar-bottom">
-                <div class="user-info">
+                <a href="/app/settings" class="user-info" style="display:block;text-decoration:none;border-radius:8px;transition:background 160ms;">
                     <strong>{{ user.display_name if user else 'Guest' }}</strong>
                     {{ user.email if user else '' }}
-                    <br><a href="/app/logout">Logout</a>
-                </div>
+                </a>
+                <div style="padding:0 0.75rem 0.4rem;"><a href="/app/logout" style="font-size:11px;color:#858587;text-decoration:none;">Logout</a></div>
             </div>
         </div>
         </div>
@@ -312,5 +425,13 @@
         </div>
     </div>
 <script src="/static/js/table-sort.js?v=1"></script>
+<script>
+function toggleSidebar(){
+    var w=document.getElementById('sidebarWrapper'),o=document.getElementById('sidebarOverlay');
+    var open=w.classList.toggle('open');
+    if(open){o.style.display='block';setTimeout(function(){o.classList.add('open')},10)}
+    else{o.classList.remove('open');setTimeout(function(){o.style.display='none'},250)}
+}
+</script>
 </body>
 </html>
