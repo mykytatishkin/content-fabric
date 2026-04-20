@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48">
+  <defs>
+    <linearGradient id="jb6" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#E84857"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square, no icon inside — just bold initial -->
+  <rect x="2" y="4" width="40" height="40" rx="12" fill="url(#jb6)"/>
+  <text x="12" y="35" font-family="Inter, 'JetBrains Sans', system-ui, sans-serif" font-size="28" font-weight="900" fill="#fff">U</text>
+  <!-- Text -->
+  <text x="48" y="34" font-family="Inter, 'JetBrains Sans', system-ui, sans-serif" font-size="27" font-weight="800" letter-spacing="-0.5" fill="#1e1e2e">
+    Up<tspan fill="url(#jb6)">Cast</tspan>
+  </text>
+</svg>

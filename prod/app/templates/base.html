@@ -3,65 +3,194 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Admin{% endblock %} — Content Fabric</title>
+    <title>{% block title %}Admin{% endblock %} — UpCast</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; color: #1e293b; }
-        .layout { display: flex; min-height: 100vh; }
-        .sidebar { width: 220px; background: #0f172a; color: #e2e8f0; padding: 1rem 0; flex-shrink: 0; }
-        .sidebar h1 { font-size: 1rem; padding: 0 1rem 1rem; border-bottom: 1px solid #1e293b; }
-        .sidebar nav { padding-top: 0.5rem; }
-        .sidebar a { display: block; padding: 0.6rem 1rem; color: #94a3b8; text-decoration: none; font-size: 0.875rem; }
-        .sidebar a:hover, .sidebar a.active { background: #1e293b; color: #f8fafc; }
-        .main { flex: 1; padding: 1.5rem 2rem; overflow-x: auto; }
-        .main h2 { font-size: 1.25rem; margin-bottom: 1rem; }
-        .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-        .card { background: #fff; border-radius: 8px; padding: 1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .card .label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        .card .value { font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
-        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        th { background: #f8fafc; text-align: left; padding: 0.6rem 0.75rem; font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        td { padding: 0.6rem 0.75rem; border-top: 1px solid #f1f5f9; font-size: 0.875rem; }
-        tr:hover { background: #f8fafc; }
-        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
-        .badge-green { background: #dcfce7; color: #166534; }
-        .badge-red { background: #fee2e2; color: #991b1b; }
-        .badge-yellow { background: #fef9c3; color: #854d0e; }
-        .badge-blue { background: #dbeafe; color: #1e40af; }
-        .badge-gray { background: #f1f5f9; color: #475569; }
-        .btn { display: inline-block; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.8rem; text-decoration: none; cursor: pointer; border: none; }
-        .btn-primary { background: #0ea5e9; color: #fff; }
-        .btn-primary:hover { background: #0284c7; }
-        .btn-danger { background: #ef4444; color: #fff; }
-        .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.7rem; }
-        .alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem; }
-        .alert-info { background: #dbeafe; color: #1e40af; }
-        .alert-warn { background: #fef9c3; color: #854d0e; }
-        .stub-notice { background: #fef3c7; border: 1px dashed #f59e0b; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #92400e; }
-        .stub-notice strong { color: #78350f; }
+        body {
+            font-family: "SF Pro", -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+            background: #fff;
+            color: #000;
+            -webkit-font-smoothing: antialiased;
+        }
+        .layout { display: flex; min-height: 100vh; padding: 8px; }
+
+        .sidebar-wrapper {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            bottom: 8px;
+            width: 220px;
+            display: flex;
+            flex-direction: column;
+            background: #ebebed;
+            border-radius: 8px;
+            box-shadow: 0 0 1px rgba(0,0,0,0.4), inset 0 0 1px 1px rgba(255,255,255,0.8), 0 4px 24px rgba(0,0,0,0.075);
+            z-index: 10;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            color: #000;
+        }
+
+        .sidebar-spacer { width: 220px; flex-shrink: 0; }
+
+        .sidebar-logo { padding: 1rem 1rem 0.7rem; }
+        .sidebar nav { padding: 0.2rem 0.5rem; flex: 1; overflow-y: auto; }
+        .sidebar a {
+            display: block;
+            padding: 0.4rem 0.75rem;
+            color: #5c5c60;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 400;
+            border-radius: 16px;
+            margin-bottom: 1px;
+            transition: all 160ms cubic-bezier(0.32, 0.72, 0, 1);
+        }
+        .sidebar a:hover { background: rgba(0,0,0,0.04); color: #000; }
+        .sidebar a.active { background: rgba(0,0,0,0.06); color: #000; font-weight: 500; }
+        .sidebar-section { padding: 0.6rem 0.75rem 0.25rem; font-size: 11px; font-weight: 600; color: #9a9996; text-transform: uppercase; letter-spacing: 0.04em; }
+
+        .sidebar-bottom {
+            margin-top: auto;
+            border-top: 1px solid rgba(0,0,0,0.075);
+            padding: 0.5rem;
+        }
+        .sidebar-bottom a {
+            display: block;
+            padding: 0.4rem 0.75rem;
+            color: rgb(74, 213, 95);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 16px;
+            transition: all 160ms cubic-bezier(0.32, 0.72, 0, 1);
+        }
+        .sidebar-bottom a:hover { background: rgba(74,213,95,0.08); }
+
+        .main {
+            flex: 1;
+            padding: 2rem 2.5rem;
+            overflow-x: auto;
+            margin-left: 16px;
+        }
+        .main h2 { font-size: 20px; font-weight: 600; margin-bottom: 1.25rem; color: #000; }
+
+        .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 0.95rem 1.1rem;
+            border: 1px solid rgba(0,0,0,0.075);
+            box-shadow: rgba(0,0,0,0.08) 0px 12px 24px -4px, rgba(0,0,0,0.04) 0px 8px 16px -4px;
+        }
+        .card .label { font-size: 11px; color: #9a9996; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+        .card .value { font-size: 1.4rem; font-weight: 600; margin-top: 0.2rem; color: #000; }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: #fff;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(0,0,0,0.075);
+            box-shadow: rgba(0,0,0,0.08) 0px 12px 24px -4px, rgba(0,0,0,0.04) 0px 8px 16px -4px;
+        }
+        th, td { text-align: left; padding: 0.55rem 0.8rem; font-size: 13px; }
+        th { background: #f3f3f5; font-weight: 500; color: #9a9996; border-bottom: 1px solid rgba(0,0,0,0.075); font-size: 12px; }
+        td { border-bottom: 1px solid rgba(0,0,0,0.04); color: #000; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f3f3f5; }
+
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 500; }
+        .badge-green { background: rgba(74,213,95,0.15); color: #1a8f2d; }
+        .badge-red { background: rgba(254,112,112,0.15); color: #c0392b; }
+        .badge-yellow { background: rgba(224,205,99,0.15); color: #8a7a00; }
+        .badge-blue { background: rgba(106,173,250,0.15); color: #2b60a0; }
+        .badge-gray { background: rgba(0,0,0,0.04); color: #77767b; }
+
+        .btn {
+            display: inline-block;
+            padding: 0.4rem 0.9rem;
+            border-radius: 100vh;
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid rgba(0,0,0,0.075);
+            font-family: inherit;
+            transition: all 160ms cubic-bezier(0.32, 0.72, 0, 1);
+            box-shadow: rgba(0,0,0,0.04) 0px 2px 8px -2px;
+        }
+        .btn-primary {
+            background: rgb(74, 213, 95);
+            color: #fff;
+            border-color: rgba(0,0,0,0.1);
+            box-shadow: 0 0 1px rgba(0,0,0,0.4), inset 0 0 1px 1px rgba(255,255,255,0.8), 0 4px 24px rgba(0,0,0,0.075);
+        }
+        .btn-primary:hover { filter: brightness(1.05); transform: translateY(-1px); }
+        .btn-danger {
+            background: rgb(254, 112, 112);
+            color: #fff;
+            border-color: rgba(0,0,0,0.1);
+            box-shadow: 0 0 1px rgba(0,0,0,0.4), inset 0 0 1px 1px rgba(255,255,255,0.8), 0 4px 24px rgba(0,0,0,0.075);
+        }
+        .btn-danger:hover { filter: brightness(1.05); transform: translateY(-1px); }
+        .btn-sm { padding: 0.22rem 0.55rem; font-size: 11px; }
+
+        .alert { padding: 0.6rem 0.85rem; border-radius: 16px; margin-bottom: 1rem; font-size: 13px; }
+        .alert-info { background: rgba(106,173,250,0.1); color: #2b60a0; border: 1px solid rgba(106,173,250,0.15); }
+        .alert-warn { background: rgba(224,205,99,0.1); color: #8a7a00; border: 1px solid rgba(224,205,99,0.15); }
+        .stub-notice { background: rgba(224,205,99,0.1); border: 1px dashed rgba(224,205,99,0.4); border-radius: 16px; padding: 1rem; margin-bottom: 1rem; font-size: 13px; color: #8a7a00; }
+        .stub-notice strong { color: #5a4a00; }
         .section { margin-bottom: 1.5rem; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+
         @media (max-width: 768px) {
-            .sidebar { width: 60px; } .sidebar a span { display: none; } .sidebar h1 { font-size: 0.7rem; }
+            .sidebar-wrapper { display: none; }
+            .sidebar-spacer { display: none; }
+            .main { margin-left: 0; padding: 1rem; }
         }
     </style>
     {% block head %}{% endblock %}
 </head>
 <body>
 <div class="layout">
+    <div class="sidebar-wrapper">
     <div class="sidebar">
-        <h1>Content Fabric</h1>
+        <div class="sidebar-logo">
+            <img src="/static/img/upcast-logo.svg" alt="UpCast" style="height:24px;opacity:0.85;">
+        </div>
         <nav>
-            <a href="/panel/" class="{% if active == 'dashboard' %}active{% endif %}">📊 <span>Dashboard</span></a>
-            <a href="/panel/channels" class="{% if active == 'channels' %}active{% endif %}">📺 <span>Каналы</span></a>
-            <a href="/panel/tasks" class="{% if active == 'tasks' %}active{% endif %}">📋 <span>Задачи</span></a>
-            <a href="/panel/users" class="{% if active == 'users' %}active{% endif %}">👤 <span>Пользователи</span></a>
-            <a href="/panel/credentials" class="{% if active == 'credentials' %}active{% endif %}">🔑 <span>Credentials</span></a>
-            <a href="/panel/payment" class="{% if active == 'payment' %}active{% endif %}">💳 <span>Оплата</span></a>
-            <a href="/panel/health" style="margin-top: 2rem; border-top: 1px solid #1e293b; padding-top: 1rem;" class="{% if active == 'health' %}active{% endif %}">🟢 <span>Health</span></a>
-            <a href="/panel/logs" class="{% if active == 'logs' %}active{% endif %}">📜 <span>Логи</span></a>
-            <a href="/docs">📖 <span>API Docs</span></a>
+            <div class="sidebar-section">Overview</div>
+            <a href="/panel/" class="{% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <div class="sidebar-section" style="margin-top:0.6rem;">Manage</div>
+            <a href="/panel/channels" class="{% if active == 'channels' %}active{% endif %}">Channels</a>
+            <a href="/panel/tasks" class="{% if active == 'tasks' %}active{% endif %}">Tasks</a>
+            <a href="/panel/users" class="{% if active == 'users' %}active{% endif %}">Users</a>
+            <a href="/panel/credentials" class="{% if active == 'credentials' %}active{% endif %}">Credentials</a>
+            <a href="/panel/payment" class="{% if active == 'payment' %}active{% endif %}">Payment</a>
+            <div class="sidebar-section" style="margin-top:0.6rem;">System</div>
+            <a href="/panel/health" class="{% if active == 'health' %}active{% endif %}">Health</a>
+            <a href="/panel/logs" class="{% if active == 'logs' %}active{% endif %}">Logs</a>
+            <a href="/docs">API Docs</a>
         </nav>
+        <div class="sidebar-bottom">
+            <a href="/app/">Back to App</a>
+        </div>
     </div>
+    </div>
+    <div class="sidebar-spacer"></div>
     <div class="main">
         {% block content %}{% endblock %}
     </div>

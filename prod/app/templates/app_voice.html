@@ -1,0 +1,332 @@
+{% extends "app_base.html" %}
+{% block title %}Voice Processing — UpCast{% endblock %}
+{% block content %}
+<h2>Voice Processing</h2>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;">
+
+<!-- Form -->
+<div class="form-card" style="max-width:none;">
+    <h3 style="margin-bottom:1rem;font-size:1rem;">New Voice Processing</h3>
+    <form id="voiceForm">
+        <!-- Audio Upload -->
+        <div class="form-group">
+            <label>Audio File *</label>
+            <div style="display:flex;gap:0.5rem;align-items:end;">
+                <input type="file" id="audio_file" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.wma,.mp4,.mkv,.avi,.mov,.webm"
+                       style="flex:1;" onchange="uploadAudio(this)">
+                <span id="audio_status" style="font-size:0.8rem;color:#64748b;"></span>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Input File Path *</label>
+            <input type="text" name="input_path" id="input_path" required
+                   placeholder="Upload above or enter server path">
+            <p style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Server path to audio/video file</p>
+        </div>
+
+        <!-- Voice Selection -->
+        <div class="form-group">
+            <label>Voice</label>
+            <select name="voice" id="voice_select">
+                <option value="kseniya" selected>Kseniya (female)</option>
+                <option value="baya">Baya (female)</option>
+                <option value="xenia">Xenia (female)</option>
+                <option value="aidar">Aidar (male)</option>
+                <option value="eugene">Eugene (male)</option>
+            </select>
+        </div>
+
+        <!-- Method -->
+        <div class="form-group">
+            <label>Method</label>
+            <select name="method" id="method_select">
+                <option value="silero" selected>Silero TTS (Russian)</option>
+                <option value="sovits">So-VITS-SVC</option>
+                <option value="rvc">RVC</option>
+            </select>
+        </div>
+
+        <!-- Quality -->
+        <div class="form-group">
+            <label>Quality</label>
+            <select name="quality" id="quality_select">
+                <option value="fast">Fast</option>
+                <option value="normal" selected>Normal</option>
+                <option value="high">High</option>
+            </select>
+        </div>
+
+        <!-- Options -->
+        <div style="display:flex;gap:1.5rem;margin-bottom:1rem;">
+            <label style="display:inline-flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;font-weight:500;margin-bottom:0;">
+                <input type="checkbox" name="parallel" id="parallel_check" checked> Parallel processing
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;font-weight:500;margin-bottom:0;">
+                <input type="checkbox" name="preserve_background" id="bg_check"> Preserve background
+            </label>
+        </div>
+
+        <!-- Parallel Settings -->
+        <div id="parallel_settings" style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+            <div class="form-group">
+                <label>Chunk Duration (min)</label>
+                <input type="number" name="chunks" id="chunks_input" value="5" min="1" max="30">
+            </div>
+            <div class="form-group">
+                <label>Workers (0 = auto)</label>
+                <input type="number" name="workers" id="workers_input" value="0" min="0" max="32">
+            </div>
+        </div>
+
+        <!-- Background Gain Settings -->
+        <div id="bg_settings" style="display:none;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                <div class="form-group">
+                    <label>Vocals Gain (dB)</label>
+                    <input type="number" name="vocals_gain" id="vocals_gain" value="0" step="0.5" min="-20" max="20">
+                </div>
+                <div class="form-group">
+                    <label>Background Gain (dB)</label>
+                    <input type="number" name="background_gain" id="bg_gain" value="-3" step="0.5" min="-20" max="20">
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="process_btn" disabled>Process Voice</button>
+    </form>
+</div>
+
+<!-- Jobs List -->
+<div>
+    <div class="form-card" style="max-width:none;">
+        <h3 style="margin-bottom:1rem;font-size:1rem;">Processing Jobs</h3>
+        <div id="jobs_list">
+            {% if jobs %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Voice</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in jobs %}
+                <tr id="job-{{ job.id }}">
+                    <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ job.input_filename }}">{{ job.input_filename }}</td>
+                    <td>{{ job.voice }}</td>
+                    <td>
+                        {% if job.status == 'completed' %}
+                        <span class="badge badge-green">Done</span>
+                        {% elif job.status == 'processing' %}
+                        <span class="badge badge-yellow">Processing...</span>
+                        {% elif job.status == 'failed' %}
+                        <span class="badge badge-red">Failed</span>
+                        {% else %}
+                        <span class="badge badge-gray">{{ job.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if job.status == 'completed' and job.output_filename %}
+                        <a href="/app/voice/download/{{ job.output_filename }}" class="btn btn-primary btn-sm">Download</a>
+                        {% elif job.status == 'failed' %}
+                        <span style="font-size:0.75rem;color:#991b1b;" title="{{ job.error }}">{{ job.error[:50] if job.error else 'Error' }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color:#64748b;font-size:0.85rem;">No jobs yet. Upload an audio file and start processing.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Processing Progress -->
+    <div id="progress_card" class="form-card" style="max-width:none;margin-top:1rem;display:none;">
+        <h3 style="margin-bottom:0.5rem;font-size:1rem;">Current Processing</h3>
+        <div style="background:#f1f5f9;border-radius:6px;overflow:hidden;height:8px;margin-bottom:0.5rem;">
+            <div id="progress_bar" style="background:#0ea5e9;height:100%;width:0%;transition:width 0.5s;"></div>
+        </div>
+        <p id="progress_text" style="font-size:0.8rem;color:#64748b;">Starting...</p>
+    </div>
+</div>
+</div>
+
+<script>
+const parallelCheck = document.getElementById('parallel_check');
+const parallelSettings = document.getElementById('parallel_settings');
+const bgCheck = document.getElementById('bg_check');
+const bgSettings = document.getElementById('bg_settings');
+
+parallelCheck.addEventListener('change', () => {
+    parallelSettings.style.display = parallelCheck.checked ? 'grid' : 'none';
+});
+bgCheck.addEventListener('change', () => {
+    bgSettings.style.display = bgCheck.checked ? 'block' : 'none';
+});
+
+function uploadAudio(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const statusEl = document.getElementById('audio_status');
+    const pathEl = document.getElementById('input_path');
+    const processBtn = document.getElementById('process_btn');
+
+    const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+    statusEl.textContent = 'Uploading... 0% (' + sizeMB + ' MB)';
+    statusEl.style.color = '#d97706';
+    processBtn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/app/voice/upload');
+
+    xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+            const pct = Math.round(e.loaded / e.total * 100);
+            const loadedMB = (e.loaded / 1024 / 1024).toFixed(1);
+            statusEl.textContent = 'Uploading... ' + pct + '% (' + loadedMB + '/' + sizeMB + ' MB)';
+        }
+    };
+
+    xhr.onload = function() {
+        try {
+            const data = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300) {
+                pathEl.value = data.path;
+                statusEl.textContent = file.name + ' (' + sizeMB + ' MB) - ready';
+                statusEl.style.color = '#16a34a';
+                processBtn.disabled = false;
+            } else {
+                statusEl.textContent = data.error || 'Upload failed (HTTP ' + xhr.status + ')';
+                statusEl.style.color = '#dc2626';
+            }
+        } catch (e) {
+            statusEl.textContent = 'Upload failed: invalid response';
+            statusEl.style.color = '#dc2626';
+        }
+    };
+
+    xhr.onerror = function() {
+        statusEl.textContent = 'Upload error: network failure or file too large for Cloudflare (max ~100 MB via CF). Use server path instead.';
+        statusEl.style.color = '#dc2626';
+    };
+
+    xhr.ontimeout = function() {
+        statusEl.textContent = 'Upload timed out. Try a smaller file or use server path.';
+        statusEl.style.color = '#dc2626';
+    };
+
+    xhr.timeout = 600000; // 10 min
+    xhr.send(formData);
+}
+
+// Allow manual path input to enable button
+document.getElementById('input_path').addEventListener('input', function() {
+    document.getElementById('process_btn').disabled = !this.value.trim();
+});
+
+document.getElementById('voiceForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('process_btn');
+    const progressCard = document.getElementById('progress_card');
+    const progressBar = document.getElementById('progress_bar');
+    const progressText = document.getElementById('progress_text');
+
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+    progressCard.style.display = 'block';
+    progressBar.style.width = '10%';
+    progressText.textContent = 'Starting voice processing...';
+
+    const body = {
+        input_path: document.getElementById('input_path').value,
+        voice: document.getElementById('voice_select').value,
+        method: document.getElementById('method_select').value,
+        quality: document.getElementById('quality_select').value,
+        parallel: document.getElementById('parallel_check').checked,
+        preserve_background: document.getElementById('bg_check').checked,
+        chunks: parseInt(document.getElementById('chunks_input').value) || 5,
+        workers: parseInt(document.getElementById('workers_input').value) || 0,
+        vocals_gain: parseFloat(document.getElementById('vocals_gain').value) || 0,
+        background_gain: parseFloat(document.getElementById('bg_gain').value) || -3,
+    };
+
+    try {
+        const resp = await fetch('/app/voice/process', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.job_id) {
+            progressBar.style.width = '30%';
+            progressText.textContent = 'Job started, processing...';
+            pollJobStatus(data.job_id);
+        } else {
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Error: ' + (data.error || 'Failed to start');
+            progressText.style.color = '#dc2626';
+            btn.disabled = false;
+            btn.textContent = 'Process Voice';
+        }
+    } catch (e) {
+        progressText.textContent = 'Error: ' + e.message;
+        progressText.style.color = '#dc2626';
+        btn.disabled = false;
+        btn.textContent = 'Process Voice';
+    }
+});
+
+async function pollJobStatus(jobId) {
+    const progressBar = document.getElementById('progress_bar');
+    const progressText = document.getElementById('progress_text');
+
+    const poll = async () => {
+        try {
+            const resp = await fetch('/app/voice/status/' + jobId);
+            const data = await resp.json();
+
+            if (data.status === 'completed') {
+                progressBar.style.width = '100%';
+                progressBar.style.background = '#16a34a';
+                progressText.textContent = 'Done!';
+                progressText.style.color = '#16a34a';
+                // Reload page to show result in jobs list
+                setTimeout(() => location.reload(), 1000);
+            } else if (data.status === 'failed') {
+                progressBar.style.width = '100%';
+                progressBar.style.background = '#ef4444';
+                progressText.textContent = 'Failed: ' + (data.error || 'Unknown error');
+                progressText.style.color = '#dc2626';
+                document.getElementById('process_btn').disabled = false;
+                document.getElementById('process_btn').textContent = 'Process Voice';
+            } else {
+                // Still processing
+                const pct = Math.min(30 + (data.progress || 0) * 0.65, 95);
+                progressBar.style.width = pct + '%';
+                progressText.textContent = data.message || 'Processing...';
+                setTimeout(poll, 3000);
+            }
+        } catch (e) {
+            setTimeout(poll, 5000);
+        }
+    };
+    setTimeout(poll, 2000);
+}
+</script>
+{% endblock %}

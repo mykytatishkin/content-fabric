@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48">
+  <!-- Apple style: no box, just symbol + text, like Apple TV+ logo -->
+  <!-- Broadcast/AirPlay style icon -->
+  <path d="M6 32 L22 12 L38 32" stroke="#1d1d1f" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="22" cy="36" r="3" fill="#1d1d1f"/>
+  <path d="M10 38 A16 16 0 0 1 10 16" stroke="#1d1d1f" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.3"/>
+  <path d="M34 38 A16 16 0 0 0 34 16" stroke="#1d1d1f" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.3"/>
+  <text x="50" y="34" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif" font-size="28" font-weight="500" letter-spacing="-0.8" fill="#1d1d1f">UpCast</text>
+</svg>

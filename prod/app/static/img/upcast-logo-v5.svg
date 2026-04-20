@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48">
+  <defs>
+    <linearGradient id="jb5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#B345F1"/>
+      <stop offset="50%" stop-color="#E84857"/>
+      <stop offset="100%" stop-color="#FC801D"/>
+    </linearGradient>
+  </defs>
+  <!-- Circle icon — Kotlin/Toolbox style -->
+  <circle cx="22" cy="24" r="20" fill="url(#jb5)"/>
+  <!-- Stylized "U" letter inside -->
+  <path d="M14 14 L14 26 Q14 34 22 34 Q30 34 30 26 L30 14" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Text -->
+  <text x="48" y="34" font-family="Inter, 'JetBrains Sans', system-ui, sans-serif" font-size="27" font-weight="800" letter-spacing="-0.5" fill="#1e1e2e">
+    Up<tspan fill="url(#jb5)">Cast</tspan>
+  </text>
+</svg>

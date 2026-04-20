@@ -1720,3 +1720,237 @@ async def portal_upload_thumbnail(
             f.write(chunk)
 
     return JSONResponse({"path": str(dest.name), "filename": file.filename, "size": dest.stat().st_size})
+
+
+# ── Voice Processing ───────────────────────────────────────────────
+
+import json as _json
+import threading
+import uuid as _voice_uuid
+
+# In-memory job store (per-process; sufficient for single-worker deploy)
+_voice_jobs: dict[str, dict] = {}
+
+
+@router.get("/voice", response_class=HTMLResponse)
+async def voice_page(request: Request):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    # Show jobs for this user (newest first)
+    user_jobs = sorted(
+        [j for j in _voice_jobs.values() if j.get("user_id") == user["id"]],
+        key=lambda j: j.get("created_at", ""),
+        reverse=True,
+    )
+
+    return templates.TemplateResponse("app_voice.html", {
+        "request": request, "user": user, "active": "voice",
+        "jobs": user_jobs, "error": None, "message": None,
+    })
+
+
+@router.post("/voice/upload")
+async def voice_upload_audio(request: Request, file: UploadFile = File(...)):
+    """Upload audio file for voice processing."""
+    import os
+    import uuid as _uuid
+    from pathlib import Path
+    from fastapi.responses import JSONResponse
+
+    user = user_from_cookie(request)
+    if not user:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    upload_dir = Path(os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")) / "voice"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "audio.mp3").suffix.lower()
+    allowed = {
+        ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma",
+        ".mp4", ".mkv", ".avi", ".mov", ".webm",
+    }
+    if ext not in allowed:
+        return JSONResponse({"error": f"Invalid format: {ext}"}, status_code=400)
+
+    MAX_AUDIO_SIZE = 5 * 1024 * 1024 * 1024  # 5 GB
+    unique_name = f"{_uuid.uuid4().hex}{ext}"
+    dest = upload_dir / unique_name
+
+    total = 0
+    with open(dest, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            total += len(chunk)
+            if total > MAX_AUDIO_SIZE:
+                dest.unlink(missing_ok=True)
+                return JSONResponse({"error": "File too large (max 5 GB)"}, status_code=400)
+            f.write(chunk)
+
+    return JSONResponse({
+        "path": str(dest),
+        "filename": file.filename,
+        "size": dest.stat().st_size,
+    })
+
+
+@router.post("/voice/process")
+async def voice_process(request: Request):
+    """Start voice processing in background thread."""
+    from fastapi.responses import JSONResponse
+
+    user = user_from_cookie(request)
+    if not user:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    body = await request.json()
+    input_path = body.get("input_path", "").strip()
+    if not input_path:
+        return JSONResponse({"error": "No input file specified"}, status_code=400)
+
+    import os
+    if not os.path.exists(input_path):
+        return JSONResponse({"error": f"File not found: {input_path}"}, status_code=400)
+
+    voice = body.get("voice", "kseniya")
+    method = body.get("method", "silero")
+    quality = body.get("quality", "normal")
+    parallel = body.get("parallel", True)
+    preserve_background = body.get("preserve_background", False)
+    chunks = body.get("chunks", 5)
+    workers = body.get("workers", 0) or None
+    vocals_gain = body.get("vocals_gain", 0.0)
+    background_gain = body.get("background_gain", -3.0)
+
+    # Generate output path
+    upload_dir = Path(os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")) / "voice" / "output"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    input_ext = os.path.splitext(input_path)[1] or ".wav"
+    output_ext = ".wav" if input_ext in (".wav", ".flac") else ".mp3"
+    job_id = _voice_uuid.uuid4().hex[:12]
+    output_filename = f"voice_{job_id}{output_ext}"
+    output_path = str(upload_dir / output_filename)
+
+    input_filename = os.path.basename(input_path)
+
+    from datetime import datetime, timezone
+    job = {
+        "id": job_id,
+        "user_id": user["id"],
+        "input_path": input_path,
+        "input_filename": input_filename,
+        "output_path": output_path,
+        "output_filename": output_filename,
+        "voice": voice,
+        "method": method,
+        "quality": quality,
+        "status": "processing",
+        "progress": 0,
+        "message": "Starting...",
+        "error": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _voice_jobs[job_id] = job
+
+    def _run_voice_job(job_data):
+        try:
+            from shared.voice.voice_changer import VoiceChanger
+
+            job_data["message"] = "Initializing voice changer..."
+            job_data["progress"] = 10
+
+            device = None  # auto
+            changer = VoiceChanger(
+                enable_parallel=parallel,
+                chunk_duration_minutes=chunks,
+                max_workers=workers,
+                device=device,
+            )
+
+            job_data["message"] = "Processing audio..."
+            job_data["progress"] = 30
+
+            result = changer.process_file(
+                input_file=job_data["input_path"],
+                output_file=job_data["output_path"],
+                method=method,
+                voice_model=voice,
+                preserve_quality=(quality == "high"),
+                preserve_background=preserve_background,
+                use_parallel=parallel,
+                vocals_gain=vocals_gain,
+                background_gain=background_gain,
+            )
+
+            changer.cleanup()
+
+            if result.get("success"):
+                job_data["status"] = "completed"
+                job_data["progress"] = 100
+                job_data["message"] = "Done!"
+                job_data["method_used"] = result.get("method", method)
+            else:
+                job_data["status"] = "failed"
+                job_data["error"] = "Processing returned unsuccessful result"
+                job_data["message"] = "Failed"
+
+        except Exception as e:
+            logger.error("Voice processing error (job %s): %s", job_data["id"], e, exc_info=True)
+            job_data["status"] = "failed"
+            job_data["error"] = str(e)
+            job_data["message"] = f"Error: {e}"
+
+    thread = threading.Thread(target=_run_voice_job, args=(job,), daemon=True)
+    thread.start()
+
+    return JSONResponse({"job_id": job_id, "status": "processing"})
+
+
+@router.get("/voice/status/{job_id}")
+async def voice_job_status(request: Request, job_id: str):
+    """Poll voice processing job status."""
+    from fastapi.responses import JSONResponse
+
+    user = user_from_cookie(request)
+    if not user:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    job = _voice_jobs.get(job_id)
+    if not job or job.get("user_id") != user["id"]:
+        return JSONResponse({"error": "Job not found"}, status_code=404)
+
+    return JSONResponse({
+        "status": job["status"],
+        "progress": job.get("progress", 0),
+        "message": job.get("message", ""),
+        "error": job.get("error"),
+        "output_filename": job.get("output_filename") if job["status"] == "completed" else None,
+    })
+
+
+@router.get("/voice/download/{filename}")
+async def voice_download(request: Request, filename: str):
+    """Download processed voice file."""
+    import os
+    from fastapi.responses import FileResponse
+
+    user = user_from_cookie(request)
+    if not user:
+        return RedirectResponse("/app/login", status_code=302)
+
+    # Security: only allow filenames, no path traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return RedirectResponse("/app/voice", status_code=302)
+
+    output_dir = Path(os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")) / "voice" / "output"
+    filepath = output_dir / filename
+
+    if not filepath.exists():
+        return RedirectResponse("/app/voice?error=File+not+found", status_code=302)
+
+    return FileResponse(
+        str(filepath),
+        filename=filename,
+        media_type="application/octet-stream",
+    )

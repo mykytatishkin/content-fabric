@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48">
+  <defs>
+    <linearGradient id="jb2" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FC801D"/>
+      <stop offset="50%" stop-color="#E84857"/>
+      <stop offset="100%" stop-color="#B345F1"/>
+    </linearGradient>
+  </defs>
+  <!-- Diamond/rhombus icon with play arrow -->
+  <rect x="4" y="4" width="40" height="40" rx="10" fill="#1e1e2e"/>
+  <path d="M16 14 L32 24 L16 34Z" fill="url(#jb2)"/>
+  <!-- Text -->
+  <text x="50" y="34" font-family="Inter, 'JetBrains Sans', system-ui, sans-serif" font-size="27" font-weight="800" letter-spacing="-0.5" fill="#1e1e2e">
+    Up<tspan fill="url(#jb2)">Cast</tspan>
+  </text>
+</svg>
