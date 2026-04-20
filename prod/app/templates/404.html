@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 — aiyoutube</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "SF Pro", -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+            background: #ebebed;
+            color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+        .error-card {
+            background: #fff;
+            border-radius: 24px;
+            padding: 3rem 2.5rem;
+            width: 100%;
+            max-width: 420px;
+            border: 1px solid rgba(0,0,0,0.075);
+            box-shadow: rgba(0,0,0,0.08) 0px 12px 24px -4px, rgba(0,0,0,0.04) 0px 8px 16px -4px;
+            text-align: center;
+        }
+        .error-code {
+            font-size: 96px;
+            font-weight: 700;
+            letter-spacing: -4px;
+            color: #c0bfbc;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+        .error-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #000;
+            margin-bottom: 0.5rem;
+        }
+        .error-desc {
+            font-size: 14px;
+            color: #858587;
+            line-height: 1.5;
+            margin-bottom: 2rem;
+        }
+        .error-path {
+            display: inline-block;
+            background: rgba(0,0,0,0.04);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-family: "SF Mono", ui-monospace, monospace;
+            color: #5c5c60;
+            margin-bottom: 1.5rem;
+            word-break: break-all;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.6rem 1.5rem;
+            border-radius: 100vh;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1px solid rgba(0,0,0,0.1);
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 160ms cubic-bezier(0.32, 0.72, 0, 1);
+            background: #E08A3C;
+            color: #fff;
+            box-shadow: 0 0 1px rgba(0,0,0,0.4), inset 0 0 1px 1px rgba(255,255,255,0.8), 0 4px 24px rgba(0,0,0,0.075);
+        }
+        .btn:hover {
+            filter: brightness(1.05);
+            transform: translateY(-1px);
+            box-shadow: 0 0 1px rgba(0,0,0,0.4), inset 0 0 1px 1px rgba(255,255,255,0.8), 0 6px 28px rgba(0,0,0,0.1);
+        }
+        .links {
+            margin-top: 1rem;
+            font-size: 13px;
+            color: #858587;
+        }
+        .links a {
+            color: #E08A3C;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .links a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="error-card">
+        <div class="error-code">404</div>
+        <div class="error-title">Page not found</div>
+        <div class="error-desc">The page you're looking for doesn't exist or has been moved.</div>
+        <div class="error-path">{{ path }}</div>
+        <div>
+            <a href="/app/" class="btn">Go to Dashboard</a>
+        </div>
+        <div class="links">
+            or <a href="javascript:history.back()">go back</a>
+        </div>
+    </div>
+</body>
+</html>

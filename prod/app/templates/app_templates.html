@@ -1,5 +1,5 @@
 {% extends "app_base.html" %}
-{% block title %}Templates — UpCast{% endblock %}
+{% block title %}Templates — aiyoutube{% endblock %}
 {% block content %}
 <div class="header-row">
     <h2>Schedule Templates</h2>
@@ -7,17 +7,18 @@
 </div>
 
 {% if templates_list %}
+<div class="table-wrap">
 <table>
     <thead>
-        <tr><th>ID</th><th>Name</th><th>Description</th><th>Timezone</th><th>Slots</th><th>Active</th><th></th></tr>
+        <tr><th class="hide-mobile">ID</th><th>Name</th><th class="hide-mobile">Description</th><th class="hide-mobile">Timezone</th><th>Slots</th><th>Active</th><th></th></tr>
     </thead>
     <tbody>
         {% for t in templates_list %}
         <tr>
-            <td>{{ t.id }}</td>
+            <td class="hide-mobile">{{ t.id }}</td>
             <td><a href="/app/templates/{{ t.uuid }}" style="color:#0ea5e9;font-weight:600;text-decoration:none;">{{ t.name }}</a></td>
-            <td>{{ t.description or '—' }}</td>
-            <td>{{ t.timezone }}</td>
+            <td class="hide-mobile">{{ t.description or '—' }}</td>
+            <td class="hide-mobile">{{ t.timezone }}</td>
             <td>{{ t.slot_count }}</td>
             <td>
                 {% if t.is_active %}<span class="badge badge-green">Active</span>
@@ -33,6 +34,7 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% else %}
 <p style="color:#64748b;">No schedule templates yet. <a href="/app/templates/new" style="color:#0ea5e9;">Create one</a></p>
 {% endif %}

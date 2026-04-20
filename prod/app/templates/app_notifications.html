@@ -1,0 +1,91 @@
+{% extends "app_base.html" %}
+{% block title %}Notifications — aiyoutube{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Notifications {% if unread_count %}<span class="badge badge-red" style="font-size:12px;vertical-align:middle;">{{ unread_count }} new</span>{% endif %}</h2>
+    {% if notifications %}
+    <form method="POST" action="/app/notifications/read-all" style="margin:0;">
+        <button type="submit" class="btn btn-sm" style="background:#fff;">Mark all as read</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if not notifications %}
+<div style="text-align:center;padding:3rem 1rem;color:#858587;">
+    <div style="font-size:32px;margin-bottom:0.5rem;">🔔</div>
+    <p>No notifications yet</p>
+</div>
+{% else %}
+<div style="display:flex;flex-direction:column;gap:6px;">
+    {% for n in notifications %}
+    <div style="
+        display:flex;align-items:flex-start;gap:12px;
+        padding:0.75rem 1rem;
+        background:{% if not n.is_read %}rgba(224,138,60,0.04){% else %}#fff{% endif %};
+        border:1px solid rgba(0,0,0,0.06);
+        border-radius:12px;
+        {% if not n.is_read %}border-left:3px solid
+            {% if n.type == 'error' %}#e74c3c
+            {% elif n.type == 'task' %}#3498db
+            {% elif n.type == 'broadcast' %}#27ae60
+            {% else %}#858587
+            {% endif %};
+        {% endif %}
+    ">
+        <!-- Type icon -->
+        <div style="flex-shrink:0;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;
+            {% if n.type == 'error' %}background:rgba(231,76,60,0.1);
+            {% elif n.type == 'task' %}background:rgba(52,152,219,0.1);
+            {% elif n.type == 'broadcast' %}background:rgba(39,174,96,0.1);
+            {% else %}background:rgba(0,0,0,0.04);
+            {% endif %}
+        ">
+            {% if n.type == 'error' %}⚠️
+            {% elif n.type == 'task' %}✅
+            {% elif n.type == 'broadcast' %}📢
+            {% else %}ℹ️
+            {% endif %}
+        </div>
+
+        <!-- Content -->
+        <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:{% if not n.is_read %}600{% else %}400{% endif %};color:#1d1d1f;">
+                {{ n.title }}
+            </div>
+            {% if n.message %}
+            <div style="font-size:12px;color:#858587;margin-top:3px;white-space:pre-line;">{{ n.message }}</div>
+            {% endif %}
+            <div style="font-size:11px;color:#9a9996;margin-top:4px;">
+                {{ n.created_at.strftime('%d %b %Y, %H:%M') if n.created_at else '' }}
+                · <span style="
+                    {% if n.type == 'error' %}color:#e74c3c
+                    {% elif n.type == 'task' %}color:#3498db
+                    {% elif n.type == 'broadcast' %}color:#27ae60
+                    {% else %}color:#858587
+                    {% endif %}
+                ">
+                    {% if n.type == 'error' %}Error
+                    {% elif n.type == 'task' %}Task
+                    {% elif n.type == 'broadcast' %}Announcement
+                    {% else %}Info
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div style="flex-shrink:0;display:flex;gap:4px;">
+            {% if not n.is_read %}
+            <form method="POST" action="/app/notifications/{{ n.id }}/read" style="margin:0;">
+                <button type="submit" class="btn btn-sm" style="background:#fff;padding:4px 8px;" title="Mark as read">✓</button>
+            </form>
+            {% endif %}
+            <form method="POST" action="/app/notifications/{{ n.id }}/delete" style="margin:0;">
+                <button type="submit" class="btn btn-sm" style="background:#fff;padding:4px 8px;color:#c0392b;" title="Delete">×</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,5 +1,5 @@
 {% extends "app_base.html" %}
-{% block title %}Settings — UpCast{% endblock %}
+{% block title %}Settings — aiyoutube{% endblock %}
 {% block content %}
 <h2>Account Settings</h2>
 
@@ -10,19 +10,38 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-<!-- Profile Edit -->
+<!-- Profile Card -->
 <div class="form-card" style="margin-bottom:1.5rem;">
-    <h3 style="font-size:1rem;margin-bottom:1rem;">Profile</h3>
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem;">
+        <div style="width:56px;height:56px;border-radius:50%;background:#E08A3C;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;flex-shrink:0;">
+            {{ (user.display_name or user.username or '?')[0]|upper }}
+        </div>
+        <div>
+            <div style="font-size:17px;font-weight:600;color:#1d1d1f;">{{ user.display_name or user.username }}</div>
+            <div style="font-size:13px;color:#858587;">@{{ user.username }}</div>
+        </div>
+        <div style="margin-left:auto;">
+            {% if user.status == 1 %}<span class="badge badge-blue">Admin</span>
+            {% else %}<span class="badge badge-green">Active</span>{% endif %}
+        </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1.5rem;font-size:13px;color:#858587;">
+        <div>Email: <span style="color:#1d1d1f;">{{ user.email }}</span></div>
+        <div>Timezone: <span style="color:#1d1d1f;">{{ user.timezone or 'UTC' }}</span></div>
+        <div>Registered: <span style="color:#1d1d1f;">{{ user.created_at.strftime('%d %b %Y') if user.created_at else '—' }}</span></div>
+        <div>Last login: <span style="color:#1d1d1f;">{{ user.last_login_at.strftime('%d %b %Y, %H:%M') if user.last_login_at else '—' }}</span></div>
+        <div>2FA:
+            {% if user.totp_enabled %}<span class="badge badge-green">Enabled</span>
+            {% else %}<span class="badge badge-yellow">Off</span>{% endif %}
+        </div>
+        <div>User ID: <span style="color:#1d1d1f;">{{ user.uuid[:8] }}…</span></div>
+    </div>
+</div>
+
+<!-- Display Name & Timezone -->
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:15px;margin-bottom:1rem;">Profile</h3>
     <form method="POST" action="/app/settings/profile">
-        <table style="box-shadow:none;margin-bottom:1rem;">
-            <tr><td style="color:#64748b;width:140px;">Username</td><td><strong>{{ user.username }}</strong></td></tr>
-            <tr><td style="color:#64748b;">Email</td><td>{{ user.email }}</td></tr>
-            <tr><td style="color:#64748b;">Status</td><td>
-                {% if user.status == 'admin' %}<span class="badge badge-blue">Admin</span>
-                {% else %}<span class="badge badge-green">Active</span>{% endif %}
-            </td></tr>
-            <tr><td style="color:#64748b;">Registered</td><td>{{ user.created_at }}</td></tr>
-        </table>
         <div class="form-group">
             <label>Display Name</label>
             <input type="text" name="display_name" value="{{ user.display_name or '' }}" placeholder="Your display name">
@@ -44,58 +63,87 @@
     </form>
 </div>
 
+<!-- Change Username -->
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:15px;margin-bottom:1rem;">Change Username</h3>
+    <form method="POST" action="/app/settings/username">
+        <div class="form-group">
+            <label>New Username</label>
+            <input type="text" name="new_username" value="{{ user.username }}" pattern="[a-zA-Z0-9_]{3,30}" required style="max-width:300px;">
+            <div style="font-size:11px;color:#9a9996;margin-top:4px;">3-30 characters, letters, digits, underscore</div>
+        </div>
+        <div class="form-group">
+            <label>Password (to confirm)</label>
+            <input type="password" name="password" required style="max-width:300px;">
+        </div>
+        <button type="submit" class="btn btn-primary">Update Username</button>
+    </form>
+</div>
+
+<!-- Change Email -->
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:15px;margin-bottom:1rem;">Change Email</h3>
+    <form method="POST" action="/app/settings/email">
+        <div class="form-group">
+            <label>New Email</label>
+            <input type="email" name="new_email" value="{{ user.email }}" required style="max-width:300px;">
+        </div>
+        <div class="form-group">
+            <label>Password (to confirm)</label>
+            <input type="password" name="password" required style="max-width:300px;">
+        </div>
+        <button type="submit" class="btn btn-primary">Update Email</button>
+    </form>
+</div>
+
 <!-- 2FA Section -->
 <div class="form-card" style="margin-bottom:1.5rem;">
-    <h3 style="font-size:1rem;margin-bottom:1rem;">Two-Factor Authentication (2FA)</h3>
+    <h3 style="font-size:15px;margin-bottom:1rem;">Two-Factor Authentication</h3>
 
     {% if backup_codes %}
-    <!-- Show backup codes after successful 2FA enable -->
     <div class="alert alert-success" style="margin-bottom:1rem;">
         <strong>Save these backup codes!</strong> Each code can only be used once.
     </div>
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:1rem;margin-bottom:1rem;font-family:monospace;font-size:0.9rem;">
+    <div style="background:#f8f8f8;border:1px solid rgba(0,0,0,0.075);border-radius:12px;padding:1rem;margin-bottom:1rem;font-family:monospace;font-size:13px;">
         {% for code in backup_codes %}
         <div style="padding:0.2rem 0;">{{ code }}</div>
         {% endfor %}
     </div>
 
     {% elif totp_uri %}
-    <!-- 2FA setup: show QR instructions and verify form -->
-    <p style="font-size:0.85rem;margin-bottom:0.75rem;">
+    <p style="font-size:13px;margin-bottom:0.75rem;color:#5c5c60;">
         Add this account to your authenticator app (Google Authenticator, Authy, etc.):
     </p>
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:1rem;margin-bottom:1rem;">
-        <p style="font-size:0.75rem;color:#64748b;margin-bottom:0.5rem;">Manual entry key:</p>
-        <code style="font-size:0.85rem;word-break:break-all;">{{ totp_secret }}</code>
+    <div style="background:#f8f8f8;border:1px solid rgba(0,0,0,0.075);border-radius:12px;padding:1rem;margin-bottom:1rem;">
+        <p style="font-size:11px;color:#9a9996;margin-bottom:0.5rem;">Manual entry key:</p>
+        <code style="font-size:13px;word-break:break-all;">{{ totp_secret }}</code>
     </div>
     <form method="POST" action="/app/settings/2fa/verify">
         <div class="form-group">
-            <label>Enter the 6-digit code from your authenticator app</label>
+            <label>6-digit code from your authenticator</label>
             <input type="text" name="totp_code" required placeholder="123456" maxlength="6"
                    pattern="[0-9]{6}" style="max-width:200px;" autocomplete="off">
         </div>
-        <button type="submit" class="btn btn-primary">Verify & Enable 2FA</button>
+        <button type="submit" class="btn btn-primary">Verify & Enable</button>
     </form>
 
     {% elif user.totp_enabled %}
-    <!-- 2FA is enabled — show disable form -->
-    <p style="font-size:0.85rem;margin-bottom:0.75rem;">
+    <p style="font-size:13px;margin-bottom:0.75rem;color:#5c5c60;">
         <span class="badge badge-green">Enabled</span>
-        2FA is active on your account.
+        &nbsp;2FA is active on your account.
     </p>
     <form method="POST" action="/app/settings/2fa/disable" style="margin-top:1rem;">
         <div class="form-group">
-            <label>Enter your password to disable 2FA</label>
-            <input type="password" name="password" required placeholder="Your password" style="max-width:300px;">
+            <label>Enter your password to disable</label>
+            <input type="password" name="password" required style="max-width:300px;">
         </div>
-        <button type="submit" class="btn btn-danger" onclick="return confirm('Disable 2FA? This makes your account less secure.')">Disable 2FA</button>
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Disable 2FA?')">Disable 2FA</button>
     </form>
 
     {% else %}
-    <!-- 2FA not enabled — show setup button -->
-    <p style="font-size:0.85rem;margin-bottom:0.75rem;">
+    <p style="font-size:13px;margin-bottom:0.75rem;color:#5c5c60;">
         <span class="badge badge-yellow">Not enabled</span>
-        Protect your account with an authenticator app.
+        &nbsp;Protect your account with an authenticator app.
     </p>
     <form method="POST" action="/app/settings/2fa/setup">
         <button type="submit" class="btn btn-primary">Enable 2FA</button>
@@ -104,22 +152,42 @@
 </div>
 
 <!-- Password Change -->
-<div class="form-card">
-    <h3 style="font-size:1rem;margin-bottom:1rem;">Change Password</h3>
+<div class="form-card" style="margin-bottom:1.5rem;">
+    <h3 style="font-size:15px;margin-bottom:1rem;">Change Password</h3>
     <form method="POST" action="/app/settings/password">
         <div class="form-group">
             <label>Current Password</label>
             <input type="password" name="current_password" required style="max-width:300px;">
         </div>
         <div class="form-group">
-            <label>New Password (min 6 characters)</label>
-            <input type="password" name="new_password" required minlength="6" style="max-width:300px;">
+            <label>New Password (min 8 characters)</label>
+            <input type="password" name="new_password" required minlength="8" style="max-width:300px;">
         </div>
         <div class="form-group">
             <label>Confirm New Password</label>
-            <input type="password" name="confirm_password" required minlength="6" style="max-width:300px;">
+            <input type="password" name="confirm_password" required minlength="8" style="max-width:300px;">
         </div>
         <button type="submit" class="btn btn-primary">Change Password</button>
     </form>
+</div>
+
+<!-- Danger Zone -->
+<div class="form-card" style="border-color:rgba(254,112,112,0.3);">
+    <h3 style="font-size:15px;margin-bottom:0.5rem;color:#c0392b;">Danger Zone</h3>
+    <p style="font-size:13px;color:#858587;margin-bottom:1rem;">Permanently delete your account and all associated data. This action cannot be undone.</p>
+    <details>
+        <summary style="font-size:13px;color:#c0392b;cursor:pointer;font-weight:500;">Delete my account</summary>
+        <form method="POST" action="/app/settings/delete-account" style="margin-top:1rem;">
+            <div class="form-group">
+                <label>Type <strong>DELETE</strong> to confirm</label>
+                <input type="text" name="confirm_text" required placeholder="DELETE" style="max-width:200px;">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" required style="max-width:300px;">
+            </div>
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Are you absolutely sure? This cannot be undone.')">Delete Account</button>
+        </form>
+    </details>
 </div>
 {% endblock %}

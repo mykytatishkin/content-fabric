@@ -299,6 +299,19 @@ schedule_template_slots = Table(
     Column("created_at", TIMESTAMP, nullable=False),
 )
 
+# ── Notifications ─────────────────────────────────────────────────
+
+notifications = Table(
+    "notifications", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, ForeignKey("platform_users.id"), nullable=False),
+    Column("type", String(32), nullable=False, server_default="info"),  # error, task, broadcast
+    Column("title", String(255), nullable=False),
+    Column("message", Text),
+    Column("is_read", TINYINT(1), nullable=False, server_default="0"),
+    Column("created_at", TIMESTAMP, nullable=False),
+)
+
 # ── System ─────────────────────────────────────────────────────────
 
 platform_schema_migrations = Table(

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Broadcast — aiyoutube{% endblock %}
+{% block content %}
+<h2>Broadcast Message</h2>
+
+{% if message %}
+<div class="alert alert-info">{{ message }}</div>
+{% endif %}
+{% if error %}
+<div style="padding:0.6rem 0.85rem;border-radius:16px;margin-bottom:1rem;font-size:13px;background:rgba(254,112,112,0.1);color:#c0392b;border:1px solid rgba(254,112,112,0.15);">{{ error }}</div>
+{% endif %}
+
+<div style="background:#fff;border:1px solid rgba(0,0,0,0.075);border-radius:16px;padding:1.5rem;max-width:600px;box-shadow:rgba(0,0,0,0.08) 0px 12px 24px -4px;margin-bottom:1.5rem;">
+    <p style="font-size:13px;color:#858587;margin-bottom:1rem;">Send a notification to all active users. It will appear in their Notifications tab with a green "Announcement" label.</p>
+    <form method="POST" action="/panel/broadcast">
+        <div style="margin-bottom:0.85rem;">
+            <label style="display:block;font-size:12px;font-weight:500;margin-bottom:0.3rem;color:#5c5c60;">Title</label>
+            <input type="text" name="title" required placeholder="e.g. Scheduled maintenance tonight" style="
+                width:100%;padding:0.5rem 0.7rem;border:1px solid rgba(0,0,0,0.075);border-radius:16px;
+                font-size:13px;background:#fff;color:#000;font-family:inherit;
+                box-shadow:inset 0 0 0 1px rgba(0,0,0,0.075);
+            ">
+        </div>
+        <div style="margin-bottom:0.85rem;">
+            <label style="display:block;font-size:12px;font-weight:500;margin-bottom:0.3rem;color:#5c5c60;">Message (optional)</label>
+            <textarea name="message" rows="4" placeholder="Additional details..." style="
+                width:100%;padding:0.5rem 0.7rem;border:1px solid rgba(0,0,0,0.075);border-radius:16px;
+                font-size:13px;background:#fff;color:#000;font-family:inherit;resize:vertical;
+                box-shadow:inset 0 0 0 1px rgba(0,0,0,0.075);
+            "></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" onclick="return confirm('Send to all users?')">Send Broadcast</button>
+    </form>
+</div>
+
+{% if recent %}
+<h3 style="font-size:15px;font-weight:600;margin-bottom:0.75rem;">Recent Broadcasts</h3>
+<table>
+    <thead>
+        <tr><th>Title</th><th>Message</th><th>Sent</th></tr>
+    </thead>
+    <tbody>
+        {% for b in recent %}
+        <tr>
+            <td style="font-weight:500;">{{ b.title }}</td>
+            <td style="color:#858587;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ b.message or '—' }}</td>
+            <td>{{ b.created_at.strftime('%d %b %Y, %H:%M') if b.created_at else '' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

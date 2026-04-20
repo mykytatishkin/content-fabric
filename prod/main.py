@@ -82,8 +82,32 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content={"detail": "Too many requests"})
 
 
-from starlette.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.templating import Jinja2Templates as _Jinja2Templates
 import pathlib
+
+_error_templates = _Jinja2Templates(
+    directory=str(pathlib.Path(__file__).parent / "app" / "templates")
+)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 404:
+        # JSON for API requests
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
+        return _error_templates.TemplateResponse(
+            "404.html",
+            {"request": request, "path": request.url.path},
+            status_code=404,
+        )
+    if exc.status_code == 500:
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+from starlette.staticfiles import StaticFiles
 _static_dir = pathlib.Path(__file__).parent / "app" / "static"
 if _static_dir.is_dir():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")

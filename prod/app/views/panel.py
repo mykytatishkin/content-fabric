@@ -3,8 +3,10 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Form
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from starlette.responses import RedirectResponse
 
 from app.core.auth import require_admin
 
@@ -406,4 +408,58 @@ async def logs_page(request: Request):
         "lines": lines,
         "error_count": error_count,
         "warning_count": warning_count,
+    })
+
+
+# ── Broadcast ─────────────────────────────────────────────────────
+
+@router.get("/broadcast", response_class=HTMLResponse)
+async def broadcast_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import notification_repo
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    # Get recent broadcasts
+    with get_connection() as conn:
+        rows = conn.execute(sql_text(
+            "SELECT title, message, created_at FROM notifications "
+            "WHERE type = 'broadcast' GROUP BY title, message, created_at "
+            "ORDER BY created_at DESC LIMIT 20"
+        )).fetchall()
+    recent = [{"title": r[0], "message": r[1], "created_at": r[2]} for r in rows]
+
+    return templates.TemplateResponse("broadcast.html", {
+        "request": request, "active": "broadcast",
+        "message": None, "error": None, "recent": recent,
+    })
+
+
+@router.post("/broadcast", response_class=HTMLResponse)
+async def broadcast_send(
+    request: Request,
+    title: str = Form(...),
+    message: str = Form(""),
+):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import notification_repo
+
+    title = title.strip()
+    if not title:
+        return templates.TemplateResponse("broadcast.html", {
+            "request": request, "active": "broadcast",
+            "message": None, "error": "Title is required", "recent": [],
+        })
+
+    count = notification_repo.broadcast(title, message.strip() or None)
+
+    return templates.TemplateResponse("broadcast.html", {
+        "request": request, "active": "broadcast",
+        "message": f"Broadcast sent to {count} users", "error": None, "recent": [],
     })

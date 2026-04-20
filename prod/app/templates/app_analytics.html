@@ -1,5 +1,5 @@
 {% extends "app_base.html" %}
-{% block title %}Analytics — UpCast{% endblock %}
+{% block title %}Analytics — aiyoutube{% endblock %}
 {% block content %}
 <h2 style="margin-bottom:1rem;">Channel Analytics</h2>
 
@@ -30,36 +30,79 @@
 </div>
 {% else %}
 
+<!-- Daily Activity (recent changes + uploads) -->
+{% if daily_activity or upload_events %}
+<h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Recent Activity</h3>
+<div class="table-wrap" style="margin-bottom:2rem;">
+<table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Channel</th>
+            <th style="text-align:right;">Subs</th>
+            <th style="text-align:right;">Subs Δ</th>
+            <th style="text-align:right;">Views Δ</th>
+            <th class="hide-mobile">Uploads</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in daily_activity %}
+        <tr>
+            <td style="font-size:12px;color:#858587;">{{ a.date[5:] }}</td>
+            <td><a href="/app/channels/{{ a.channel_uuid }}/stats" style="color:#0ea5e9;text-decoration:none;">{{ a.channel }}</a></td>
+            <td style="text-align:right;font-size:12px;">{{ "{:,}".format(a.subs) }}</td>
+            <td style="text-align:right;font-weight:600;color:{{ '#16a34a' if a.subs_delta > 0 else '#dc2626' if a.subs_delta < 0 else '#858587' }};">
+                {{ '+' if a.subs_delta > 0 else '' }}{{ a.subs_delta }}
+            </td>
+            <td style="text-align:right;font-weight:600;color:{{ '#16a34a' if a.views_delta > 0 else '#dc2626' if a.views_delta < 0 else '#858587' }};">
+                {{ '+' if a.views_delta > 0 else '' }}{{ "{:,}".format(a.views_delta) }}
+            </td>
+            <td class="hide-mobile" style="font-size:11px;color:#858587;">
+                {% for ev in upload_events if ev.date == a.date and ev.channel == a.channel %}
+                <div style="color:#E08A3C;">📤 {{ ev.title[:35] }}</div>
+                {% endfor %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endif %}
+
 <!-- Summary Table -->
 <h3 style="font-size:1.1rem;margin-bottom:0.75rem;">Summary ({{ date_from }} — {{ date_to }})</h3>
-<table style="margin-bottom:2rem;">
+<div class="table-wrap" style="margin-bottom:2rem;">
+<table>
     <thead>
         <tr>
             <th data-sort="string">Channel</th>
-            <th data-sort="number" style="text-align:right;">Subscribers</th>
+            <th data-sort="number" style="text-align:right;">Subs</th>
             <th data-sort="number" style="text-align:right;">Change</th>
-            <th data-sort="number" style="text-align:right;">Total Views</th>
+            <th data-sort="number" style="text-align:right;" class="hide-mobile">Total Views</th>
             <th data-sort="number" style="text-align:right;">New Views</th>
-            <th data-sort="number" style="text-align:right;">Videos</th>
+            <th data-sort="number" style="text-align:right;" class="hide-mobile">Videos</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
         {% for s in summary %}
         <tr>
-            <td><a href="/app/channels/{{ s.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ s.name }}</a></td>
+            <td><a href="/app/channels/{{ s.uuid }}/stats" style="color:#0ea5e9;text-decoration:none;font-weight:500;">{{ s.name }}</a></td>
             <td style="text-align:right;font-weight:600;">{{ "{:,}".format(s.subscribers) }}</td>
             <td style="text-align:right;color:{{ '#16a34a' if s.sub_delta > 0 else '#dc2626' if s.sub_delta < 0 else '#64748b' }};">
                 {{ '+' if s.sub_delta > 0 else '' }}{{ "{:,}".format(s.sub_delta) }}
             </td>
-            <td style="text-align:right;">{{ "{:,}".format(s.views) }}</td>
+            <td class="hide-mobile" style="text-align:right;">{{ "{:,}".format(s.views) }}</td>
             <td style="text-align:right;color:{{ '#16a34a' if s.view_delta > 0 else '#64748b' }};">
                 {{ '+' if s.view_delta > 0 else '' }}{{ "{:,}".format(s.view_delta) }}
             </td>
-            <td style="text-align:right;">{{ "{:,}".format(s.videos) }}</td>
+            <td class="hide-mobile" style="text-align:right;">{{ "{:,}".format(s.videos) }}</td>
+            <td><a href="/app/channels/{{ s.uuid }}/stats" class="btn btn-sm" style="background:#e2e8f0;color:#334155;">Details</a></td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 
 <!-- Channel Filter -->
 <div class="form-card" style="max-width:100%;padding:1rem 1.5rem;margin-bottom:1.5rem;">
@@ -74,6 +117,14 @@
 <!-- Charts -->
 <div style="display:grid;gap:2rem;">
     <div class="form-card" style="max-width:100%;padding:1.5rem;">
+        <h3 style="font-size:1rem;margin-bottom:1rem;">Daily Subscriber Growth</h3>
+        <div style="position:relative;height:300px;"><canvas id="subsDeltaChart"></canvas></div>
+    </div>
+    <div class="form-card" style="max-width:100%;padding:1.5rem;">
+        <h3 style="font-size:1rem;margin-bottom:1rem;">Daily Views Growth</h3>
+        <div style="position:relative;height:300px;"><canvas id="viewsDeltaChart"></canvas></div>
+    </div>
+    <div class="form-card" style="max-width:100%;padding:1.5rem;">
         <h3 style="font-size:1rem;margin-bottom:1rem;">Subscribers Over Time</h3>
         <div style="position:relative;height:300px;"><canvas id="subscribersChart"></canvas></div>
     </div>
@@ -81,46 +132,44 @@
         <h3 style="font-size:1rem;margin-bottom:1rem;">Total Views Over Time</h3>
         <div style="position:relative;height:300px;"><canvas id="viewsChart"></canvas></div>
     </div>
-    <div class="form-card" style="max-width:100%;padding:1.5rem;">
-        <h3 style="font-size:1rem;margin-bottom:1rem;">Videos Count Over Time</h3>
-        <div style="position:relative;height:300px;"><canvas id="videosChart"></canvas></div>
-    </div>
 </div>
 
 <!-- Top Videos -->
 {% if top_videos %}
 <h3 style="font-size:1.1rem;margin:2rem 0 0.75rem;">Top Videos by Views</h3>
-<table style="margin-bottom:2rem;">
+<div class="table-wrap" style="margin-bottom:2rem;">
+<table>
     <thead>
         <tr>
             <th data-sort="string">Title</th>
-            <th data-sort="string">Channel</th>
+            <th data-sort="string" class="hide-mobile">Channel</th>
             <th data-sort="number" style="text-align:right;">Views</th>
-            <th data-sort="number" style="text-align:right;">Likes</th>
-            <th data-sort="number" style="text-align:right;">Comments</th>
-            <th>YouTube</th>
+            <th data-sort="number" style="text-align:right;" class="hide-mobile">Likes</th>
+            <th data-sort="number" style="text-align:right;" class="hide-mobile">Comments</th>
+            <th>YT</th>
         </tr>
     </thead>
     <tbody>
         {% for v in top_videos %}
         <tr>
             <td><a href="/app/tasks/{{ v.uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ (v.title or '—')[:50] }}</a></td>
-            <td>{{ v.channel_name }}</td>
+            <td class="hide-mobile">{{ v.channel_name }}</td>
             <td style="text-align:right;font-weight:600;">{{ "{:,}".format(v.views or 0) }}</td>
-            <td style="text-align:right;color:#16a34a;">{{ "{:,}".format(v.likes or 0) }}</td>
-            <td style="text-align:right;color:#f59e0b;">{{ "{:,}".format(v.comments or 0) }}</td>
-            <td><a href="https://www.youtube.com/watch?v={{ v.upload_id }}" target="_blank" style="color:#0ea5e9;text-decoration:none;font-size:0.8rem;">Watch</a></td>
+            <td class="hide-mobile" style="text-align:right;color:#16a34a;">{{ "{:,}".format(v.likes or 0) }}</td>
+            <td class="hide-mobile" style="text-align:right;color:#f59e0b;">{{ "{:,}".format(v.comments or 0) }}</td>
+            <td><a href="https://www.youtube.com/watch?v={{ v.upload_id }}" target="_blank" style="color:#0ea5e9;text-decoration:none;font-size:0.8rem;">▶</a></td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% endif %}
 
-<!-- Chart data passed via hidden element (no inline JS needed) -->
 <script type="application/json" id="analyticsChartData">{{ chart_data_json|safe }}</script>
-<script src="/static/js/chart.umd.min.js?v=3"></script>
-<script src="/static/js/analytics.js?v=3"></script>
+<script type="application/json" id="uploadEventsData">{{ upload_events_json|safe }}</script>
+<script src="/static/js/chart.umd.min.js?v=9"></script>
+<script src="/static/js/analytics.js?v=9"></script>
 {% endif %}
 
-<script src="/static/js/date-range.js?v=3"></script>
+<script src="/static/js/date-range.js?v=10"></script>
 {% endblock %}

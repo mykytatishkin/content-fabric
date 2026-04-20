@@ -1,5 +1,5 @@
 {% extends "app_base.html" %}
-{% block title %}Dashboard — UpCast{% endblock %}
+{% block title %}Dashboard — aiyoutube{% endblock %}
 {% block content %}
 <div class="header-row">
     <h2>Dashboard</h2>
@@ -46,14 +46,15 @@
 
 {% if upcoming_tasks %}
 <h3 style="font-size:1.1rem;margin:1.5rem 0 0.75rem;">Upcoming Tasks</h3>
+<div class="table-wrap">
 <table>
     <thead>
-        <tr><th data-sort="number">ID</th><th data-sort="string">Channel</th><th data-sort="string">Title</th><th data-sort="date">Scheduled</th></tr>
+        <tr><th data-sort="number" class="hide-mobile">ID</th><th data-sort="string">Channel</th><th data-sort="string">Title</th><th data-sort="date">Scheduled</th></tr>
     </thead>
     <tbody>
         {% for t in upcoming_tasks %}
         <tr>
-            <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
+            <td class="hide-mobile"><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
             <td><a href="/app/channels/{{ t.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
             <td>{{ (t.title or '—')[:50] }}</td>
             <td>{{ t.scheduled_at }}</td>
@@ -61,18 +62,20 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% endif %}
 
 <h3 style="font-size:1.1rem;margin:1.5rem 0 0.75rem;">Recent Tasks</h3>
 {% if recent_tasks %}
+<div class="table-wrap">
 <table>
     <thead>
-        <tr><th data-sort="number">ID</th><th data-sort="string">Channel</th><th data-sort="string">Title</th><th data-sort="string">Status</th><th data-sort="date">Scheduled</th><th data-sort="date">Created</th><th data-sort="string">Error</th></tr>
+        <tr><th data-sort="number" class="hide-mobile">ID</th><th data-sort="string">Channel</th><th data-sort="string">Title</th><th data-sort="string">Status</th><th data-sort="date" class="hide-mobile">Scheduled</th><th data-sort="date" class="hide-mobile">Created</th><th data-sort="string" class="hide-mobile">Error</th></tr>
     </thead>
     <tbody>
         {% for t in recent_tasks %}
         <tr>
-            <td><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
+            <td class="hide-mobile"><a href="/app/tasks/{{ t.uuid }}" style="color:#0ea5e9;text-decoration:none;">#{{ t.id }}</a></td>
             <td><a href="/app/channels/{{ t.channel_uuid }}" style="color:#0ea5e9;text-decoration:none;">{{ t.channel_name }}</a></td>
             <td>{{ (t.title or '—')[:50] }}</td>
             <td>
@@ -83,13 +86,14 @@
                 {% elif t.status == 4 %}<span class="badge badge-gray">Cancelled</span>
                 {% endif %}
             </td>
-            <td style="font-size:0.75rem;">{{ t.scheduled_at or '—' }}</td>
-            <td style="font-size:0.75rem;">{{ t.created_at }}</td>
-            <td style="font-size:0.75rem;color:#991b1b;max-width:180px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:60] }}</td>
+            <td class="hide-mobile" style="font-size:0.75rem;">{{ t.scheduled_at or '—' }}</td>
+            <td class="hide-mobile" style="font-size:0.75rem;">{{ t.created_at }}</td>
+            <td class="hide-mobile" style="font-size:0.75rem;color:#991b1b;max-width:180px;overflow:hidden;text-overflow:ellipsis;">{{ (t.error_message or '')[:60] }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% else %}
 <p style="color:#64748b;">No tasks yet. <a href="/app/tasks/new" style="color:#0ea5e9;">Create your first task</a></p>
 {% endif %}

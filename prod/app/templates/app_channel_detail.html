@@ -1,5 +1,5 @@
 {% extends "app_base.html" %}
-{% block title %}{{ channel.name }} — UpCast{% endblock %}
+{% block title %}{{ channel.name }} — aiyoutube{% endblock %}
 {% block content %}
 <div class="header-row">
     <h2>{{ channel.name }}</h2>
@@ -16,6 +16,10 @@
 
 <!-- Channel Info -->
 <div class="cards" style="margin-bottom:1.5rem;">
+    <div class="card">
+        <div class="label">ID</div>
+        <div class="value" style="font-size:0.9rem;">{{ channel.id }}</div>
+    </div>
     <div class="card">
         <div class="label">YouTube ID</div>
         <div class="value" style="font-size:0.9rem;">

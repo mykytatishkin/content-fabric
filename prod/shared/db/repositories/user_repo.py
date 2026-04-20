@@ -25,6 +25,7 @@ _USER_COLS = [
     platform_users.c.totp_secret,
     platform_users.c.totp_enabled,
     platform_users.c.totp_backup_codes,
+    platform_users.c.last_login_at,
     platform_users.c.created_at,
     platform_users.c.updated_at,
 ]
@@ -156,6 +157,27 @@ def consume_backup_code(user_id: int, code: str) -> bool:
     return True
 
 
+def update_email(user_id: int, email: str) -> None:
+    sql = text("UPDATE platform_users SET email = :email WHERE id = :uid")
+    with get_connection() as conn:
+        conn.execute(sql, {"email": email, "uid": user_id})
+    logger.info("Email changed for user %s to %s", user_id, email)
+
+
+def update_username(user_id: int, username: str) -> None:
+    sql = text("UPDATE platform_users SET username = :username WHERE id = :uid")
+    with get_connection() as conn:
+        conn.execute(sql, {"username": username, "uid": user_id})
+    logger.info("Username changed for user %s to %s", user_id, username)
+
+
+def delete_user(user_id: int) -> None:
+    sql = text("DELETE FROM platform_users WHERE id = :uid")
+    with get_connection() as conn:
+        conn.execute(sql, {"uid": user_id})
+    logger.info("User %s deleted", user_id)
+
+
 def _row_to_dict(row) -> dict[str, Any]:
     return {
         "id": row[0],
@@ -170,6 +192,7 @@ def _row_to_dict(row) -> dict[str, Any]:
         "totp_secret": row[9],
         "totp_enabled": bool(row[10]),
         "totp_backup_codes": row[11],
-        "created_at": row[12],
-        "updated_at": row[13],
+        "last_login_at": row[12],
+        "created_at": row[13],
+        "updated_at": row[14],
     }

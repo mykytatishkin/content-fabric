@@ -1,5 +1,5 @@
 {% extends "app_base.html" %}
-{% block title %}Channels — UpCast{% endblock %}
+{% block title %}Channels — aiyoutube{% endblock %}
 {% block content %}
 <div class="header-row">
     <h2>Channels ({{ channels|length }})</h2>
@@ -7,16 +7,17 @@
 </div>
 
 {% if channels %}
+<div class="table-wrap">
 <table>
     <thead>
         <tr>
-            <th data-sort="number">ID</th>
+            <th data-sort="number" class="hide-mobile">ID</th>
             <th data-sort="string">Name</th>
-            <th data-sort="string">YouTube ID</th>
+            <th data-sort="string" class="hide-mobile">YouTube ID</th>
             <th data-sort="string">Enabled</th>
-            <th data-sort="number" style="text-align:center;">Completed</th>
-            <th data-sort="number" style="text-align:center;">Failed</th>
-            <th data-sort="number" style="text-align:center;">Pending</th>
+            <th data-sort="number" style="text-align:center;">Done</th>
+            <th data-sort="number" style="text-align:center;" class="hide-mobile">Failed</th>
+            <th data-sort="number" style="text-align:center;" class="hide-mobile">Pending</th>
             <th data-sort="date">Last Upload</th>
             <th></th>
         </tr>
@@ -24,27 +25,30 @@
     <tbody>
         {% for ch in channels %}
         <tr>
-            <td>{{ ch.id }}</td>
+            <td class="hide-mobile">{{ ch.id }}</td>
             <td>
                 <a href="https://www.youtube.com/{% if ch.platform_channel_id.startswith('@') %}{{ ch.platform_channel_id }}{% else %}channel/{{ ch.platform_channel_id }}{% endif %}" target="_blank" title="Open on YouTube" style="text-decoration:none;margin-right:4px;vertical-align:middle;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" style="vertical-align:middle;"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.546 12 3.546 12 3.546s-7.505 0-9.377.504A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.504 9.376.504 9.376.504s7.505 0 9.377-.504a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
                 </a>
                 <a href="/app/channels/{{ ch.uuid }}" style="color:#0ea5e9;font-weight:600;text-decoration:none;">{{ ch.name }}</a>
+                {% if ch.console_name %}<div style="font-size:0.65rem;color:#9a9996;margin-top:1px;">{{ ch.console_name }}</div>{% endif %}
             </td>
-            <td style="font-size:0.75rem;color:#64748b;">{{ ch.platform_channel_id }}</td>
+            <td class="hide-mobile" style="font-size:0.75rem;color:#64748b;">{{ ch.platform_channel_id }}</td>
             <td>
                 {% if ch.enabled %}<span class="badge badge-green">Yes</span>
                 {% else %}<span class="badge badge-gray">No</span>{% endif %}
             </td>
             <td style="text-align:center;font-weight:600;color:#16a34a;">{{ ch.tasks_completed }}</td>
-            <td style="text-align:center;font-weight:600;color:{{ '#dc2626' if ch.tasks_failed > 0 else '#64748b' }};">{{ ch.tasks_failed }}</td>
-            <td style="text-align:center;font-weight:600;color:{{ '#d97706' if ch.tasks_pending > 0 else '#64748b' }};">{{ ch.tasks_pending }}</td>
+            <td class="hide-mobile" style="text-align:center;font-weight:600;color:{{ '#dc2626' if ch.tasks_failed > 0 else '#64748b' }};">{{ ch.tasks_failed }}</td>
+            <td class="hide-mobile" style="text-align:center;font-weight:600;color:{{ '#d97706' if ch.tasks_pending > 0 else '#64748b' }};">{{ ch.tasks_pending }}</td>
             <td style="font-size:0.75rem;">
                 {% if ch.last_upload_at %}
-                    <span style="color:#64748b;">{{ ch.last_upload_at }}</span>
-                    <div style="color:#334155;font-size:0.7rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ (ch.last_upload_title or '')[:40] }}</div>
+                    <a href="javascript:void(0)" onclick="showTasks({{ ch.id }}, '{{ ch.name }}')" style="color:#0ea5e9;text-decoration:none;cursor:pointer;">
+                        <span style="color:#64748b;">{{ ch.last_upload_at }}</span>
+                        <div style="color:#334155;font-size:0.7rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ (ch.last_upload_title or '')[:40] }}</div>
+                    </a>
                 {% else %}
-                    <span style="color:#94a3b8;">—</span>
+                    <a href="javascript:void(0)" onclick="showTasks({{ ch.id }}, '{{ ch.name }}')" style="color:#94a3b8;text-decoration:none;">—</a>
                 {% endif %}
             </td>
             <td>
@@ -57,6 +61,74 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
+
+<!-- Modal -->
+<div id="tasksModal" style="display:none;position:fixed;inset:0;z-index:500;align-items:center;justify-content:center;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);" onclick="if(event.target===this)closeModal()">
+    <div style="background:#fff;border-radius:16px;max-width:600px;width:calc(100% - 2rem);max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2);margin:1rem;">
+        <div style="padding:1.25rem 1.5rem;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;">
+            <h3 id="modalTitle" style="font-size:15px;font-weight:600;margin:0;"></h3>
+            <button onclick="closeModal()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#858587;padding:4px;">✕</button>
+        </div>
+        <div id="modalBody" style="padding:1rem 1.5rem;"></div>
+    </div>
+</div>
+
+<script type="application/json" id="channelTasksData">{{ channel_tasks_json|safe }}</script>
+<script>
+var _channelTasks = {};
+try { _channelTasks = JSON.parse(document.getElementById('channelTasksData').textContent); } catch(e) {}
+
+function showTasks(chId, chName) {
+    var tasks = _channelTasks[chId] || [];
+    document.getElementById('modalTitle').textContent = chName + ' — Recent Activity';
+    var body = document.getElementById('modalBody');
+
+    if (!tasks.length) {
+        body.innerHTML = '<p style="color:#858587;font-size:13px;">No tasks yet</p>';
+    } else {
+        var html = '<div style="display:flex;flex-direction:column;gap:6px;">';
+        tasks.forEach(function(t) {
+            var statusBadge = '';
+            var borderColor = 'transparent';
+            if (t.status === 1) { statusBadge = '<span style="font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(22,163,74,0.1);color:#16a34a;">Completed</span>'; borderColor = '#16a34a'; }
+            else if (t.status === 2) { statusBadge = '<span style="font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(220,38,38,0.1);color:#dc2626;">Failed</span>'; borderColor = '#dc2626'; }
+            else if (t.status === 0) { statusBadge = '<span style="font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(217,119,6,0.1);color:#d97706;">Pending</span>'; borderColor = '#d97706'; }
+            else if (t.status === 3) { statusBadge = '<span style="font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(37,99,235,0.1);color:#2563eb;">Processing</span>'; borderColor = '#2563eb'; }
+            else if (t.status === 4) { statusBadge = '<span style="font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(0,0,0,0.04);color:#64748b;">Cancelled</span>'; borderColor = '#64748b'; }
+
+            html += '<div style="padding:0.6rem 0.75rem;border:1px solid rgba(0,0,0,0.06);border-left:3px solid '+borderColor+';border-radius:8px;font-size:13px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">';
+            html += '<div style="font-weight:500;color:#1d1d1f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + (t.title || '—') + '</div>';
+            html += statusBadge;
+            html += '</div>';
+
+            var meta = [];
+            if (t.scheduled_at) meta.push('📅 ' + t.scheduled_at);
+            else if (t.completed_at) meta.push(t.completed_at);
+            if (t.completed_at && t.scheduled_at) meta.push('✓ ' + t.completed_at);
+            if (t.upload_id) meta.push('<a href="https://youtube.com/watch?v='+t.upload_id+'" target="_blank" style="color:#0ea5e9;text-decoration:none;">▶ YouTube</a>');
+            if (meta.length) html += '<div style="font-size:11px;color:#858587;margin-top:3px;">'+meta.join(' · ')+'</div>';
+
+            if (t.error && t.status === 2) html += '<div style="font-size:11px;color:#dc2626;margin-top:3px;">'+t.error+'</div>';
+
+            html += '</div>';
+        });
+        html += '</div>';
+        body.innerHTML = html;
+    }
+
+    var modal = document.getElementById('tasksModal');
+    modal.style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('tasksModal').style.display = 'none';
+}
+
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+</script>
+
 {% else %}
 <p style="color:#64748b;">No channels yet. <a href="/app/channels/add" style="color:#0ea5e9;">Add your first channel</a></p>
 {% endif %}

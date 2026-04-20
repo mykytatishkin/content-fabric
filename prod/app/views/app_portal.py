@@ -35,6 +35,20 @@ _limiter = Limiter(key_func=get_remote_address)
 _templates_dir = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_templates_dir))
 
+
+def _template_response(template: str, context: dict):
+    """Wrap TemplateResponse to inject unread notification count."""
+    user = context.get("user")
+    if user and user.get("id") and "unread_count" not in context:
+        try:
+            from shared.db.repositories import notification_repo
+            context["unread_count"] = notification_repo.count_unread(user["id"])
+        except Exception:
+            context["unread_count"] = 0
+    context.setdefault("unread_count", 0)
+    return templates.TemplateResponse(template, context)
+
+
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
@@ -56,7 +70,7 @@ async def login_page(request: Request):
     user = user_from_cookie(request)
     if user:
         return RedirectResponse("/app/", status_code=302)
-    return templates.TemplateResponse("app_login.html", {
+    return _template_response("app_login.html", {
         "request": request, "error": None,
     })
 
@@ -73,14 +87,14 @@ async def login_submit(
     user = user_repo.get_user_by_email(email)
     if not user or not verify_password(password, user["password_hash"]):
         logger.warning("Login failed: email=%s (invalid credentials)", email)
-        return templates.TemplateResponse("app_login.html", {
+        return _template_response("app_login.html", {
             "request": request, "error": "Wrong email or password",
         })
 
     # 2FA check
     if user.get("totp_enabled"):
         if not totp_code:
-            return templates.TemplateResponse("app_login.html", {
+            return _template_response("app_login.html", {
                 "request": request, "error": "2FA code required", "email": email,
             })
         import pyotp
@@ -88,7 +102,7 @@ async def login_submit(
         if not totp.verify(totp_code, valid_window=1):
             # Try backup code
             if not user_repo.consume_backup_code(user["id"], totp_code):
-                return templates.TemplateResponse("app_login.html", {
+                return _template_response("app_login.html", {
                     "request": request, "error": "Invalid 2FA code", "email": email,
                 })
 
@@ -103,7 +117,7 @@ async def register_page(request: Request):
     user = user_from_cookie(request)
     if user:
         return RedirectResponse("/app/", status_code=302)
-    return templates.TemplateResponse("app_register.html", {
+    return _template_response("app_register.html", {
         "request": request, "error": None,
     })
 
@@ -121,15 +135,15 @@ async def register_submit(
     from shared.db.repositories import user_repo
 
     if user_repo.get_user_by_email(email):
-        return templates.TemplateResponse("app_register.html", {
+        return _template_response("app_register.html", {
             "request": request, "error": "Email already registered",
         })
     if user_repo.get_user_by_username(username):
-        return templates.TemplateResponse("app_register.html", {
+        return _template_response("app_register.html", {
             "request": request, "error": "Username already taken",
         })
     if len(password) < 8:
-        return templates.TemplateResponse("app_register.html", {
+        return _template_response("app_register.html", {
             "request": request, "error": "Password must be at least 8 characters",
         })
 
@@ -225,7 +239,7 @@ async def dashboard(request: Request):
     except Exception as e:
         logger.error("Dashboard error: %s", e)
 
-    return templates.TemplateResponse("app_dashboard.html", ctx)
+    return _template_response("app_dashboard.html", ctx)
 
 
 # ── Analytics ────────────────────────────────────────────────────────
@@ -302,12 +316,68 @@ async def analytics_page(request: Request):
     import json
     chart_data = {}
     for ch_id, cs in channel_stats.items():
+        data = cs["data"]
+        dates = [str(d["snapshot_date"])[:10] for d in data]
+        subs = [d.get("subscribers") or 0 for d in data]
+        views = [d.get("views") or 0 for d in data]
+        vids = [d.get("videos") or 0 for d in data]
+        # Daily deltas
+        subs_delta = [0] + [subs[i] - subs[i-1] for i in range(1, len(subs))]
+        views_delta = [0] + [views[i] - views[i-1] for i in range(1, len(views))]
         chart_data[cs["name"]] = {
-            "dates": [str(d["snapshot_date"]) for d in cs["data"]],
-            "subscribers": [d.get("subscribers") or 0 for d in cs["data"]],
-            "views": [d.get("views") or 0 for d in cs["data"]],
-            "videos": [d.get("videos") or 0 for d in cs["data"]],
+            "dates": dates,
+            "subscribers": subs,
+            "views": views,
+            "videos": vids,
+            "subs_delta": subs_delta,
+            "views_delta": views_delta,
         }
+
+    # Build daily activity log (last 14 days of changes + uploads)
+    daily_activity = []
+    for ch in channels:
+        cs = channel_stats.get(ch["id"])
+        if not cs or len(cs["data"]) < 2:
+            continue
+        data = cs["data"]
+        for i in range(len(data) - 1, max(len(data) - 15, 0), -1):
+            cur = data[i]
+            prev = data[i - 1] if i > 0 else cur
+            s_d = (cur.get("subscribers") or 0) - (prev.get("subscribers") or 0)
+            v_d = (cur.get("views") or 0) - (prev.get("views") or 0)
+            if s_d != 0 or v_d != 0:
+                daily_activity.append({
+                    "date": str(cur["snapshot_date"])[:10],
+                    "channel": cs["name"],
+                    "channel_uuid": ch["uuid"],
+                    "subs": cur.get("subscribers") or 0,
+                    "subs_delta": s_d,
+                    "views_delta": v_d,
+                })
+    daily_activity.sort(key=lambda x: x["date"], reverse=True)
+
+    # Upload events for chart markers
+    upload_events = []
+    try:
+        with get_connection() as conn:
+            ch_ids = [ch["id"] for ch in channels]
+            if ch_ids:
+                placeholders = ",".join([str(cid) for cid in ch_ids])
+                rows = conn.execute(text(
+                    f"SELECT t.completed_at, t.title, pc.name as channel_name "
+                    f"FROM content_upload_queue_tasks t "
+                    f"INNER JOIN platform_channels pc ON t.channel_id = pc.id "
+                    f"WHERE t.channel_id IN ({placeholders}) AND t.status = 1 "
+                    f"AND t.completed_at IS NOT NULL "
+                    f"AND DATE(t.completed_at) BETWEEN :d1 AND :d2 "
+                    f"ORDER BY t.completed_at"
+                ), {"d1": date_from_str, "d2": date_to_str}).fetchall()
+                upload_events = [
+                    {"date": str(r[0])[:10], "title": r[1], "channel": r[2]}
+                    for r in rows
+                ]
+    except Exception as e:
+        logger.error("Analytics upload events error: %s", e)
 
     # Top videos by views (latest stats)
     top_videos = []
@@ -336,11 +406,14 @@ async def analytics_page(request: Request):
     except Exception as e:
         logger.error("Analytics top videos error: %s", e)
 
-    return templates.TemplateResponse("app_analytics.html", {
+    return _template_response("app_analytics.html", {
         "request": request, "user": user, "active": "analytics",
         "date_from": date_from_str, "date_to": date_to_str,
         "summary": summary, "top_videos": top_videos,
+        "daily_activity": daily_activity[:60],
+        "upload_events": upload_events,
         "chart_data_json": json.dumps(chart_data, default=str),
+        "upload_events_json": json.dumps(upload_events, default=str),
         "has_data": bool(channel_stats) or bool(top_videos),
     })
 
@@ -367,8 +440,10 @@ async def channels_page(request: Request):
                        COALESCE(ts.failed, 0) as tasks_failed,
                        COALESCE(ts.pending, 0) as tasks_pending,
                        last_t.completed_at as last_upload_at,
-                       last_t.title as last_upload_title
+                       last_t.title as last_upload_title,
+                       oc.name as console_name
                 FROM platform_channels c
+                LEFT JOIN platform_oauth_credentials oc ON oc.id = c.console_id
                 LEFT JOIN (
                     SELECT channel_id,
                            SUM(status = 1) as completed,
@@ -391,14 +466,43 @@ async def channels_page(request: Request):
                 {"id": r[0], "uuid": r[1], "name": r[2], "platform_channel_id": r[3],
                  "enabled": bool(r[4]), "created_at": r[5], "updated_at": r[6],
                  "tasks_completed": r[7], "tasks_failed": r[8], "tasks_pending": r[9],
-                 "last_upload_at": r[10], "last_upload_title": r[11]}
+                 "last_upload_at": r[10], "last_upload_title": r[11],
+                 "console_name": r[12]}
                 for r in rows
             ]
     except Exception as e:
         logger.error("Channels error: %s", e)
 
-    return templates.TemplateResponse("app_channels.html", {
+    # Recent tasks per channel (last 10 each)
+    channel_tasks = {}
+    if channels:
+        try:
+            ch_ids = ",".join(str(c["id"]) for c in channels)
+            with get_connection() as conn:
+                rows = conn.execute(text(
+                    f"SELECT t.channel_id, t.title, t.status, t.completed_at, t.error_message, t.upload_id, t.scheduled_at "
+                    f"FROM content_upload_queue_tasks t "
+                    f"WHERE t.channel_id IN ({ch_ids}) "
+                    f"ORDER BY COALESCE(t.scheduled_at, t.created_at) DESC LIMIT 200"
+                )).fetchall()
+                for r in rows:
+                    ch_id = r[0]
+                    if ch_id not in channel_tasks:
+                        channel_tasks[ch_id] = []
+                    if len(channel_tasks[ch_id]) < 10:
+                        channel_tasks[ch_id].append({
+                            "title": r[1], "status": r[2],
+                            "completed_at": str(r[3])[:16] if r[3] else None,
+                            "error": (r[4] or "")[:80], "upload_id": r[5],
+                            "scheduled_at": str(r[6])[:16] if r[6] else None,
+                        })
+        except Exception as e:
+            logger.error("Channel tasks error: %s", e)
+
+    import json
+    return _template_response("app_channels.html", {
         "request": request, "user": user, "active": "channels", "channels": channels,
+        "channel_tasks_json": json.dumps(channel_tasks, default=str),
     })
 
 
@@ -411,7 +515,7 @@ async def channel_add_page(request: Request):
     from shared.db.repositories import console_repo
     consoles = console_repo.list_consoles_brief(enabled_only=True)
 
-    return templates.TemplateResponse("app_channel_add.html", {
+    return _template_response("app_channel_add.html", {
         "request": request, "user": user, "active": "channels",
         "consoles": consoles, "error": None, "success": None,
     })
@@ -442,7 +546,7 @@ async def channel_add_submit(
 
     if channel_repo.channel_exists_by_name(name):
         ctx["error"] = f"Channel '{name}' already exists"
-        return templates.TemplateResponse("app_channel_add.html", ctx)
+        return _template_response("app_channel_add.html", ctx)
 
     project_id = channel_repo.get_default_project_id() or 1
     ch_id = channel_repo.add_channel(
@@ -455,7 +559,7 @@ async def channel_add_submit(
     )
     if not ch_id:
         ctx["error"] = "Failed to create channel (duplicate?)"
-        return templates.TemplateResponse("app_channel_add.html", ctx)
+        return _template_response("app_channel_add.html", ctx)
 
     if login_email:
         credential_repo.add_credentials(
@@ -692,7 +796,7 @@ async def reauth_page(request: Request):
     authorized_uuid = request.query_params.get("authorized")
 
     from datetime import datetime, timedelta
-    return templates.TemplateResponse("app_reauth.html", {
+    return _template_response("app_reauth.html", {
         "request": request, "user": user, "active": "reauth",
         "channels": channels, "authorized_uuid": authorized_uuid,
         "now": datetime.utcnow(),
@@ -741,7 +845,7 @@ async def totp_page(request: Request):
     success = request.query_params.get("success")
     error = request.query_params.get("error")
 
-    return templates.TemplateResponse("app_totp.html", {
+    return _template_response("app_totp.html", {
         "request": request, "user": user, "active": "totp",
         "channels": channels, "success": success, "error": error,
     })
@@ -853,7 +957,7 @@ async def channel_detail(request: Request, channel_uuid: str):
     except Exception as e:
         logger.error("Channel detail error: %s", e)
 
-    return templates.TemplateResponse("app_channel_detail.html", {
+    return _template_response("app_channel_detail.html", {
         "request": request, "user": user, "active": "channels",
         "channel": channel, "stats": stats, "recent_tasks": recent_tasks,
         "credentials": credentials, "console": console,
@@ -923,7 +1027,7 @@ async def channel_stats_page(request: Request, channel_uuid: str):
         "videos": [d.get("videos") or 0 for d in channel_data],
     }, default=str)
 
-    return templates.TemplateResponse("app_channel_stats.html", {
+    return _template_response("app_channel_stats.html", {
         "request": request, "user": user, "active": "channels",
         "channel": channel, "summary": summary,
         "date_from": date_from_str, "date_to": date_to_str,
@@ -983,7 +1087,7 @@ async def channel_edit_page(request: Request, channel_uuid: str):
     except Exception as e:
         logger.error("Channel edit load error: %s", e)
 
-    return templates.TemplateResponse("app_channel_edit.html", {
+    return _template_response("app_channel_edit.html", {
         "request": request, "user": user, "active": "channels",
         "channel": channel, "consoles": consoles, "credentials": credentials,
         "error": None, "message": None,
@@ -1095,7 +1199,7 @@ async def tasks_page(request: Request):
     except Exception as e:
         logger.error("Tasks error: %s", e)
 
-    return templates.TemplateResponse("app_tasks.html", {
+    return _template_response("app_tasks.html", {
         "request": request, "user": user, "active": "tasks",
         "tasks": tasks, "stats": stats, "channels": channels,
         "status_filter": status_filter, "channel_filter": channel_filter,
@@ -1122,7 +1226,7 @@ async def task_new_page(request: Request):
     except Exception as e:
         logger.error("Task new error: %s", e)
 
-    return templates.TemplateResponse("app_task_new.html", {
+    return _template_response("app_task_new.html", {
         "request": request, "user": user, "active": "tasks",
         "channels": channels, "error": None,
     })
@@ -1269,7 +1373,7 @@ async def task_detail(request: Request, task_uuid: str):
                 for s in video_stats
             ], default=str)
 
-    return templates.TemplateResponse("app_task_detail.html", {
+    return _template_response("app_task_detail.html", {
         "request": request, "user": user, "active": "tasks",
         "task": task, "error": None, "message": None,
         "video_stats": video_stats,
@@ -1335,7 +1439,7 @@ async def templates_page(request: Request):
     except Exception as e:
         logger.error("Templates error: %s", e)
 
-    return templates.TemplateResponse("app_templates.html", {
+    return _template_response("app_templates.html", {
         "request": request, "user": user, "active": "templates", "templates_list": tpls,
     })
 
@@ -1346,7 +1450,7 @@ async def template_new_page(request: Request):
     if redirect:
         return redirect
 
-    return templates.TemplateResponse("app_template_new.html", {
+    return _template_response("app_template_new.html", {
         "request": request, "user": user, "active": "templates", "error": None,
     })
 
@@ -1408,7 +1512,7 @@ async def template_detail(request: Request, template_uuid: str):
     day_names = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday",
                  4: "Friday", 5: "Saturday", 6: "Sunday"}
 
-    return templates.TemplateResponse("app_template_detail.html", {
+    return _template_response("app_template_detail.html", {
         "request": request, "user": user, "active": "templates",
         "template": tpl, "slots": slots, "channels": channels,
         "day_names": day_names, "error": None, "message": None,
@@ -1475,6 +1579,57 @@ async def template_delete(request: Request, template_uuid: str):
     return RedirectResponse("/app/templates", status_code=302)
 
 
+# ── Notifications ─────────────────────────────────────────────────────
+
+@router.get("/notifications", response_class=HTMLResponse)
+async def notifications_page(request: Request):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import notification_repo
+    items = notification_repo.get_notifications(user["id"], limit=200)
+    unread = notification_repo.count_unread(user["id"])
+
+    return _template_response("app_notifications.html", {
+        "request": request, "user": user, "active": "notifications",
+        "notifications": items, "unread_count": unread,
+    })
+
+
+@router.post("/notifications/read-all", response_class=HTMLResponse)
+async def notifications_read_all(request: Request):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import notification_repo
+    notification_repo.mark_all_read(user["id"])
+    return RedirectResponse("/app/notifications", status_code=302)
+
+
+@router.post("/notifications/{nid}/read", response_class=HTMLResponse)
+async def notification_mark_read(request: Request, nid: int):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import notification_repo
+    notification_repo.mark_read(nid, user["id"])
+    return RedirectResponse("/app/notifications", status_code=302)
+
+
+@router.post("/notifications/{nid}/delete", response_class=HTMLResponse)
+async def notification_delete(request: Request, nid: int):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    from shared.db.repositories import notification_repo
+    notification_repo.delete(nid, user["id"])
+    return RedirectResponse("/app/notifications", status_code=302)
+
+
 # ── Settings ─────────────────────────────────────────────────────────
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -1483,7 +1638,7 @@ async def settings_page(request: Request):
     if redirect:
         return redirect
 
-    return templates.TemplateResponse("app_settings.html", {
+    return _template_response("app_settings.html", {
         "request": request, "user": user, "active": "settings",
         "message": None, "error": None, "totp_uri": None, "backup_codes": None,
     })
@@ -1503,7 +1658,7 @@ async def settings_update_profile(
     user_repo.update_profile(user["id"], display_name=display_name or None, timezone=timezone or None)
     user = user_repo.get_user_by_id(user["id"])
 
-    return templates.TemplateResponse("app_settings.html", {
+    return _template_response("app_settings.html", {
         "request": request, "user": user, "active": "settings",
         "message": "Profile updated successfully", "error": None,
         "totp_uri": None, "backup_codes": None,
@@ -1517,7 +1672,7 @@ async def settings_2fa_setup(request: Request):
         return redirect
 
     if user.get("totp_enabled"):
-        return templates.TemplateResponse("app_settings.html", {
+        return _template_response("app_settings.html", {
             "request": request, "user": user, "active": "settings",
             "message": None, "error": "2FA is already enabled",
             "totp_uri": None, "backup_codes": None,
@@ -1532,7 +1687,7 @@ async def settings_2fa_setup(request: Request):
         name=user["email"], issuer_name="Content Fabric",
     )
 
-    return templates.TemplateResponse("app_settings.html", {
+    return _template_response("app_settings.html", {
         "request": request, "user": user, "active": "settings",
         "message": None, "error": None,
         "totp_uri": totp_uri, "totp_secret": secret, "backup_codes": None,
@@ -1554,7 +1709,7 @@ async def settings_2fa_verify(
 
     user = user_repo.get_user_by_id(user["id"])
     if not user.get("totp_secret"):
-        return templates.TemplateResponse("app_settings.html", {
+        return _template_response("app_settings.html", {
             "request": request, "user": user, "active": "settings",
             "message": None, "error": "Run setup first",
             "totp_uri": None, "backup_codes": None,
@@ -1563,7 +1718,7 @@ async def settings_2fa_verify(
     totp = pyotp.TOTP(user["totp_secret"])
     if not totp.verify(totp_code, valid_window=1):
         totp_uri = totp.provisioning_uri(name=user["email"], issuer_name="Content Fabric")
-        return templates.TemplateResponse("app_settings.html", {
+        return _template_response("app_settings.html", {
             "request": request, "user": user, "active": "settings",
             "message": None, "error": "Invalid code, try again",
             "totp_uri": totp_uri, "totp_secret": user["totp_secret"], "backup_codes": None,
@@ -1573,7 +1728,7 @@ async def settings_2fa_verify(
     user_repo.enable_totp(user["id"], backup_codes)
     user = user_repo.get_user_by_id(user["id"])
 
-    return templates.TemplateResponse("app_settings.html", {
+    return _template_response("app_settings.html", {
         "request": request, "user": user, "active": "settings",
         "message": "2FA enabled successfully! Save your backup codes.",
         "error": None, "totp_uri": None, "backup_codes": backup_codes,
@@ -1590,7 +1745,7 @@ async def settings_2fa_disable(
         return redirect
 
     if not verify_password(password, user["password_hash"]):
-        return templates.TemplateResponse("app_settings.html", {
+        return _template_response("app_settings.html", {
             "request": request, "user": user, "active": "settings",
             "message": None, "error": "Wrong password",
             "totp_uri": None, "backup_codes": None,
@@ -1600,7 +1755,7 @@ async def settings_2fa_disable(
     user_repo.disable_totp(user["id"])
     user = user_repo.get_user_by_id(user["id"])
 
-    return templates.TemplateResponse("app_settings.html", {
+    return _template_response("app_settings.html", {
         "request": request, "user": user, "active": "settings",
         "message": "2FA disabled", "error": None,
         "totp_uri": None, "backup_codes": None,
@@ -1625,21 +1780,127 @@ async def settings_change_password(
 
     if not verify_password(current_password, user["password_hash"]):
         ctx["error"] = "Current password is incorrect"
-        return templates.TemplateResponse("app_settings.html", ctx)
+        return _template_response("app_settings.html", ctx)
 
     if len(new_password) < 8:
         ctx["error"] = "New password must be at least 8 characters"
-        return templates.TemplateResponse("app_settings.html", ctx)
+        return _template_response("app_settings.html", ctx)
 
     if new_password != confirm_password:
         ctx["error"] = "Passwords do not match"
-        return templates.TemplateResponse("app_settings.html", ctx)
+        return _template_response("app_settings.html", ctx)
 
     from shared.db.repositories import user_repo
     user_repo.change_password(user["id"], hash_password(new_password))
 
     ctx["message"] = "Password changed successfully"
-    return templates.TemplateResponse("app_settings.html", ctx)
+    return _template_response("app_settings.html", ctx)
+
+
+@router.post("/settings/email", response_class=HTMLResponse)
+async def settings_change_email(
+    request: Request,
+    new_email: str = Form(...),
+    password: str = Form(...),
+):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    ctx = {
+        "request": request, "user": user, "active": "settings",
+        "message": None, "error": None, "totp_uri": None, "backup_codes": None,
+    }
+
+    if not verify_password(password, user["password_hash"]):
+        ctx["error"] = "Wrong password"
+        return _template_response("app_settings.html", ctx)
+
+    new_email = new_email.strip().lower()
+    if not new_email or "@" not in new_email:
+        ctx["error"] = "Invalid email"
+        return _template_response("app_settings.html", ctx)
+
+    from shared.db.repositories import user_repo
+    existing = user_repo.get_user_by_email(new_email)
+    if existing and existing["id"] != user["id"]:
+        ctx["error"] = "Email already taken"
+        return _template_response("app_settings.html", ctx)
+
+    user_repo.update_email(user["id"], new_email)
+    user = user_repo.get_user_by_id(user["id"])
+    ctx["user"] = user
+    ctx["message"] = "Email updated"
+    return _template_response("app_settings.html", ctx)
+
+
+@router.post("/settings/username", response_class=HTMLResponse)
+async def settings_change_username(
+    request: Request,
+    new_username: str = Form(...),
+    password: str = Form(...),
+):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    ctx = {
+        "request": request, "user": user, "active": "settings",
+        "message": None, "error": None, "totp_uri": None, "backup_codes": None,
+    }
+
+    if not verify_password(password, user["password_hash"]):
+        ctx["error"] = "Wrong password"
+        return _template_response("app_settings.html", ctx)
+
+    import re
+    new_username = new_username.strip()
+    if not re.match(r'^[a-zA-Z0-9_]{3,30}$', new_username):
+        ctx["error"] = "Username: 3-30 chars, letters/digits/underscore only"
+        return _template_response("app_settings.html", ctx)
+
+    from shared.db.repositories import user_repo
+    existing = user_repo.get_user_by_username(new_username)
+    if existing and existing["id"] != user["id"]:
+        ctx["error"] = "Username already taken"
+        return _template_response("app_settings.html", ctx)
+
+    user_repo.update_username(user["id"], new_username)
+    user = user_repo.get_user_by_id(user["id"])
+    ctx["user"] = user
+    ctx["message"] = "Username updated"
+    return _template_response("app_settings.html", ctx)
+
+
+@router.post("/settings/delete-account", response_class=HTMLResponse)
+async def settings_delete_account(
+    request: Request,
+    password: str = Form(...),
+    confirm_text: str = Form(...),
+):
+    user, redirect = require_user(request)
+    if redirect:
+        return redirect
+
+    ctx = {
+        "request": request, "user": user, "active": "settings",
+        "message": None, "error": None, "totp_uri": None, "backup_codes": None,
+    }
+
+    if confirm_text.strip() != "DELETE":
+        ctx["error"] = "Type DELETE to confirm"
+        return _template_response("app_settings.html", ctx)
+
+    if not verify_password(password, user["password_hash"]):
+        ctx["error"] = "Wrong password"
+        return _template_response("app_settings.html", ctx)
+
+    from shared.db.repositories import user_repo
+    user_repo.delete_user(user["id"])
+
+    response = RedirectResponse("/app/login", status_code=302)
+    response.delete_cookie("cff_token")
+    return response
 
 
 # ── File Upload (portal) ────────────────────────────────────────────
@@ -1745,7 +2006,7 @@ async def voice_page(request: Request):
         reverse=True,
     )
 
-    return templates.TemplateResponse("app_voice.html", {
+    return _template_response("app_voice.html", {
         "request": request, "user": user, "active": "voice",
         "jobs": user_jobs, "error": None, "message": None,
     })

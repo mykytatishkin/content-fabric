@@ -220,12 +220,38 @@ def mark_task_completed(task_id: int, upload_id: str | None = None) -> bool:
             "upload_id": upload_id,
             "tid": task_id,
         })
-        return result.rowcount > 0
+        ok = result.rowcount > 0
+    if ok:
+        _notify_task(task_id, "task", "Task completed", upload_id)
+    return ok
 
 
 def mark_task_failed(task_id: int, error_message: str | None = None) -> bool:
     logger.warning("Marking task %s failed: %s", task_id, truncate_error(error_message) or "no message")
-    return update_task_status(task_id, TaskStatus.FAILED.value, error_message=error_message)
+    ok = update_task_status(task_id, TaskStatus.FAILED.value, error_message=error_message)
+    if ok:
+        _notify_task(task_id, "error", "Task failed", error_msg=error_message)
+    return ok
+
+
+def _notify_task(task_id: int, ntype: str, prefix: str, upload_id: str | None = None, error_msg: str | None = None):
+    """Create a notification for the task owner."""
+    try:
+        from shared.db.repositories import notification_repo
+        task = get_task(task_id)
+        if not task or not task.get("created_by"):
+            return
+        title_text = (task.get("title") or f"Task #{task_id}")[:80]
+        channel = task.get("channel_name") or ""
+        title = f"{prefix}: {title_text}"
+        msg = f"Channel: {channel}" if channel else ""
+        if upload_id:
+            msg += f"\nYouTube: https://youtube.com/watch?v={upload_id}"
+        if error_msg:
+            msg += f"\nError: {str(error_msg)[:200]}"
+        notification_repo.create(task["created_by"], ntype, title, msg or None)
+    except Exception as e:
+        logger.debug("Failed to create task notification: %s", e)
 
 
 def update_task_upload_id(task_id: int, upload_id: str) -> bool:
