@@ -20,7 +20,7 @@ class AudioBackgroundMixer:
     Separates voice from background and mixes processed voice with original background
     """
     
-    def __init__(self, model_name: str = 'UVR-MDX-NET-Inst_HQ_3'):
+    def __init__(self, model_name: str = 'UVR-MDX-NET-Inst_HQ_3.onnx'):
         """
         Initialize Audio Background Mixer
         
@@ -70,15 +70,17 @@ class AudioBackgroundMixer:
             self.separator.load_model(model_filename=self.model_name)
         except Exception as e:
             logger.warning(f"Could not load model {self.model_name}: {e}")
-            logger.info("Trying to download model...")
-            # Try with .pth extension
-            if not self.model_name.endswith('.pth'):
+            # Add .onnx extension if missing
+            if not self.model_name.endswith('.onnx'):
                 try:
-                    self.separator.load_model(model_filename=f"{self.model_name}.pth")
-                except:
-                    # Try alternative model names
-                    logger.info("Using default model: UVR_MDXNET_KARA_2.onnx")
+                    logger.info(f"Trying with .onnx extension: {self.model_name}.onnx")
+                    self.separator.load_model(model_filename=f"{self.model_name}.onnx")
+                except Exception:
+                    logger.info("Falling back to UVR_MDXNET_KARA_2.onnx")
                     self.separator.load_model(model_filename="UVR_MDXNET_KARA_2.onnx")
+            else:
+                logger.info("Falling back to UVR_MDXNET_KARA_2.onnx")
+                self.separator.load_model(model_filename="UVR_MDXNET_KARA_2.onnx")
         
         # Separate (audio-separator 0.39.0 API)
         output_files = self.separator.separate(input_file)
@@ -243,7 +245,7 @@ class AudioBackgroundMixer:
 def get_available_models():
     """Get list of available separation models"""
     return {
-        'UVR-MDX-NET-Inst_HQ_3': {
+        'UVR-MDX-NET-Inst_HQ_3.onnx': {
             'description': 'Лучшее качество (рекомендуется)',
             'quality': 'Excellent',
             'speed': 'Slow'
