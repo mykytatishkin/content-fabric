@@ -24,19 +24,39 @@ class DleIngestionPipeline:
         
         Returns the number of tasks created.
         """
-        posts = self.client.fetch_recent_posts(limit=limit)
+        logger.info("[DLE PIPELINE] Starting ingestion: source=%s, channel=%d, limit=%d, media=%s", 
+                    self.source_slug, channel_id, limit, media_type)
+        
+        try:
+            posts = self.client.fetch_recent_posts(limit=limit)
+            logger.debug("[DLE PIPELINE] Fetched %d posts from %s", len(posts), self.source_slug)
+        except Exception as e:
+            logger.error("[DLE PIPELINE] CRITICAL: Failed to fetch posts from %s: %s", self.source_slug, e)
+            return 0
         
         count = 0
-        for post in posts:
-            if self._is_already_processed(post["id"]):
-                logger.info("Post %d from %s already processed, skipping", post["id"], self.source_slug)
+        for i, post in enumerate(posts):
+            post_id = post.get("id")
+            title = post.get("title")
+            logger.debug("[DLE PIPELINE] Processing post [%d/%d]: ID=%s, Title='%s'", 
+                         i+1, len(posts), post_id, title)
+            
+            if self._is_already_processed(post_id):
+                logger.info("[DLE PIPELINE] SKIP: Post %s already exists in CFF tasks", post_id)
                 continue
             
-            # Create CFF task
-            task_id = self._create_cff_task(post, channel_id, media_type)
-            if task_id:
-                count += 1
+            logger.info("[DLE PIPELINE] NEW POST detected: ID=%s. Creating CFF task...", post_id)
+            try:
+                task_id = self._create_cff_task(post, channel_id, media_type)
+                if task_id:
+                    count += 1
+                    logger.info("[DLE PIPELINE] SUCCESS: Task %d created for post %s", task_id, post_id)
+                else:
+                    logger.warning("[DLE PIPELINE] FAILED to create task for post %s", post_id)
+            except Exception as e:
+                logger.exception("[DLE PIPELINE] EXCEPTION during task creation for post %s: %s", post_id, e)
                 
+        logger.info("[DLE PIPELINE] Ingestion complete: %s -> %d tasks created", self.source_slug, count)
         return count
 
     def _is_already_processed(self, dle_post_id: int) -> bool:

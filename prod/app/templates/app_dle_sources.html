@@ -1,0 +1,46 @@
+{% extends "app_base.html" %}
+{% block title %}DLE Sources — aiyoutube{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>DLE Content Sources ({{ sources|length }})</h2>
+</div>
+
+{% if sources %}
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>Source Slug</th>
+            <th>Database Connection</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in sources %}
+        <tr>
+            <td><strong>{{ s.slug }}</strong></td>
+            <td><code>{{ s.dsn }}</code></td>
+            <td><span class="badge badge-green">Connected</span></td>
+            <td>
+                <div style="display:flex;gap:4px;">
+                    <button class="btn btn-primary btn-sm" onclick="runIngestion('{{ s.slug }}')">Run Now</button>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<script>
+function runIngestion(slug) {
+    if (!confirm('Start ingestion from ' + slug + '?')) return;
+    alert('Ingestion triggered for ' + slug + '. (API integration pending)');
+}
+</script>
+
+{% else %}
+<p style="color:#64748b;">No DLE sources configured in .env.dle.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "app_base.html" %}
+{% block title %}Live Streams — aiyoutube{% endblock %}
+{% block content %}
+<div class="header-row">
+    <h2>Live Streams ({{ streams|length }})</h2>
+</div>
+
+{% if streams %}
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Channel</th>
+            <th>Stream Key</th>
+            <th>Systemd Unit</th>
+            <th>Status</th>
+            <th>Last Start</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in streams %}
+        <tr>
+            <td>{{ s.id }}</td>
+            <td>Channel #{{ s.channel_id }}</td>
+            <td><code>{{ s.key }}</code></td>
+            <td><span class="badge badge-gray">{{ s.unit_name }}</span></td>
+            <td>
+                {% if s.status == 'active' %}
+                    <span class="badge badge-green">Running</span>
+                {% elif s.status == 'inactive' %}
+                    <span class="badge badge-gray">Stopped</span>
+                {% elif s.status == 'failed' %}
+                    <span class="badge badge-red">Failed</span>
+                {% else %}
+                    <span class="badge badge-gray">{{ s.status }}</span>
+                {% endif %}
+            </td>
+            <td>{{ s.last_start_at or '—' }}</td>
+            <td>
+                <div style="display:flex;gap:4px;">
+                    <button class="btn btn-primary btn-sm" onclick="streamAction({{ s.id }}, 'start')">Start</button>
+                    <button class="btn btn-danger btn-sm" onclick="streamAction({{ s.id }}, 'stop')">Stop</button>
+                    <button class="btn btn-warning btn-sm" onclick="streamAction({{ s.id }}, 'restart')">Restart</button>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<script>
+async function streamAction(id, action) {
+    if (!confirm('Are you sure you want to ' + action + ' stream #' + id + '?')) return;
+    
+    // In a real implementation, this would call an API endpoint
+    // For now, it's a placeholder for the integrated UI
+    alert('Action ' + action + ' triggered for stream ' + id + '. (API endpoint integration pending)');
+}
+</script>
+
+{% else %}
+<p style="color:#64748b;">No stream configurations found.</p>
+{% endif %}
+{% endblock %}

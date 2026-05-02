@@ -321,7 +321,12 @@ async def health_page(request: Request):
     services = []
     try:
         import subprocess
-        for svc_name in ["cff-api", "cff-scheduler", "cff-publishing-worker", "cff-notification-worker", "cff-voice-worker"]:
+        for svc_name in [
+            "cff-api", "cff-scheduler", "cff-publishing-worker", 
+            "cff-notification-worker", "cff-voice-worker",
+            "cff-dle-ingestion-worker", "cff-shorts-worker",
+            "cff-stats-worker", "cff-stream-control-worker"
+        ]:
             try:
                 result = subprocess.run(
                     ["systemctl", "show", svc_name, "--property=ActiveState,MemoryCurrent,ExecMainStartTimestamp"],
@@ -367,6 +372,8 @@ async def logs_page(request: Request):
     available_services = [
         "cff-api", "cff-scheduler", "cff-publishing-worker",
         "cff-notification-worker", "cff-voice-worker",
+        "cff-dle-ingestion-worker", "cff-shorts-worker",
+        "cff-stats-worker", "cff-stream-control-worker"
     ]
 
     service = request.query_params.get("service", "cff-api")
@@ -408,6 +415,102 @@ async def logs_page(request: Request):
         "lines": lines,
         "error_count": error_count,
         "warning_count": warning_count,
+    })
+
+
+# ── Streams ───────────────────────────────────────────────────────
+
+@router.get("/streams", response_class=HTMLResponse)
+async def streams_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+    import subprocess
+
+    streams = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT id, channel_id, stream_key, is_active, last_start_at
+                FROM live_stream_configurations ORDER BY id
+            """)).fetchall()
+            
+            for r in rows:
+                sid, cid, key, active, last_start = r
+                unit_name = f"stream-{sid}" # Simplified unit mapping
+                
+                # Check status via systemctl
+                status = "unknown"
+                try:
+                    res = subprocess.run(["systemctl", "is-active", unit_name], capture_output=True, text=True)
+                    status = res.stdout.strip()
+                except:
+                    pass
+                
+                streams.append({
+                    "id": sid, "channel_id": cid, "key": key[:8] + "...", 
+                    "is_active": active, "last_start_at": last_start,
+                    "status": status, "unit_name": unit_name
+                })
+    except Exception as e:
+        logger.error("Streams page error: %s", e)
+
+    return templates.TemplateResponse("app_streams.html", {
+        "request": request, "active": "streams", "streams": streams,
+    })
+
+
+# ── DLE Sources ───────────────────────────────────────────────────
+
+@router.get("/dle-sources", response_class=HTMLResponse)
+async def dle_sources_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from app.core.config import dle_settings
+    sources = []
+    for slug, dsn in dle_settings.all_sources().items():
+        # Mask password in DSN
+        masked_dsn = dsn.split("@")[1] if "@" in dsn else dsn
+        sources.append({"slug": slug, "dsn": masked_dsn})
+
+    return templates.TemplateResponse("app_dle_sources.html", {
+        "request": request, "active": "dle_sources", "sources": sources,
+    })
+
+
+# ── Stats ─────────────────────────────────────────────────────────
+
+@router.get("/stats", response_class=HTMLResponse)
+async def stats_overview_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    stats = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT recorded_at, SUM(subscribers), SUM(views), SUM(videos)
+                FROM channel_daily_statistics
+                GROUP BY recorded_at ORDER BY recorded_at DESC LIMIT 30
+            """)).fetchall()
+            stats = [
+                {"date": r[0], "subscribers": r[1], "views": r[2], "videos": r[3]}
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("Stats page error: %s", e)
+
+    return templates.TemplateResponse("app_stats_overview.html", {
+        "request": request, "active": "stats", "stats": stats,
     })
 
 

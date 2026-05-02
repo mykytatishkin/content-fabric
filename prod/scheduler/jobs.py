@@ -28,14 +28,20 @@ def enqueue_pending_tasks() -> int:
 
     Returns the number of tasks enqueued.
     """
+    logger.debug("[SCHEDULER] Polling for pending tasks...")
     tasks = task_repo.get_pending_tasks(limit=50)
     if not tasks:
-        logger.info("Poll: 0 pending tasks")
+        logger.debug("[SCHEDULER] 0 pending tasks found")
         return 0
-    logger.info("Found %d pending tasks to enqueue", len(tasks))
+    
+    logger.info("[SCHEDULER] Found %d pending tasks to enqueue", len(tasks))
 
     count = 0
     for t in tasks:
+        task_id = t.get("id")
+        channel_id = t.get("channel_id")
+        media_type = t.get("media_type")
+        
         try:
             # Routing logic:
             # 1. If source_file_path is empty but it's a DLE task -> route to voice/processing
@@ -44,39 +50,45 @@ def enqueue_pending_tasks() -> int:
             legacy = t.get("legacy_add_info") or {}
             is_dle = isinstance(legacy, dict) and "dle_source" in legacy
             
-            if not t["source_file_path"] and is_dle:
-                logger.info("Routing DLE task %d to voice processing", t["id"])
-                task_repo.mark_task_processing(t["id"])
+            logger.debug("[SCHEDULER] Evaluating task %d (channel=%d, media=%s, is_dle=%s)", 
+                         task_id, channel_id, media_type, is_dle)
+            
+            if not t.get("source_file_path") and is_dle:
+                logger.info("[SCHEDULER] ROUTING: DLE task %d -> [VOICE/PROCESSING QUEUE]", task_id)
+                task_repo.mark_task_processing(task_id)
                 enqueue_voice_change(VoiceChangePayload(
-                    task_id=t["id"],
+                    task_id=task_id,
                     source_file_path="",  # Worker will download based on legacy_add_info
                     output_file_path="",  # Worker will decide output path
                     metadata={"is_dle": True}
                 ))
                 count += 1
+                logger.debug("[SCHEDULER] Task %d enqueued to voice queue", task_id)
                 continue
 
-            # Mark as processing to prevent double-pickup
-            task_repo.mark_task_processing(t["id"])
-
+            # Standard upload path
+            logger.info("[SCHEDULER] ROUTING: Task %d -> [PUBLISHING QUEUE]", task_id)
+            task_repo.mark_task_processing(task_id)
             enqueue_video_upload(VideoUploadPayload(
-                task_id=t["id"],
-                channel_id=t["channel_id"],
+                task_id=task_id,
+                channel_id=channel_id,
                 source_file_path=t["source_file_path"] or "",
                 title=t["title"] or "",
                 description=t.get("description"),
                 keywords=t.get("keywords"),
                 thumbnail_path=t.get("thumbnail_path"),
                 post_comment=t.get("post_comment"),
-                media_type=t.get("media_type", "video"),
+                media_type=media_type or "video",
             ))
             count += 1
-            logger.info("Enqueued task %d for channel %d", t["id"], t["channel_id"])
-        except Exception:
-            logger.exception("Failed to enqueue task %d", t["id"])
+            logger.info("[SCHEDULER] SUCCESS: Task %d enqueued for channel %d", task_id, channel_id)
+        except Exception as e:
+            logger.error("[SCHEDULER] FAILED to enqueue task %d: %s", task_id, e)
             # Reset back to pending so it can be retried
-            task_repo.update_task_status(t["id"], TaskStatus.PENDING.value)
+            task_repo.update_task_status(task_id, TaskStatus.PENDING.value)
 
+    if count > 0:
+        logger.info("[SCHEDULER] Evaluation complete: %d tasks successfully routed", count)
     return count
 
 

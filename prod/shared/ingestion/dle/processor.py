@@ -28,46 +28,61 @@ class DleProcessor:
         source_slug = legacy.get("dle_source")
         dle_id = legacy.get("dle_post_id")
         
-        logger.info("Processing DLE task %d (source: %s, ID: %d)", task["id"], source_slug, dle_id)
+        logger.info("[DLE PROCESSOR] STARTING processing for task=%d. Source=%s, DLE_ID=%s", 
+                    task["id"], source_slug, dle_id)
         
         # 1. Prepare directory
         task_dir = os.path.join(self.work_dir, f"task_{task['id']}")
         os.makedirs(task_dir, exist_ok=True)
+        logger.debug("[DLE PROCESSOR] Work directory created: %s", task_dir)
         
         try:
             # 2. Download assets (cover, audio)
-            # This logic depends on the source site.
-            # For simplicity, we implement a generic one for now.
             cover_url = normalized.get("cover")
             if cover_url:
+                logger.info("[DLE PROCESSOR] Downloading cover from: %s", cover_url)
                 cover_path = self._download_file(cover_url, os.path.join(task_dir, "cover.jpg"))
+                if cover_path:
+                    logger.debug("[DLE PROCESSOR] Cover saved to: %s", cover_path)
+                else:
+                    logger.warning("[DLE PROCESSOR] Cover download failed for task=%d", task["id"])
             else:
+                logger.debug("[DLE PROCESSOR] No cover URL provided, skipping download")
                 cover_path = None
                 
             # 3. Create YouTube Image
             image_path = os.path.join(task_dir, "youtube_image.jpg")
+            logger.info("[DLE PROCESSOR] Generating YouTube background image for task=%d", task["id"])
             if not self._create_youtube_image(image_path, cover_path, normalized.get("book_name"), normalized.get("author")):
+                logger.error("[DLE PROCESSOR] FAILED to generate YouTube image for task=%d", task["id"])
                 raise Exception("Failed to create YouTube image")
+            logger.debug("[DLE PROCESSOR] YouTube image generated: %s", image_path)
                 
-            # 4. Get Audio (either download MP3 or generate TTS from annotation)
-            # Based on Yii2 controllers, some use TTS, some download.
+            # 4. Get Audio
             audio_path = os.path.join(task_dir, "source_audio.mp3")
+            logger.info("[DLE PROCESSOR] Preparing audio track for task=%d", task["id"])
             # TODO: Add logic to find and download MP3 or generate TTS
             # For now, let's assume we have a placeholder audio or use TTS if available
             
             # 5. Voice Change (if needed)
             processed_audio = os.path.join(task_dir, "processed_audio.mp3")
+            logger.info("[DLE PROCESSOR] Starting voice conversion (RVC/Silero) for task=%d", task["id"])
+            logger.debug("[DLE PROCESSOR] Conversion: %s -> %s", audio_path, processed_audio)
             process_voice_change(audio_path, processed_audio, preserve_background=True)
+            logger.info("[DLE PROCESSOR] Voice conversion SUCCESSFUL for task=%d", task["id"])
             
             # 6. Create Video
             output_video = os.path.join(task_dir, "final_video.mp4")
+            logger.info("[DLE PROCESSOR] Assembling final video with FFmpeg for task=%d", task["id"])
             if not self._assemble_video(image_path, processed_audio, output_video):
+                logger.error("[DLE PROCESSOR] FAILED to assemble final video for task=%d", task["id"])
                 raise Exception("Failed to assemble final video")
                 
+            logger.info("[DLE PROCESSOR] COMPLETED task=%d. Final file: %s", task["id"], output_video)
             return output_video
             
         except Exception as e:
-            logger.error("DLE processing failed: %s", e)
+            logger.exception("[DLE PROCESSOR] CRITICAL ERROR processing task=%d: %s", task["id"], e)
             return None
 
     def _download_file(self, url: str, path: str) -> str | None:

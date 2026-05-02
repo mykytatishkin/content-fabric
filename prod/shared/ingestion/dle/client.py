@@ -28,6 +28,8 @@ class DleClient:
 
     def fetch_recent_posts(self, limit: int = 10, offset: int = 0) -> list[dict[str, Any]]:
         """Fetch recent approved posts from dle_post."""
+        logger.info("[DLE CLIENT] Fetching posts from %s. Limit=%d, Offset=%d", self.source_slug, limit, offset)
+        
         query = text("""
             SELECT id, title, short_story, full_story, xfields, date, category, alt_name
             FROM dle_post
@@ -39,14 +41,26 @@ class DleClient:
         posts = []
         try:
             with self.get_engine().connect() as conn:
+                logger.debug("[DLE CLIENT] Executing query on %s", self.source_slug)
                 result = conn.execute(query, {"limit": limit, "offset": offset})
                 for row in result:
                     post = dict(row._mapping)
-                    post["xfields_parsed"] = parse_xfields(post["xfields"])
+                    logger.debug("[DLE CLIENT] Raw post fetched: ID=%s, Title='%s'", post.get("id"), post.get("title"))
+                    
+                    # Parse xfields
+                    xfields_raw = post.get("xfields")
+                    post["xfields_parsed"] = parse_xfields(xfields_raw)
+                    logger.debug("[DLE CLIENT] Parsed xfields for ID=%s: %d keys", post.get("id"), len(post["xfields_parsed"]))
+                    
+                    # Normalize
                     post["normalized"] = get_normalized_fields(post["xfields_parsed"], self.source_slug)
+                    logger.debug("[DLE CLIENT] Normalized fields for ID=%s: author=%s, cover=%s", 
+                                 post.get("id"), post["normalized"].get("author"), post["normalized"].get("cover"))
+                    
                     posts.append(post)
+            logger.info("[DLE CLIENT] SUCCESS: Fetched %d posts from %s", len(posts), self.source_slug)
         except Exception as e:
-            logger.error("Failed to fetch posts from %s: %s", self.source_slug, e)
+            logger.error("[DLE CLIENT] ERROR fetching posts from %s: %s", self.source_slug, e)
             
         return posts
 
