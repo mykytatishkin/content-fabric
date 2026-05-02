@@ -54,10 +54,29 @@ def find_highlights(transcript_json: dict[str, Any], limit: int = 5) -> list[dic
         
         content = response.choices[0].message.content
         data = json.loads(content)
-        # Handle different possible JSON structures from GPT
-        highlights = data.get("highlights") or data.get("segments") or list(data.values())[0]
+        
+        # GPT might return {"highlights": [...]} or just [...]
+        # response_format="json_object" usually forces a root object.
+        highlights = None
+        if isinstance(data, list):
+            highlights = data
+        elif isinstance(data, dict):
+            # Try to find a list within the dict
+            for key in ["highlights", "segments", "items", "clips"]:
+                if isinstance(data.get(key), list):
+                    highlights = data[key]
+                    break
+            if highlights is None:
+                # If no list found, maybe the dict itself is the result wrapped in a key
+                # or it's a single item.
+                vals = list(data.values())
+                if vals and isinstance(vals[0], list):
+                    highlights = vals[0]
+                else:
+                    highlights = [data]
+        
         if not isinstance(highlights, list):
-            highlights = [highlights]
+            return []
             
         return highlights[:limit]
     except Exception as e:
