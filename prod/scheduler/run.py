@@ -9,7 +9,13 @@ from datetime import date
 
 import shared.env  # noqa: F401 — load .env files before anything else
 
-from scheduler.jobs import enqueue_pending_tasks, validate_channel_tokens, collect_channel_stats, collect_video_stats
+from scheduler.jobs import (
+    enqueue_pending_tasks,
+    validate_channel_tokens,
+    collect_channel_stats,
+    collect_video_stats,
+    run_periodic_yii_jobs,
+)
 from shared.logging_config import setup_logging
 
 POLL_INTERVAL = 60  # seconds
@@ -41,6 +47,12 @@ def main() -> None:
                 logger.info("Enqueued %d task(s) this cycle", count)
         except Exception:
             logger.exception("Scheduler cycle failed")
+
+        # Yii cron-эмулятор — проверяет HH:MM расписание ингестий
+        try:
+            run_periodic_yii_jobs()
+        except Exception:
+            logger.exception("Yii periodic jobs failed")
 
         # Daily token validation — run once per calendar day
         today = date.today()

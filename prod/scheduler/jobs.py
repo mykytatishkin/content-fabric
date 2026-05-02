@@ -6,8 +6,18 @@ import logging
 
 from shared.db.models import TaskStatus
 from shared.db.repositories import task_repo, channel_repo, console_repo, stats_repo
-from shared.queue.publisher import enqueue_video_upload
-from shared.queue.types import VideoUploadPayload
+from shared.queue.publisher import (
+    enqueue_video_upload,
+    enqueue_dle_ingestion,
+    enqueue_shorts,
+    enqueue_voice_change,
+)
+from shared.queue.types import (
+    VideoUploadPayload,
+    DleIngestionPayload,
+    ShortsPayload,
+    VoiceChangePayload,
+)
 from shared.youtube.token_refresh import build_credentials, ensure_fresh_credentials
 
 logger = logging.getLogger(__name__)
@@ -27,6 +37,25 @@ def enqueue_pending_tasks() -> int:
     count = 0
     for t in tasks:
         try:
+            # Routing logic:
+            # 1. If source_file_path is empty but it's a DLE task -> route to voice/processing
+            # 2. Otherwise -> route to publishing
+            
+            legacy = t.get("legacy_add_info") or {}
+            is_dle = isinstance(legacy, dict) and "dle_source" in legacy
+            
+            if not t["source_file_path"] and is_dle:
+                logger.info("Routing DLE task %d to voice processing", t["id"])
+                task_repo.mark_task_processing(t["id"])
+                enqueue_voice_change(VoiceChangePayload(
+                    task_id=t["id"],
+                    source_file_path="",  # Worker will download based on legacy_add_info
+                    output_file_path="",  # Worker will decide output path
+                    metadata={"is_dle": True}
+                ))
+                count += 1
+                continue
+
             # Mark as processing to prevent double-pickup
             task_repo.mark_task_processing(t["id"])
 
@@ -226,3 +255,162 @@ def collect_video_stats() -> tuple[int, int]:
 
     logger.info("Video stats collection: %d ok, %d failed", success, failure)
     return success, failure
+
+
+# ─── Yii migration: периодические задачи (feat/yii-integration) ──────
+#
+# Маппинг повторяет Yii cron-скрипты (shel_youtube.sh, shel_youtube_time.sh).
+# После миграции эти расписания переедут в новую таблицу dle_ingestion_schedules.
+# Сейчас — Python-конфиг в коде, чтобы big-bang не требовал новой таблицы.
+
+# Что было в shel_youtube.sh (02:00 nightly)
+DLE_NIGHTLY_INGESTIONS: list[tuple[str, int, int, str]] = [
+    # (source_slug, channel_id, limit, media_type)
+    ("knigi_audio_biz",     6, 3, "video"),   # unique_audio/upload_to_youtube 3 6
+    ("audiokniga_one_com",  5, 1, "video"),   # audiokniga_one_com/upload_to_youtube 1 5
+    ("club_books_ru",       21, 1, "video"),
+    ("books_online_info",   23, 1, "video"),
+    ("bazaknig_net",        26, 2, "video"),
+    ("bazaknig_net",        27, 3, "video"),
+    ("bazaknig_net",        29, 3, "video"),
+    ("bazaknig_net",        30, 3, "video"),
+    ("bazaknig_net",        32, 3, "video"),
+    ("bazaknig_net",        47, 3, "video"),
+    ("bazaknig_net",        48, 3, "video"),
+]
+
+# Что было в shel_youtube_time.sh (14:15, 16:15, 21:15) — shorts
+DLE_SHORTS_INGESTIONS: list[tuple[str, int, int]] = [
+    # (source_slug, channel_id, limit)
+    ("knigi_audio_biz",     6, 1),    # unique_audio/shorts 6
+    ("audiokniga_one_com",  5, 1),
+    ("club_books_ru",       21, 1),
+    ("books_online_info",   23, 1),
+    ("bazaknig_net",        26, 1),
+    ("bazaknig_net",        27, 1),
+    ("bazaknig_net",        29, 1),
+    ("bazaknig_net",        30, 1),
+    ("bazaknig_net",        32, 1),
+    ("bazaknig_net",        33, 1),
+    ("bazaknig_net",        47, 1),
+    ("bazaknig_net",        48, 1),
+]
+
+# Что было в shel_youtube_time_2.sh (17:15, 20:15)
+DLE_SHORTS_SLUSHAT: list[tuple[str, int, int]] = [
+    ("slushat_knigi_com", 25, 1),
+]
+
+# Что было в shel_youtube_shorts_from_video.sh (13:20) — shorts из донорских YT-видео
+SHORTS_FROM_VIDEO_CHANNELS: list[int] = [28]
+
+
+def enqueue_dle_nightly() -> int:
+    """Запустить ночные DLE-ingestion (видео). Соответствует shel_youtube.sh@02:00."""
+    count = 0
+    for slug, channel_id, limit, media_type in DLE_NIGHTLY_INGESTIONS:
+        try:
+            enqueue_dle_ingestion(DleIngestionPayload(
+                source_slug=slug,
+                channel_id=channel_id,
+                limit=limit,
+                media_type=media_type,
+            ))
+            count += 1
+        except Exception:
+            logger.exception("DLE nightly enqueue failed: %s → %s", slug, channel_id)
+    logger.info("DLE nightly: enqueued %d ingestions", count)
+    return count
+
+
+def enqueue_dle_shorts() -> int:
+    """Запустить shorts-ingestion (короткие нарезки из аудиокниг). Соответствует shel_youtube_time.sh."""
+    count = 0
+    for slug, channel_id, limit in DLE_SHORTS_INGESTIONS:
+        try:
+            enqueue_dle_ingestion(DleIngestionPayload(
+                source_slug=slug,
+                channel_id=channel_id,
+                limit=limit,
+                media_type="shorts",
+            ))
+            count += 1
+        except Exception:
+            logger.exception("DLE shorts enqueue failed: %s → %s", slug, channel_id)
+    logger.info("DLE shorts: enqueued %d ingestions", count)
+    return count
+
+
+def enqueue_slushat_shorts() -> int:
+    """Запустить shorts только для slushat_knigi_com. Соответствует shel_youtube_time_2.sh."""
+    count = 0
+    for slug, channel_id, limit in DLE_SHORTS_SLUSHAT:
+        try:
+            enqueue_dle_ingestion(DleIngestionPayload(
+                source_slug=slug,
+                channel_id=channel_id,
+                limit=limit,
+                media_type="shorts",
+            ))
+            count += 1
+        except Exception:
+            logger.exception("Slushat shorts enqueue failed: %s → %s", slug, channel_id)
+    logger.info("Slushat shorts: enqueued %d ingestions", count)
+    return count
+
+
+def enqueue_shorts_from_video() -> int:
+    """Shorts из донорских YT-видео. Соответствует shel_youtube_shorts_from_video.sh@13:20."""
+    count = 0
+    for channel_id in SHORTS_FROM_VIDEO_CHANNELS:
+        try:
+            enqueue_shorts(ShortsPayload(channel_id=channel_id, limit=5))
+            count += 1
+        except Exception:
+            logger.exception("Shorts from video enqueue failed: channel=%s", channel_id)
+    logger.info("Shorts from video: enqueued %d", count)
+    return count
+
+
+# ─── Cron-эмулятор для Yii pipelines (in-memory tracking) ────────────
+#
+# Каждый ключ → (hour, minute) когда срабатывает.
+# scheduler/run.py вызывает run_periodic_yii_jobs() раз в минуту.
+# После запуска job'а обновляется last_run_key чтобы не дублировать.
+
+_yii_last_run: dict[str, str] = {}  # job_name → "YYYY-MM-DD HH:MM"
+
+_YII_CRON: list[tuple[str, int, int, callable]] = [
+    # (job_name, hour, minute, callable_returning_int)
+    ("dle_nightly",        2, 0,  enqueue_dle_nightly),       # shel_youtube.sh
+    ("dle_shorts_1",      14, 15, enqueue_dle_shorts),         # shel_youtube_time.sh
+    ("dle_shorts_2",      16, 15, enqueue_dle_shorts),
+    ("dle_shorts_3",      21, 15, enqueue_dle_shorts),
+    ("slushat_shorts_1",  17, 15, enqueue_slushat_shorts),     # shel_youtube_time_2.sh
+    ("slushat_shorts_2",  20, 15, enqueue_slushat_shorts),
+    ("shorts_from_video", 13, 20, enqueue_shorts_from_video),  # shel_youtube_shorts_from_video.sh
+]
+
+
+def run_periodic_yii_jobs() -> int:
+    """Проверяет cron-расписание и запускает соответствующие job'ы. Вызывается каждую минуту.
+
+    Returns кол-во запущенных job'ов в этот вызов (обычно 0 или 1).
+    """
+    from datetime import datetime
+    now = datetime.now()
+    current_minute_key = now.strftime("%Y-%m-%d %H:%M")
+    fired = 0
+    for job_name, hh, mm, fn in _YII_CRON:
+        if now.hour != hh or now.minute != mm:
+            continue
+        if _yii_last_run.get(job_name) == current_minute_key:
+            continue  # Уже запускали в эту минуту
+        try:
+            count = fn()
+            _yii_last_run[job_name] = current_minute_key
+            logger.info("Yii cron fired: %s @ %02d:%02d → %d enqueued", job_name, hh, mm, count)
+            fired += 1
+        except Exception:
+            logger.exception("Yii cron job failed: %s", job_name)
+    return fired
