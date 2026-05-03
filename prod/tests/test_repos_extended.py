@@ -297,7 +297,7 @@ class TestUserRepoExtended:
 
     def test_get_user_by_username(self):
         row = (1, "uuid", "testuser", "test@test.com", "hash", "Test",
-               None, 10, "UTC", None, False, None, datetime.now(), datetime.now())
+               None, 10, "UTC", None, False, None, datetime.now(), datetime.now(), datetime.now())
         conn, _ = _make_conn(fetchone=row)
         with _patch_repo(USER_MOD, conn):
             from shared.db.repositories import user_repo
