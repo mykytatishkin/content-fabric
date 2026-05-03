@@ -1,0 +1,96 @@
+{% extends "app_base.html" %}
+{% block title %}Create Stream — aiyoutube{% endblock %}
+{% block content %}
+<div class="header-row">
+  <h2>Create Stream</h2>
+  <a href="/panel/streams" class="btn">← Back to Streams</a>
+</div>
+
+<div class="form-card">
+  <form id="createForm">
+    <div class="form-group">
+      <label>Name (slug, например <code>knigi-online</code>)</label>
+      <input type="text" name="name" required placeholder="knigi-online">
+    </div>
+    <div class="form-group">
+      <label>Service name (systemd unit, например <code>stream-knigi-online.service</code>)</label>
+      <input type="text" name="service_name" required placeholder="stream-knigi-online.service">
+    </div>
+    <div class="form-group">
+      <label>Workdir (полный путь к директории стрима)</label>
+      <input type="text" name="workdir" required placeholder="/var/www/.../data/streams/knigi-online">
+    </div>
+    <div class="form-group">
+      <label>Stream Key (YouTube RTMP)</label>
+      <input type="text" name="stream_key" required placeholder="xxxx-xxxx-xxxx-xxxx">
+    </div>
+    <div class="form-group">
+      <label>Duration (sec, default 42900 ≈ 12h)</label>
+      <input type="number" name="duration_sec" value="42900" min="60">
+    </div>
+    <div class="form-group">
+      <label>RTMP host</label>
+      <input type="text" name="rtmp_host" value="a.rtmp.youtube.com">
+    </div>
+    <div class="form-group">
+      <label>RTMP base</label>
+      <input type="text" name="rtmp_base" value="rtmp://a.rtmp.youtube.com/live2/">
+    </div>
+    <div class="form-group">
+      <label>Streaming Account (Google Console)</label>
+      <select name="streaming_account_id">
+        <option value="">— none —</option>
+        {% for a in accounts %}
+        <option value="{{ a.id }}">#{{ a.id }} — {{ a.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Title (YouTube)</label>
+      <input type="text" name="title">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea name="description" rows="3"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Tags (comma-separated)</label>
+      <input type="text" name="tags">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea name="notes" rows="2"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Create + Provision</button>
+  </form>
+  <div id="createResult" style="margin-top:1rem;"></div>
+</div>
+
+<script>
+document.getElementById('createForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = {};
+  for (const [k, v] of fd.entries()) {
+    if (v === '') continue;
+    body[k] = (k === 'duration_sec' || k === 'streaming_account_id') ? parseInt(v) : v;
+  }
+  try {
+    const res = await fetch('/api/v1/streams/', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    const result = document.getElementById('createResult');
+    if (json.ok) {
+      result.innerHTML = `<div class="alert alert-success">✓ Stream #${json.id} created and provisioned. <a href="/panel/streams">Back to list</a></div>`;
+    } else {
+      result.innerHTML = `<div class="alert alert-error">${json.error || JSON.stringify(json)}</div>`;
+    }
+  } catch (e) {
+    document.getElementById('createResult').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+});
+</script>
+{% endblock %}

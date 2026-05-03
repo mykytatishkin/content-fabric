@@ -2,7 +2,7 @@
 {% block title %}System Statistics — aiyoutube{% endblock %}
 {% block content %}
 <div class="header-row">
-    <h2>System Statistics Overview</h2>
+    <h2>📈 System Statistics Overview</h2>
 </div>
 
 {% if stats %}
@@ -20,15 +20,17 @@
         {% for s in stats %}
         <tr>
             <td>{{ s.date }}</td>
-            <td style="text-align:right;font-weight:600;">{{ "{:,}".format(s.subscribers or 0) }}</td>
-            <td style="text-align:right;color:#0ea5e9;">{{ "{:,}".format(s.views or 0) }}</td>
-            <td style="text-align:right;">{{ "{:,}".format(s.videos or 0) }}</td>
+            <td style="text-align:right;font-weight:600;">👥 {{ "{:,}".format(s.subscribers or 0) }}</td>
+            <td style="text-align:right;color:#0ea5e9;">👁️ {{ "{:,}".format(s.views or 0) }}</td>
+            <td style="text-align:right;">🎬 {{ "{:,}".format(s.videos or 0) }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 </div>
 {% else %}
-<p style="color:#64748b;">No system-wide statistics available yet.</p>
+<div class="alert alert-info">
+  ℹ️ No system-wide statistics available yet. Stats are collected daily.
+</div>
 {% endif %}
 {% endblock %}

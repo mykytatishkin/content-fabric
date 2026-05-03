@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import admin, auth, channels, tasks, templates, uploads
+from app.api.endpoints import admin, auth, channels, dle_sources, streams, tasks, templates, uploads
 
 router = APIRouter()
 
@@ -10,4 +10,6 @@ router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 router.include_router(templates.router, prefix="/templates", tags=["templates"])
 router.include_router(admin.router, prefix="/admin", tags=["admin"])
 router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
+router.include_router(streams.router, prefix="/streams", tags=["streams"])
+router.include_router(dle_sources.router, prefix="/dle-sources", tags=["dle-sources"])
 # items demo endpoint removed (security: no auth, DoS risk)

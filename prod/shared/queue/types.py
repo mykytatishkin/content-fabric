@@ -85,3 +85,10 @@ class StreamControlPayload:
     action: str                          # "start" | "stop" | "restart" | "sync" | "sync_all"
     stream_id: int | None = None         # ID из live_stream_configurations (None для sync_all)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DleProcessingPayload:
+    """Обробка DLE завдання: скачування → voice → відео."""
+    task_id: int                         # ID завдання в content_upload_queue_tasks
+    metadata: dict[str, Any] = field(default_factory=dict)

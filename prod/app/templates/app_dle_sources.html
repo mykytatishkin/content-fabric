@@ -1,46 +1,150 @@
 {% extends "app_base.html" %}
 {% block title %}DLE Sources — aiyoutube{% endblock %}
 {% block content %}
+<style>
+  .dle-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 500; align-items: center; justify-content: center; }
+  .dle-modal.open { display: flex; }
+  .dle-modal-card { background: #fff; border-radius: 16px; max-width: 540px; width: 92%; padding: 1.25rem; box-shadow: 0 24px 48px rgba(0,0,0,0.2); }
+  .dle-modal-card h3 { margin: 0 0 0.85rem; font-size: 15px; }
+  .small-muted { font-size: 11px; color: #858587; }
+  .stream-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .header-row h2 { margin: 0; }
+</style>
+
 <div class="header-row">
-    <h2>DLE Content Sources ({{ sources|length }})</h2>
+  <h2>📚 DLE Content Sources ({{ sources|length }})</h2>
+  <button class="btn btn-primary" onclick="checkAll()">🔄 Check Connections</button>
 </div>
 
 {% if sources %}
 <div class="table-wrap">
 <table>
-    <thead>
-        <tr>
-            <th>Source Slug</th>
-            <th>Database Connection</th>
-            <th>Status</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for s in sources %}
-        <tr>
-            <td><strong>{{ s.slug }}</strong></td>
-            <td><code>{{ s.dsn }}</code></td>
-            <td><span class="badge badge-green">Connected</span></td>
-            <td>
-                <div style="display:flex;gap:4px;">
-                    <button class="btn btn-primary btn-sm" onclick="runIngestion('{{ s.slug }}')">Run Now</button>
-                </div>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
+  <thead>
+    <tr>
+      <th>Slug</th>
+      <th>Database (host/db)</th>
+      <th style="width:140px;">Status</th>
+      <th style="width:280px;text-align:right;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sources %}
+    <tr data-slug="{{ s.slug }}">
+      <td><strong>{{ s.slug }}</strong></td>
+      <td class="stream-mono">{{ s.dsn_masked }}</td>
+      <td><span class="badge badge-gray status-cell">…</span></td>
+      <td style="text-align:right;">
+        <button class="btn btn-sm" onclick="previewSource('{{ s.slug }}')">👁️ Preview</button>
+        <button class="btn btn-primary btn-sm" onclick="openRunModal('{{ s.slug }}')">▶️ Run Now</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
 </table>
+</div>
+{% else %}
+<div class="alert alert-warn">
+  ⚠️ No DLE sources configured. Create <code>prod/.env/.env.dle</code> with DSN for 7 sources.
+</div>
+{% endif %}
+
+<!-- Run-now modal -->
+<div class="dle-modal" id="runModal">
+  <div class="dle-modal-card">
+    <h3>▶️ Run ingestion: <span id="runSlug"></span></h3>
+    <div class="form-group">
+      <label>Channel</label>
+      <select id="runChannelId">
+        {% for c in channels %}
+        <option value="{{ c.id }}">#{{ c.id }} — {{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Limit (posts)</label>
+      <input type="number" id="runLimit" value="1" min="1" max="50">
+    </div>
+    <div class="form-group">
+      <label>Media type</label>
+      <select id="runMedia">
+        <option value="video">video</option>
+        <option value="shorts">shorts</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+      <button class="btn" onclick="closeRun()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitRun()">✓ Enqueue</button>
+    </div>
+  </div>
 </div>
 
 <script>
-function runIngestion(slug) {
-    if (!confirm('Start ingestion from ' + slug + '?')) return;
-    alert('Ingestion triggered for ' + slug + '. (API integration pending)');
-}
-</script>
+let currentSlug = null;
+const runModal = document.getElementById('runModal');
 
-{% else %}
-<p style="color:#64748b;">No DLE sources configured in .env.dle.</p>
-{% endif %}
+function openRunModal(slug) {
+  currentSlug = slug;
+  document.getElementById('runSlug').textContent = slug;
+  runModal.classList.add('open');
+}
+function closeRun() { runModal.classList.remove('open'); }
+
+async function submitRun() {
+  if (!currentSlug) return;
+  const channelId = parseInt(document.getElementById('runChannelId').value);
+  const limit = parseInt(document.getElementById('runLimit').value);
+  const media = document.getElementById('runMedia').value;
+  try {
+    const res = await fetch(`/api/v1/dle-sources/${encodeURIComponent(currentSlug)}/run-now`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({channel_id: channelId, limit: limit, media_type: media}),
+    });
+    const json = await res.json();
+    if (json.ok) {
+      alert(`✓ Enqueued. Job ID: ${json.job_id}`);
+      closeRun();
+    } else {
+      alert('Error: ' + (json.detail || JSON.stringify(json)));
+    }
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function previewSource(slug) {
+  try {
+    const res = await fetch(`/api/v1/dle-sources/${encodeURIComponent(slug)}/preview?limit=5`, {credentials: 'same-origin'});
+    const json = await res.json();
+    if (json.posts) {
+      const lines = json.posts.map(p => `#${p.id}  ${p.title}\n  Author: ${p.normalized.author || 'N/A'}`).join('\n\n');
+      alert(`Preview ${slug} (${json.count} posts):\n\n${lines}`);
+    } else {
+      alert('Error: ' + JSON.stringify(json));
+    }
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function checkAll() {
+  try {
+    const res = await fetch('/api/v1/dle-sources/status', {credentials: 'same-origin'});
+    const json = await res.json();
+    for (const s of json.sources) {
+      const tr = document.querySelector(`tr[data-slug="${s.slug}"]`);
+      if (!tr) continue;
+      const cell = tr.querySelector('.status-cell');
+      if (s.connected) {
+        cell.className = 'badge badge-green status-cell';
+        cell.textContent = '✓ Connected';
+      } else {
+        cell.className = 'badge badge-red status-cell';
+        cell.textContent = '✗ Failed';
+        cell.title = s.error || '';
+      }
+    }
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+checkAll();
+</script>
 {% endblock %}

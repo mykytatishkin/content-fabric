@@ -6,6 +6,8 @@ from typing import Any
 
 from shared.db.repositories.task_repo import create_task, get_task_by_dle_id
 from shared.ingestion.dle.client import DleClient
+from shared.queue.publisher import enqueue_job
+from shared.queue.types import DleProcessingPayload
 from app.core.config import dle_settings
 
 logger = logging.getLogger(__name__)
@@ -78,7 +80,7 @@ class DleIngestionPipeline:
         # Schedule slightly in the future to allow processing workers to pick it up.
         scheduled_at = datetime.now() + timedelta(minutes=5)
         
-        # source_file_path is empty; this indicates processing is required.
+        # source_file_path is empty; DLE processor worker will fill it.
         task_id = create_task(
             channel_id=channel_id,
             source_file_path="", 
@@ -88,4 +90,13 @@ class DleIngestionPipeline:
             legacy_add_info=legacy_info
         )
         logger.info("Created DLE task %s for channel %d (DLE ID: %d)", task_id, channel_id, post["id"])
+        
+        # Enqueue for DLE processor worker
+        try:
+            payload = DleProcessingPayload(task_id=task_id)
+            enqueue_job("dle_processing", "workers.dle_processor_worker.process_dle_task", payload)
+            logger.info("Enqueued task %s for DLE processing", task_id)
+        except Exception as e:
+            logger.error("Failed to enqueue task %s for DLE processing: %s", task_id, e)
+        
         return task_id

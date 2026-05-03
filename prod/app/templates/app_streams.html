@@ -1,67 +1,335 @@
 {% extends "app_base.html" %}
-{% block title %}Live Streams — aiyoutube{% endblock %}
+{% block title %}Streams Control Center — aiyoutube{% endblock %}
 {% block content %}
+<style>
+  /* Streams page-specific styles */
+  .streams-toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+  .streams-toolbar input[type="text"], .streams-toolbar select {
+    padding: 0.45rem 0.75rem; border-radius: 16px; border: 1px solid rgba(0,0,0,0.075);
+    font-size: 13px; background: #fff; min-width: 240px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.075);
+  }
+  .streams-toolbar select { min-width: 140px; }
+  .streams-toolbar input[type="text"]:focus, .streams-toolbar select:focus {
+    outline: none; border-color: rgba(224,138,60,0.5);
+    box-shadow: 0 0 0 3px rgba(224,138,60,0.15);
+  }
+  .badge-status { font-size: 12px; padding: 4px 8px; border-radius: 8px; }
+  .stream-mono { font-family: ui-monospace, Menlo, Monaco, "Liberation Mono", Consolas, monospace; font-size: 12px; }
+  .truncate { max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .stream-title-link { color: inherit; text-decoration: none; }
+  .stream-title-link:hover { text-decoration: underline; }
+  .small-muted { font-size: 11px; color: #858587; }
+
+  /* Modal */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 500;
+    align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-card {
+    background: #fff; border-radius: 16px; max-width: 1100px; width: 92%; max-height: 80vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.2);
+  }
+  .modal-head { display: flex; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid rgba(0,0,0,0.075); }
+  .modal-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .modal-body { padding: 1rem 1.25rem; overflow: auto; flex: 1; }
+  .modal-foot { padding: 0.75rem 1.25rem; border-top: 1px solid rgba(0,0,0,0.075); display: flex; gap: 0.5rem; justify-content: flex-end; }
+  .modal-body pre {
+    background: #1d1d1f; color: #f5f5f7; padding: 0.85rem; border-radius: 12px;
+    font-size: 11px; font-family: ui-monospace, Menlo, monospace;
+    white-space: pre-wrap; max-height: 60vh; overflow: auto; margin: 0;
+  }
+  .modal-close { background: none; border: none; cursor: pointer; font-size: 20px; color: #858587; }
+</style>
+
 <div class="header-row">
-    <h2>Live Streams ({{ streams|length }})</h2>
+  <div>
+    <h2 style="margin-bottom:4px;">🔴 Live Streams Control Center</h2>
+    <div class="small-muted">Last update: <span id="lastUpdate">—</span></div>
+  </div>
+  <div style="display:flex;gap:0.5rem;">
+    <a href="/panel/streams/create" class="btn btn-primary">➕ Create Stream</a>
+    <button class="btn" id="btnRefresh">🔄 Refresh</button>
+    <button class="btn" id="btnPause">⏸️ Pause</button>
+  </div>
 </div>
 
-{% if streams %}
+<div class="streams-toolbar">
+  <input type="text" id="q" placeholder="Search: name / channel / service / workdir..." style="flex:1;">
+  <select id="flt">
+    <option value="all">All statuses</option>
+    <option value="running">🟢 Running</option>
+    <option value="stopped">⚫ Stopped</option>
+    <option value="failed">🔴 Failed</option>
+  </select>
+  <button class="btn btn-primary btn-sm" id="btnStartAll">▶️ Start ALL</button>
+  <button class="btn btn-danger btn-sm" id="btnStopAll">⏹️ Stop ALL</button>
+  <button class="btn btn-sm" id="btnRestartAll">🔄 Restart ALL</button>
+</div>
+
 <div class="table-wrap">
 <table>
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Channel</th>
-            <th>Stream Key</th>
-            <th>Systemd Unit</th>
-            <th>Status</th>
-            <th>Last Start</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for s in streams %}
-        <tr>
-            <td>{{ s.id }}</td>
-            <td>Channel #{{ s.channel_id }}</td>
-            <td><code>{{ s.key }}</code></td>
-            <td><span class="badge badge-gray">{{ s.unit_name }}</span></td>
-            <td>
-                {% if s.status == 'active' %}
-                    <span class="badge badge-green">Running</span>
-                {% elif s.status == 'inactive' %}
-                    <span class="badge badge-gray">Stopped</span>
-                {% elif s.status == 'failed' %}
-                    <span class="badge badge-red">Failed</span>
-                {% else %}
-                    <span class="badge badge-gray">{{ s.status }}</span>
-                {% endif %}
-            </td>
-            <td>{{ s.last_start_at or '—' }}</td>
-            <td>
-                <div style="display:flex;gap:4px;">
-                    <button class="btn btn-primary btn-sm" onclick="streamAction({{ s.id }}, 'start')">Start</button>
-                    <button class="btn btn-danger btn-sm" onclick="streamAction({{ s.id }}, 'stop')">Stop</button>
-                    <button class="btn btn-warning btn-sm" onclick="streamAction({{ s.id }}, 'restart')">Restart</button>
-                </div>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
+  <thead>
+    <tr>
+      <th style="width:60px;">#</th>
+      <th>Stream</th>
+      <th style="min-width:380px;">Service / Workdir</th>
+      <th style="width:160px;">Status</th>
+      <th style="width:200px;">Uptime</th>
+      <th style="width:90px;">PID</th>
+      <th style="width:280px;text-align:right;">Actions</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
 </table>
 </div>
 
-<script>
-async function streamAction(id, action) {
-    if (!confirm('Are you sure you want to ' + action + ' stream #' + id + '?')) return;
-    
-    // In a real implementation, this would call an API endpoint
-    // For now, it's a placeholder for the integrated UI
-    alert('Action ' + action + ' triggered for stream ' + id + '. (API endpoint integration pending)');
-}
-</script>
+<!-- Log modal -->
+<div class="modal-backdrop" id="logModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>📋 Log</h3>
+        <div class="small-muted" id="logSub">—</div>
+      </div>
+      <button class="modal-close" onclick="closeLog()">×</button>
+    </div>
+    <div class="modal-body"><pre id="logBody">Loading...</pre></div>
+    <div class="modal-foot">
+      <button class="btn btn-sm" id="btnLogRefresh">Refresh</button>
+      <button class="btn btn-sm" onclick="closeLog()">Close</button>
+    </div>
+  </div>
+</div>
 
-{% else %}
-<p style="color:#64748b;">No stream configurations found.</p>
-{% endif %}
+<script>
+(() => {
+  const URLs = {
+    status:   "/api/v1/streams/status",
+    start:    "/api/v1/streams/start",
+    stop:     "/api/v1/streams/stop",
+    restart:  "/api/v1/streams/restart",
+    sync:     "/api/v1/streams/sync",
+    tail:     "/api/v1/streams/tail",
+  };
+
+  let paused = false;
+  let timer = null;
+  let data = {{ streams|tojson }};
+
+  const elTbody = document.getElementById('tbody');
+  const elLast  = document.getElementById('lastUpdate');
+  const elQ     = document.getElementById('q');
+  const elFlt   = document.getElementById('flt');
+  const btnRefresh = document.getElementById('btnRefresh');
+  const btnPause = document.getElementById('btnPause');
+  const btnStartAll = document.getElementById('btnStartAll');
+  const btnStopAll = document.getElementById('btnStopAll');
+  const btnRestartAll = document.getElementById('btnRestartAll');
+
+  const logModalEl = document.getElementById('logModal');
+  const logBody = document.getElementById('logBody');
+  const logSub = document.getElementById('logSub');
+  const btnLogRefresh = document.getElementById('btnLogRefresh');
+  let currentLogId = null;
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function statusBadge(st) {
+    const a = (st.activeState || '').toLowerCase();
+    const sub = (st.subState || '').toLowerCase();
+    if (a === 'active' && sub === 'running') return `<span class="badge badge-green badge-status">LIVE • running</span>`;
+    if (a === 'inactive' || a === 'deactivating' || sub === 'dead') return `<span class="badge badge-gray badge-status">STOPPED • dead</span>`;
+    if (a === 'failed') return `<span class="badge badge-red badge-status">FAILED • failed</span>`;
+    if (a === 'sudo_required') return `<span class="badge badge-yellow badge-status">sudo_required</span>`;
+    if (!a || a === 'unknown' || a === 'loading') return `<span class="badge badge-gray badge-status">…</span>`;
+    return `<span class="badge badge-blue badge-status">${escapeHtml(st.activeState)}${sub ? ' • '+escapeHtml(st.subState) : ''}</span>`;
+  }
+
+  function fmtDur(sec) {
+    if (sec === null || sec === undefined) return '—';
+    sec = Math.max(0, sec | 0);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  function fmtClock(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts * 1000);
+    return d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function uptimeHtml(st) {
+    const isRunning = (String(st.activeState || '').toLowerCase() === 'active'
+                    && String(st.subState || '').toLowerCase() === 'running');
+    if (!isRunning) return '<span class="small-muted">—</span>';
+
+    const elapsed = (st.elapsed_sec != null) ? fmtDur(st.elapsed_sec) : '—';
+    if (!st.runtime_max_sec) {
+      return `<div>⏱ ${escapeHtml(elapsed)}</div><div class="small-muted">⏳ без лимита</div>`;
+    }
+    const endTxt = (st.end_ts != null) ? fmtClock(st.end_ts) : '—';
+    const remTxt = (st.remaining_sec != null) ? fmtDur(st.remaining_sec) : '—';
+    return `<div>⏱ ${escapeHtml(elapsed)}</div><div class="small-muted">⏳ до ${escapeHtml(endTxt)} (${escapeHtml(remTxt)})</div>`;
+  }
+
+  function matchesFilter(row) {
+    const q = (elQ.value || '').trim().toLowerCase();
+    const f = elFlt.value;
+    const hay = [row.name, row.channel, row.service, row.workdir,
+      row.status?.activeState, row.status?.subState].join(' ').toLowerCase();
+    if (q && !hay.includes(q)) return false;
+
+    const a = (row.status?.activeState || '').toLowerCase();
+    const sub = (row.status?.subState || '').toLowerCase();
+    if (f === 'running') return (a === 'active' && sub === 'running');
+    if (f === 'stopped') return (a === 'inactive' || sub === 'dead' || a === 'deactivating');
+    if (f === 'failed') return (a === 'failed');
+    return true;
+  }
+
+  function render() {
+    const rows = data.filter(matchesFilter);
+    elTbody.innerHTML = rows.map(r => {
+      const st = r.status || {};
+      const pid = st.pid ? st.pid : '—';
+      const uptime = uptimeHtml(st);
+      const ytUrl = `https://www.youtube.com/@${encodeURIComponent(r.name)}`;
+      const keyMasked = (r.stream_key || '').slice(0, 6) + '***';
+
+      return `
+        <tr data-id="${r.id}">
+          <td class="small-muted">#${r.id}</td>
+          <td>
+            <div style="font-weight:500;">
+              <a href="${ytUrl}" target="_blank" rel="noopener" class="stream-title-link">${escapeHtml(r.name)}</a>
+            </div>
+            <div class="small-muted">${escapeHtml(r.channel || '')}</div>
+          </td>
+          <td>
+            <div class="stream-mono">${escapeHtml(r.service)} <span style="color:#1a8f2d">(${escapeHtml(keyMasked)})</span></div>
+            <span class="small-muted truncate" title="${escapeHtml(r.workdir)}">Workdir: ${escapeHtml(r.workdir)}</span>
+            <div class="small-muted" style="color:#0801db;">${escapeHtml(r.runner_path || '')}</div>
+          </td>
+          <td>${statusBadge(st)}</td>
+          <td>${uptime}</td>
+          <td class="stream-mono">${escapeHtml(pid)}</td>
+          <td style="text-align:right;">
+            <button class="btn btn-sm act-sync" data-id="${r.id}">Sync</button>
+            <button class="btn btn-sm act-log" data-id="${r.id}">Log</button>
+            <button class="btn btn-sm act-restart" data-id="${r.id}">Restart</button>
+            <button class="btn btn-sm act-stop" data-id="${r.id}">Stop</button>
+            <button class="btn btn-primary btn-sm act-start" data-id="${r.id}">Start</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async function httpJson(url, opts={}) {
+    const res = await fetch(url, opts);
+    const txt = await res.text();
+    try { return JSON.parse(txt); }
+    catch (e) { throw new Error(`Bad JSON (${res.status}): ${txt.slice(0, 800)}`); }
+  }
+
+  async function refreshStatus() {
+    if (paused) return;
+    try {
+      const json = await httpJson(URLs.status, { method: 'GET', credentials: 'same-origin' });
+      if (json && json.ok && Array.isArray(json.data)) {
+        data = json.data;
+        elLast.textContent = new Date((json.ts || Math.floor(Date.now()/1000))*1000).toLocaleString();
+        render();
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  async function unitAction(action, id) {
+    const url = URLs[action];
+    const body = new URLSearchParams();
+    body.set('id', String(id));
+    const json = await httpJson(url, {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    });
+    if (!json.ok) {
+      alert(`❌ ${action.toUpperCase()} #${id}\n` + (json.output || json.error || 'Unknown error'));
+    }
+    return json;
+  }
+
+  async function doBulk(action) {
+    const ids = data.filter(matchesFilter).map(x => x.id);
+    if (!ids.length) return;
+    if (!confirm(`${action.toUpperCase()} ALL (${ids.length} streams)?`)) return;
+    for (const id of ids) {
+      try { await unitAction(action, id); }
+      catch (e) { alert(`❌ ${action.toUpperCase()} #${id}\n${e.message}`); }
+      await new Promise(r => setTimeout(r, 400));
+      await refreshStatus();
+    }
+  }
+
+  function openLog(id) {
+    currentLogId = id;
+    logBody.textContent = 'Loading...';
+    const row = data.find(x => x.id === id);
+    logSub.textContent = row ? `${row.name} • ${row.service}` : `#${id}`;
+    logModalEl.classList.add('open');
+    loadLog();
+  }
+  function closeLog() { logModalEl.classList.remove('open'); }
+  window.closeLog = closeLog;
+
+  async function loadLog() {
+    if (!currentLogId) return;
+    try {
+      const url = URLs.tail + '?id=' + encodeURIComponent(currentLogId) + '&lines=120';
+      const json = await httpJson(url, { method: 'GET', credentials: 'same-origin' });
+      logBody.textContent = (json && json.ok) ? (json.log || '(no log)') : 'No log';
+    } catch (e) { logBody.textContent = 'Error: ' + e.message; }
+  }
+
+  elTbody.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = Number(btn.dataset.id || 0);
+    if (!id) return;
+    try {
+      if (btn.classList.contains('act-start'))   { await unitAction('start', id); await refreshStatus(); }
+      else if (btn.classList.contains('act-stop'))    { await unitAction('stop', id); await refreshStatus(); }
+      else if (btn.classList.contains('act-restart')) { await unitAction('restart', id); await refreshStatus(); }
+      else if (btn.classList.contains('act-sync'))    { await unitAction('sync', id); await refreshStatus(); }
+      else if (btn.classList.contains('act-log'))     { openLog(id); }
+    } catch (e2) { alert('Error: ' + e2.message); }
+  });
+
+  btnLogRefresh.addEventListener('click', loadLog);
+  btnRefresh.addEventListener('click', refreshStatus);
+  btnPause.addEventListener('click', () => {
+    paused = !paused;
+    btnPause.textContent = paused ? 'Resume' : 'Pause';
+    if (!paused) refreshStatus();
+  });
+  btnStartAll.addEventListener('click', () => doBulk('start'));
+  btnStopAll.addEventListener('click', () => doBulk('stop'));
+  btnRestartAll.addEventListener('click', () => doBulk('restart'));
+  elQ.addEventListener('input', render);
+  elFlt.addEventListener('change', render);
+
+  render();
+  refreshStatus();
+  timer = setInterval(refreshStatus, 5000);
+})();
+</script>
 {% endblock %}

@@ -18,6 +18,11 @@ SERVICES=(
     cff-publishing-worker
     cff-notification-worker
     cff-voice-worker
+    cff-dle-ingestion-worker
+    cff-dle-processor-worker
+    cff-shorts-worker
+    cff-stats-worker
+    cff-stream-control-worker
 )
 
 for svc in "${SERVICES[@]}"; do
@@ -27,7 +32,7 @@ done
 
 echo ""
 echo "Services installed and enabled. To start all:"
-echo "  systemctl start cff-api cff-scheduler cff-publishing-worker cff-notification-worker cff-voice-worker"
+echo "  systemctl start cff-api cff-scheduler cff-publishing-worker cff-notification-worker cff-voice-worker cff-dle-ingestion-worker cff-dle-processor-worker cff-shorts-worker cff-stats-worker cff-stream-control-worker"
 echo ""
 echo "To check status:"
 echo "  systemctl status cff-*"
@@ -38,3 +43,8 @@ echo "  pkill -f 'scheduler.run'"
 echo "  pkill -f 'publishing_worker'"
 echo "  pkill -f 'notification_worker'"
 echo "  pkill -f 'voice_worker'"
+echo "  pkill -f 'dle_ingestion_worker'"
+echo "  pkill -f 'dle_processor_worker'"
+echo "  pkill -f 'shorts_worker'"
+echo "  pkill -f 'stats_worker'"
+echo "  pkill -f 'stream_worker'"

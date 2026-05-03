@@ -422,44 +422,76 @@ async def logs_page(request: Request):
 
 @router.get("/streams", response_class=HTMLResponse)
 async def streams_page(request: Request):
+    """Initial render — JS делает /api/v1/streams/status сразу после загрузки.
+    Здесь отдаём только preliminary данные из БД для немедленного отображения."""
     user, redirect = require_admin(request)
     if redirect:
         return redirect
 
     from shared.db.connection import get_connection
     from sqlalchemy import text as sql_text
-    import subprocess
 
     streams = []
     try:
         with get_connection() as conn:
             rows = conn.execute(sql_text("""
-                SELECT id, channel_id, stream_key, is_active, last_start_at
-                FROM live_stream_configurations ORDER BY id
+                SELECT id, name, service_name, workdir, stream_key, channel_id,
+                       streaming_account_id
+                FROM live_stream_configurations
+                WHERE enabled = 1
+                ORDER BY id ASC
             """)).fetchall()
-            
             for r in rows:
-                sid, cid, key, active, last_start = r
-                unit_name = f"stream-{sid}" # Simplified unit mapping
-                
-                # Check status via systemctl
-                status = "unknown"
-                try:
-                    res = subprocess.run(["systemctl", "is-active", unit_name], capture_output=True, text=True)
-                    status = res.stdout.strip()
-                except:
-                    pass
-                
+                sid, name, service, workdir, key, channel_id, yid = r
                 streams.append({
-                    "id": sid, "channel_id": cid, "key": key[:8] + "...", 
-                    "is_active": active, "last_start_at": last_start,
-                    "status": status, "unit_name": unit_name
+                    "id": sid,
+                    "yid": yid,
+                    "name": name,
+                    "channel": channel_id,
+                    "service": service,
+                    "stream_key": key or "",
+                    "workdir": workdir or "",
+                    "runner_path": "yt_stream_runner.sh",
+                    "status": {
+                        "unit": service, "active": False,
+                        "activeState": "loading", "subState": "",
+                        "pid": 0, "exitCode": 0,
+                        "since_ts": None, "runtime_max_sec": 0,
+                        "elapsed_sec": None, "remaining_sec": None, "end_ts": None,
+                    },
                 })
     except Exception as e:
         logger.error("Streams page error: %s", e)
 
     return templates.TemplateResponse("app_streams.html", {
         "request": request, "active": "streams", "streams": streams,
+    })
+
+
+@router.get("/streams/create", response_class=HTMLResponse)
+async def streams_create_page(request: Request):
+    """Форма создания нового стрима."""
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    accounts = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT id, name FROM platform_oauth_credentials
+                WHERE platform = 'google' AND enabled = 1
+                ORDER BY id DESC
+            """)).fetchall()
+            accounts = [{"id": r[0], "name": r[1]} for r in rows]
+    except Exception as e:
+        logger.error("Streams create page error: %s", e)
+
+    return templates.TemplateResponse("app_streams_create.html", {
+        "request": request, "active": "streams", "accounts": accounts,
     })
 
 
@@ -472,14 +504,30 @@ async def dle_sources_page(request: Request):
         return redirect
 
     from app.core.config import dle_settings
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
     sources = []
     for slug, dsn in dle_settings.all_sources().items():
-        # Mask password in DSN
-        masked_dsn = dsn.split("@")[1] if "@" in dsn else dsn
-        sources.append({"slug": slug, "dsn": masked_dsn})
+        masked = dsn.split("@", 1)[1] if "@" in dsn else dsn
+        sources.append({"slug": slug, "dsn_masked": masked})
+
+    # Список enabled YouTube-каналов для dropdown
+    channels = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT id, name FROM platform_channels
+                WHERE platform = 'youtube' AND enabled = 1
+                ORDER BY id ASC
+            """)).fetchall()
+            channels = [{"id": r[0], "name": r[1]} for r in rows]
+    except Exception as e:
+        logger.error("DLE sources page error: %s", e)
 
     return templates.TemplateResponse("app_dle_sources.html", {
-        "request": request, "active": "dle_sources", "sources": sources,
+        "request": request, "active": "dle_sources",
+        "sources": sources, "channels": channels,
     })
 
 
