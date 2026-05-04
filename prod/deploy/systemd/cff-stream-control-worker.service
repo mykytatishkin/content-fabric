@@ -1,0 +1,21 @@
+[Unit]
+Description=CFF Stream Control Worker
+After=network.target redis.service mysql.service
+Wants=redis.service mysql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/content-fabric
+Environment="PATH=/opt/content-fabric/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+EnvironmentFile=/opt/content-fabric/prod/.env/.env.db
+EnvironmentFile=/opt/content-fabric/prod/.env/.env.api
+ExecStart=/opt/content-fabric/venv/bin/python -m workers.stream_worker
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cff-stream-control
+
+[Install]
+WantedBy=multi-user.target

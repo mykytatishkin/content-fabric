@@ -321,7 +321,12 @@ async def health_page(request: Request):
     services = []
     try:
         import subprocess
-        for svc_name in ["cff-api", "cff-scheduler", "cff-publishing-worker", "cff-notification-worker", "cff-voice-worker"]:
+        for svc_name in [
+            "cff-api", "cff-scheduler", "cff-publishing-worker", 
+            "cff-notification-worker", "cff-voice-worker",
+            "cff-dle-ingestion-worker", "cff-shorts-worker",
+            "cff-stats-worker", "cff-stream-control-worker"
+        ]:
             try:
                 result = subprocess.run(
                     ["systemctl", "show", svc_name, "--property=ActiveState,MemoryCurrent,ExecMainStartTimestamp"],
@@ -367,6 +372,8 @@ async def logs_page(request: Request):
     available_services = [
         "cff-api", "cff-scheduler", "cff-publishing-worker",
         "cff-notification-worker", "cff-voice-worker",
+        "cff-dle-ingestion-worker", "cff-shorts-worker",
+        "cff-stats-worker", "cff-stream-control-worker"
     ]
 
     service = request.query_params.get("service", "cff-api")
@@ -408,6 +415,150 @@ async def logs_page(request: Request):
         "lines": lines,
         "error_count": error_count,
         "warning_count": warning_count,
+    })
+
+
+# ── Streams ───────────────────────────────────────────────────────
+
+@router.get("/streams", response_class=HTMLResponse)
+async def streams_page(request: Request):
+    """Initial render — JS делает /api/v1/streams/status сразу после загрузки.
+    Здесь отдаём только preliminary данные из БД для немедленного отображения."""
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    streams = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT id, name, service_name, workdir, stream_key, channel_id,
+                       streaming_account_id
+                FROM live_stream_configurations
+                WHERE enabled = 1
+                ORDER BY id ASC
+            """)).fetchall()
+            for r in rows:
+                sid, name, service, workdir, key, channel_id, yid = r
+                streams.append({
+                    "id": sid,
+                    "yid": yid,
+                    "name": name,
+                    "channel": channel_id,
+                    "service": service,
+                    "stream_key": key or "",
+                    "workdir": workdir or "",
+                    "runner_path": "yt_stream_runner.sh",
+                    "status": {
+                        "unit": service, "active": False,
+                        "activeState": "loading", "subState": "",
+                        "pid": 0, "exitCode": 0,
+                        "since_ts": None, "runtime_max_sec": 0,
+                        "elapsed_sec": None, "remaining_sec": None, "end_ts": None,
+                    },
+                })
+    except Exception as e:
+        logger.error("Streams page error: %s", e)
+
+    return templates.TemplateResponse("app_streams.html", {
+        "request": request, "active": "streams", "streams": streams,
+    })
+
+
+@router.get("/streams/create", response_class=HTMLResponse)
+async def streams_create_page(request: Request):
+    """Форма создания нового стрима."""
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    accounts = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT id, name FROM platform_oauth_credentials
+                WHERE platform = 'google' AND enabled = 1
+                ORDER BY id DESC
+            """)).fetchall()
+            accounts = [{"id": r[0], "name": r[1]} for r in rows]
+    except Exception as e:
+        logger.error("Streams create page error: %s", e)
+
+    return templates.TemplateResponse("app_streams_create.html", {
+        "request": request, "active": "streams", "accounts": accounts,
+    })
+
+
+# ── DLE Sources ───────────────────────────────────────────────────
+
+@router.get("/dle-sources", response_class=HTMLResponse)
+async def dle_sources_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from app.core.config import dle_settings
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    sources = []
+    for slug, dsn in dle_settings.all_sources().items():
+        masked = dsn.split("@", 1)[1] if "@" in dsn else dsn
+        sources.append({"slug": slug, "dsn_masked": masked})
+
+    # Список enabled YouTube-каналов для dropdown
+    channels = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT id, name FROM platform_channels
+                WHERE platform = 'youtube' AND enabled = 1
+                ORDER BY id ASC
+            """)).fetchall()
+            channels = [{"id": r[0], "name": r[1]} for r in rows]
+    except Exception as e:
+        logger.error("DLE sources page error: %s", e)
+
+    return templates.TemplateResponse("app_dle_sources.html", {
+        "request": request, "active": "dle_sources",
+        "sources": sources, "channels": channels,
+    })
+
+
+# ── Stats ─────────────────────────────────────────────────────────
+
+@router.get("/stats", response_class=HTMLResponse)
+async def stats_overview_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    stats = []
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql_text("""
+                SELECT recorded_at, SUM(subscribers), SUM(views), SUM(videos)
+                FROM channel_daily_statistics
+                GROUP BY recorded_at ORDER BY recorded_at DESC LIMIT 30
+            """)).fetchall()
+            stats = [
+                {"date": r[0], "subscribers": r[1], "views": r[2], "videos": r[3]}
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error("Stats page error: %s", e)
+
+    return templates.TemplateResponse("app_stats_overview.html", {
+        "request": request, "active": "stats", "stats": stats,
     })
 
 

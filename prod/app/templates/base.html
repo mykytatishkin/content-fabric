@@ -224,18 +224,24 @@
         </div>
         <nav>
             <div class="sidebar-section">Overview</div>
-            <a href="/panel/" class="{% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
-            <div class="sidebar-section" style="margin-top:0.6rem;">Manage</div>
-            <a href="/panel/channels" class="{% if active == 'channels' %}active{% endif %}">Channels</a>
-            <a href="/panel/tasks" class="{% if active == 'tasks' %}active{% endif %}">Tasks</a>
-            <a href="/panel/users" class="{% if active == 'users' %}active{% endif %}">Users</a>
-            <a href="/panel/credentials" class="{% if active == 'credentials' %}active{% endif %}">Credentials</a>
-            <a href="/panel/payment" class="{% if active == 'payment' %}active{% endif %}">Payment</a>
-            <a href="/panel/broadcast" class="{% if active == 'broadcast' %}active{% endif %}">Broadcast</a>
+            <a href="/panel/" class="{% if active == 'dashboard' %}active{% endif %}">📊 Dashboard</a>
+            <a href="/panel/stats" class="{% if active == 'stats' %}active{% endif %}">📈 Statistics</a>
+            
+            <div class="sidebar-section" style="margin-top:0.6rem;">Content</div>
+            <a href="/panel/channels" class="{% if active == 'channels' %}active{% endif %}">📺 Channels</a>
+            <a href="/panel/tasks" class="{% if active == 'tasks' %}active{% endif %}">✅ Tasks</a>
+            <a href="/panel/dle-sources" class="{% if active == 'dle-sources' %}active{% endif %}">📚 DLE Sources</a>
+            <a href="/panel/streams" class="{% if active == 'streams' %}active{% endif %}">🔴 Live Streams</a>
+            
+            <div class="sidebar-section" style="margin-top:0.6rem;">Admin</div>
+            <a href="/panel/users" class="{% if active == 'users' %}active{% endif %}">👥 Users</a>
+            <a href="/panel/credentials" class="{% if active == 'credentials' %}active{% endif %}">🔑 Credentials</a>
+            <a href="/panel/broadcast" class="{% if active == 'broadcast' %}active{% endif %}">📢 Broadcast</a>
+            
             <div class="sidebar-section" style="margin-top:0.6rem;">System</div>
-            <a href="/panel/health" class="{% if active == 'health' %}active{% endif %}">Health</a>
-            <a href="/panel/logs" class="{% if active == 'logs' %}active{% endif %}">Logs</a>
-            <a href="/docs">API Docs</a>
+            <a href="/panel/health" class="{% if active == 'health' %}active{% endif %}">💚 Health</a>
+            <a href="/panel/logs" class="{% if active == 'logs' %}active{% endif %}">📋 Logs</a>
+            <a href="/docs" target="_blank">📖 API Docs</a>
         </nav>
         <div class="sidebar-bottom">
             <a href="/app/">Back to App</a>

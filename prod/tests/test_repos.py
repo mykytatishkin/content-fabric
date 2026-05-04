@@ -164,7 +164,7 @@ class TestUserRepo:
         row = (
             1, "uuid-1", "testuser", "test@x.com", "hash",
             "Test", None, 10, "UTC", None, False, None,
-            datetime(2026, 1, 1), datetime(2026, 1, 1),
+            datetime(2026, 1, 1), datetime(2026, 1, 1), datetime(2026, 1, 1),
         )
         conn = _make_conn(fetchone=row)
         with _patch_repo(USER_MOD, conn):

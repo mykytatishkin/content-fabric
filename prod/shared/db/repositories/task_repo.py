@@ -349,6 +349,21 @@ def delete_task(task_id: int) -> bool:
         return result.rowcount > 0
 
 
+def get_task_by_dle_id(source_slug: str, dle_post_id: int) -> dict[str, Any] | None:
+    """Check if a DLE post has already been processed by looking into legacy_add_info."""
+    t = content_upload_queue_tasks
+    # We use LIKE since legacy_add_info is Text, but we want to be careful.
+    # A more robust way would be to parse JSON in SQL if supported, 
+    # but for compatibility we use a pattern match.
+    pattern = f'%"dle_source": "{source_slug}"%"dle_post_id": {dle_post_id}%'
+    stmt = select(*_task_cols()).where(t.c.legacy_add_info.like(pattern)).limit(1)
+    with get_connection() as conn:
+        row = conn.execute(stmt).fetchone()
+    if not row:
+        return None
+    return _row_to_dict(row)
+
+
 def _row_to_dict(row) -> dict[str, Any]:
     d = {
         "id": row[0],

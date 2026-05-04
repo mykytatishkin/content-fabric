@@ -407,7 +407,11 @@
 
                 {% if user and user.status == 1 %}
                 <div class="sidebar-section" style="margin-top:0.6rem;">Admin</div>
-                <a href="/panel/">Admin Panel</a>
+                <a href="/panel/" class="{{ 'active' if active == 'dashboard' and request.url.path.startswith('/panel') }}">Admin Panel</a>
+                <a href="/panel/streams" class="{{ 'active' if active == 'streams' }}">Live Streams</a>
+                <a href="/panel/dle-sources" class="{{ 'active' if active == 'dle_sources' }}">DLE Sources</a>
+                <a href="/panel/stats" class="{{ 'active' if active == 'stats' }}">System Stats</a>
+                <a href="/panel/logs" class="{{ 'active' if active == 'logs' }}">Logs</a>
                 {% endif %}
             </nav>
             <div class="sidebar-bottom">

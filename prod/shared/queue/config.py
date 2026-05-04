@@ -18,6 +18,13 @@ QUEUE_PUBLISHING = "publishing"
 QUEUE_NOTIFICATIONS = "notifications"
 QUEUE_VOICE = "voice"
 
+# Queues from Yii migration (feat/yii-integration)
+QUEUE_DLE_INGESTION = "dle_ingestion"      # Парсинг 7 DLE-сайтов → создание задач
+QUEUE_SHORTS = "shorts"                     # YouTube Shorts pipeline (yt-dlp + Whisper + GPT)
+QUEUE_SORA = "sora"                         # Sora AI scraping через zenrows
+QUEUE_STATS = "stats"                       # Daily YouTube channel statistics
+QUEUE_STREAM_CONTROL = "stream_control"     # Управление 9 RTMP стримами через systemd
+
 
 def get_redis() -> Redis:
     """Get or create the global Redis connection."""
