@@ -11,7 +11,7 @@ from shared.db.connection import get_connection
 from shared.db.repositories.task_repo import get_task, update_task
 from shared.db.models import TaskStatus
 from shared.ingestion.dle.processor import DleProcessor
-from shared.notifications.manager import send_notification
+from shared.notifications import telegram
 from shared.queue.config import get_redis
 from shared.queue.types import DleProcessingPayload
 
@@ -54,7 +54,7 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
                     "status": TaskStatus.FAILED.value,
                     "error_message": "DLE processor failed to generate video"
                 })
-            send_notification(
+            telegram.send(
                 f"❌ DLE Processor Error\nTask {task_id}: {task.get('title')}\nFailed to generate video"
             )
             return {"status": "error", "message": "Processor failed"}
@@ -69,7 +69,7 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
             })
 
         logger.info("[DLE PROCESSOR WORKER] Task %s updated with video path", task_id)
-        send_notification(f"✅ DLE Video Ready\nTask {task_id}: {task.get('title')}")
+        telegram.send(f"✅ DLE Video Ready\nTask {task_id}: {task.get('title')}")
 
         return {
             "status": "success",
@@ -88,7 +88,7 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
         except Exception as db_exc:
             logger.error("[DLE PROCESSOR WORKER] Failed to update task status: %s", db_exc)
 
-        send_notification(f"❌ DLE Processor Exception\nTask {task_id}: {str(exc)[:200]}")
+        telegram.send(f"❌ DLE Processor Exception\nTask {task_id}: {str(exc)[:200]}")
         return {"status": "error", "message": str(exc)}
 
 
