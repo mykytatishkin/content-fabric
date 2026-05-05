@@ -35,6 +35,19 @@ def _get_queue(name: str) -> Queue:
     return Queue(name, connection=get_redis())
 
 
+def enqueue_job(queue_name: str, func_name: str, payload: Any, timeout: str = "30m", **kwargs) -> str:
+    """Generic job enqueuer. Returns job ID."""
+    q = _get_queue(queue_name)
+    job = q.enqueue(
+        func_name,
+        payload,
+        job_timeout=timeout,
+        **kwargs,
+    )
+    logger.info("Enqueued job: id=%s queue=%s func=%s", job.id, queue_name, func_name)
+    return job.id
+
+
 def enqueue_video_upload(payload: VideoUploadPayload, **kwargs) -> str:
     """Enqueue a video upload job. Returns job ID."""
     q = _get_queue(QUEUE_PUBLISHING)
