@@ -9,9 +9,10 @@ from rq.job import JobStatus
 
 from shared.db.connection import get_connection
 from shared.db.repositories.task_repo import get_task, update_task
+from shared.db.models import TaskStatus
 from shared.ingestion.dle.processor import DleProcessor
 from shared.notifications.manager import send_notification
-from shared.queue.config import get_redis_connection
+from shared.queue.config import get_redis
 from shared.queue.types import DleProcessingPayload
 
 logger = logging.getLogger(__name__)
@@ -93,15 +94,10 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
 
 def main():
     """Запустити worker для обробки DLE завдань."""
-    redis_conn = get_redis_connection()
+    redis_conn = get_redis()
     worker = Worker(["dle_processing"], connection=redis_conn)
     logger.info("[DLE PROCESSOR WORKER] Starting worker on queue 'dle_processing'")
     worker.work(with_scheduler=False)
-
-
-if __name__ == "__main__":
-    main()
-ler=False)
 
 
 if __name__ == "__main__":
