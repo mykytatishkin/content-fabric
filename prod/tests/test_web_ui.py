@@ -37,10 +37,10 @@ def test_streams_page(mock_admin_session):
         mock_cursor = MagicMock()
         mock_conn.return_value.__enter__.return_value = mock_cursor
         
-        # Mock 2 streams
+        # Mock 2 streams: (id, name, service, workdir, key, channel_id, yid)
         mock_cursor.execute.return_value.fetchall.return_value = [
-            (1, 5, "key12345678", 1, None),
-            (2, 6, "key45678901", 1, None),
+            (1, "stream-1", "cff-stream-1", "/tmp", "key12345678", 5, 101),
+            (2, "stream-2", "cff-stream-2", "/tmp", "key45678901", 6, 102),
         ]
         
         # Mock systemctl status check
