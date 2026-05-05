@@ -35,6 +35,9 @@ venv.bak/
 .env.development.local
 .env.test.local
 .env.production.local
+prod/.env/.env.dle
+prod/.env/.env.db
+prod/.env/.env.api
 
 # Configuration files with sensitive data
 config_local.yaml
