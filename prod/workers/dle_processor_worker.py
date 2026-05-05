@@ -35,11 +35,10 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
 
     try:
         # Отримати завдання з БД
-        with get_connection() as conn:
-            task = get_task(conn, task_id)
-            if not task:
-                logger.error("[DLE PROCESSOR WORKER] Task %s not found", task_id)
-                return {"status": "error", "message": "Task not found"}
+        task = get_task(task_id)
+        if not task:
+            logger.error("[DLE PROCESSOR WORKER] Task %s not found", task_id)
+            return {"status": "error", "message": "Task not found"}
 
         logger.info("[DLE PROCESSOR WORKER] Processing task %s: %s", task_id, task.get("title"))
 
@@ -51,7 +50,7 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
             logger.error("[DLE PROCESSOR WORKER] Processor returned None for task %s", task_id)
             with get_connection() as conn:
                 update_task(conn, task_id, {
-                    "status": "error",
+                    "status": TaskStatus.FAILED.value,
                     "error_message": "DLE processor failed to generate video"
                 })
             send_notification(
@@ -65,7 +64,7 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
         with get_connection() as conn:
             update_task(conn, task_id, {
                 "source_file_path": final_video_path,
-                "status": "pending"  # Готово до публікації
+                "status": TaskStatus.PENDING.value  # Готово до публікації
             })
 
         logger.info("[DLE PROCESSOR WORKER] Task %s updated with video path", task_id)
@@ -82,7 +81,7 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
         try:
             with get_connection() as conn:
                 update_task(conn, task_id, {
-                    "status": "error",
+                    "status": TaskStatus.FAILED.value,
                     "error_message": f"DLE processor exception: {str(exc)[:500]}"
                 })
         except Exception as db_exc:
@@ -98,6 +97,11 @@ def main():
     worker = Worker(["dle_processing"], connection=redis_conn)
     logger.info("[DLE PROCESSOR WORKER] Starting worker on queue 'dle_processing'")
     worker.work(with_scheduler=False)
+
+
+if __name__ == "__main__":
+    main()
+ler=False)
 
 
 if __name__ == "__main__":

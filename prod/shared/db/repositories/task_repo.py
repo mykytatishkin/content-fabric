@@ -202,6 +202,17 @@ def update_task_status(
         return ok
 
 
+def update_task(conn, task_id: int, fields: dict[str, Any]) -> bool:
+    """Generic update for content_upload_queue_tasks."""
+    from shared.db.utils import build_update
+    res = build_update("content_upload_queue_tasks", "id", task_id, **fields)
+    if not res:
+        return False
+    sql, params = res
+    result = conn.execute(text(sql), params)
+    return result.rowcount > 0
+
+
 def mark_task_processing(task_id: int) -> bool:
     return update_task_status(task_id, TaskStatus.PROCESSING.value)
 
