@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://46.21.250.43"]
     BASE_URL: str = ""  # e.g. "http://46.21.250.43" — used for OAuth redirect_uri
 
+    # If True, /api/v1/auth/register creates user as INACTIVE and sends a
+    # verification email; user must click the link before they can log in.
+    # Off by default for backward compat.
+    EMAIL_VERIFICATION_REQUIRED: bool = False
+
     # MySQL (loaded from prod/.env/.env.db only)
     MYSQL_HOST: str
     MYSQL_PORT: int

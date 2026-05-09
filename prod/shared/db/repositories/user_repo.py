@@ -28,6 +28,8 @@ _USER_COLS = [
     platform_users.c.last_login_at,
     platform_users.c.created_at,
     platform_users.c.updated_at,
+    platform_users.c.password_reset_token,
+    platform_users.c.verification_token,
 ]
 
 
@@ -195,4 +197,100 @@ def _row_to_dict(row) -> dict[str, Any]:
         "last_login_at": row[12],
         "created_at": row[13],
         "updated_at": row[14],
+        "password_reset_token": row[15] if len(row) > 15 else None,
+        "verification_token": row[16] if len(row) > 16 else None,
     }
+
+
+# ── Password reset & email verification tokens ────────────────────────
+
+
+def get_user_by_reset_token(token: str) -> dict[str, Any] | None:
+    """Look up a user by their `password_reset_token` value (exact match)."""
+    if not token:
+        return None
+    stmt = select(*_USER_COLS).where(platform_users.c.password_reset_token == token)
+    with get_connection() as conn:
+        row = conn.execute(stmt).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def get_user_by_verification_token(token: str) -> dict[str, Any] | None:
+    """Look up a user by their `verification_token` value (exact match)."""
+    if not token:
+        return None
+    stmt = select(*_USER_COLS).where(platform_users.c.verification_token == token)
+    with get_connection() as conn:
+        row = conn.execute(stmt).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def set_password_reset_token(user_id: int, token: str | None) -> bool:
+    """Store (or clear, when token=None) a password reset token for the user."""
+    sql = text(
+        "UPDATE platform_users SET password_reset_token = :tok WHERE id = :uid"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"tok": token, "uid": user_id})
+    rc = getattr(result, "rowcount", 0) or 0
+    logger.info(
+        "Password reset token %s for user %s",
+        "set" if token else "cleared", user_id,
+    )
+    return rc > 0 or token is None
+
+
+def set_verification_token(user_id: int, token: str | None) -> bool:
+    """Store (or clear, when token=None) a verification token for the user."""
+    sql = text(
+        "UPDATE platform_users SET verification_token = :tok WHERE id = :uid"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"tok": token, "uid": user_id})
+    rc = getattr(result, "rowcount", 0) or 0
+    logger.info(
+        "Verification token %s for user %s",
+        "set" if token else "cleared", user_id,
+    )
+    return rc > 0 or token is None
+
+
+def get_password_reset_token_issued_at(user_id: int):
+    """Read updated_at as a proxy for token issuance time.
+
+    The Yii convention also encodes the timestamp inside the token itself
+    (via `make_reset_token`) — this fallback is for manual/admin-set tokens
+    without an embedded timestamp.
+    """
+    sql = text("SELECT updated_at FROM platform_users WHERE id = :uid")
+    with get_connection() as conn:
+        row = conn.execute(sql, {"uid": user_id}).fetchone()
+    return row[0] if row else None
+
+
+def set_status(user_id: int, status_value: int) -> None:
+    """Update the user's status (e.g. flip INACTIVE→ACTIVE on email verification)."""
+    sql = text("UPDATE platform_users SET status = :st WHERE id = :uid")
+    with get_connection() as conn:
+        conn.execute(sql, {"st": int(status_value), "uid": user_id})
+    logger.info("Status set to %s for user %s", status_value, user_id)
+
+
+def mark_email_verified(user_id: int) -> bool:
+    """Atomically clear `verification_token` and flip status to ACTIVE (10).
+
+    Mirrors Yii's User::verifyEmail() in common/models/User.php.
+    Returns True if a row was updated.
+    """
+    from shared.db.models import UserStatus
+
+    sql = text(
+        "UPDATE platform_users "
+        "SET verification_token = NULL, status = :st "
+        "WHERE id = :uid"
+    )
+    with get_connection() as conn:
+        result = conn.execute(sql, {"st": int(UserStatus.ACTIVE), "uid": user_id})
+    rc = getattr(result, "rowcount", 0) or 0
+    logger.info("Email verified (atomic) for user %s rowcount=%s", user_id, rc)
+    return rc > 0

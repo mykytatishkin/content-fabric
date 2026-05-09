@@ -47,3 +47,23 @@ class TotpVerifyRequest(BaseModel):
 
 class TotpDisableRequest(BaseModel):
     password: str
+
+
+# ── Password reset & email verification ─────────────────────────────
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
