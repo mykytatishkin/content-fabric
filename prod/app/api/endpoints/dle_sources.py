@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_admin
 from app.core.config import dle_settings
 from shared.queue.publisher import enqueue_dle_ingestion
 from shared.queue.types import DleIngestionPayload
@@ -56,7 +56,7 @@ def _check_connection(slug: str, dsn: str) -> dict[str, Any]:
 
 
 @router.get("/")
-async def list_sources(user: dict = Depends(get_current_user)):
+async def list_sources(user: dict = Depends(get_current_admin)):
     sources = []
     for slug, dsn in dle_settings.all_sources().items():
         sources.append({
@@ -67,7 +67,7 @@ async def list_sources(user: dict = Depends(get_current_user)):
 
 
 @router.get("/status")
-async def status_sources(user: dict = Depends(get_current_user)):
+async def status_sources(user: dict = Depends(get_current_admin)):
     """Полный статус с проверкой подключения каждого источника."""
     sources = []
     for slug, dsn in dle_settings.all_sources().items():
@@ -82,7 +82,7 @@ async def status_sources(user: dict = Depends(get_current_user)):
 
 
 @router.post("/{slug}/run-now")
-async def run_now(slug: str, body: RunNowRequest, user: dict = Depends(get_current_user)):
+async def run_now(slug: str, body: RunNowRequest, user: dict = Depends(get_current_admin)):
     """Enqueue DLE ingestion для одного источника прямо сейчас."""
     if slug not in dle_settings.all_sources():
         raise HTTPException(status_code=404, detail=f"DLE source '{slug}' not configured")
@@ -100,7 +100,7 @@ async def run_now(slug: str, body: RunNowRequest, user: dict = Depends(get_curre
 async def preview(
     slug: str,
     limit: int = Query(5, ge=1, le=50),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_admin),
 ):
     """Прочитать последние N постов из источника без создания задач."""
     dsn = dle_settings.all_sources().get(slug)
