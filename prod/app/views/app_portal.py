@@ -1432,16 +1432,35 @@ async def task_new_submit(
         return redirect
 
     from shared.db.repositories import task_repo, channel_repo
+    from app.core.flash import flash
 
     # Validate ownership of channel
     ch = channel_repo.get_channel_by_id(channel_id)
     if not ch or (not is_admin(user) and ch.get("created_by") != user["id"]):
+        flash(request, "error", "Channel not found or access denied")
         return RedirectResponse("/app/tasks", status_code=302)
 
-    # Validate file paths (no traversal)
-    for path_val in (source_file_path, thumbnail_path):
-        if path_val and (".." in path_val or path_val.startswith("/")):
+    # Validate file paths: reject path traversal; absolute paths must
+    # be under UPLOAD_DIR (which is what /app/upload/* now returns).
+    import os as _os
+    upload_root = _os.path.realpath(
+        _os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")
+    )
+    for label, path_val in (("source", source_file_path), ("thumbnail", thumbnail_path)):
+        if not path_val:
+            continue
+        if ".." in path_val.split("/") or ".." in path_val.split("\\"):
+            flash(request, "error", f"Invalid {label} path (no '..' allowed)")
             return RedirectResponse("/app/tasks/new", status_code=302)
+        if path_val.startswith("/"):
+            real = _os.path.realpath(path_val)
+            if not real.startswith(upload_root + _os.sep) and real != upload_root:
+                flash(
+                    request,
+                    "error",
+                    f"Invalid {label} path: must be under {upload_root}",
+                )
+                return RedirectResponse("/app/tasks/new", status_code=302)
 
     from datetime import datetime, timezone
     scheduled = datetime.now(timezone.utc)
