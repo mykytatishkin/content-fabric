@@ -102,6 +102,12 @@ def validate_channel_tokens() -> tuple[int, int]:
     channels = channel_repo.get_channels_with_tokens()
     if not channels:
         logger.info("Token validation: no channels with tokens found")
+        # Still push (empty) gauge so dashboard knows the job ran.
+        try:
+            from shared.metrics import push_youtube_token_expiries
+            push_youtube_token_expiries()
+        except Exception:
+            logger.exception("push_youtube_token_expiries failed")
         return 0, 0
 
     success = 0
@@ -133,6 +139,17 @@ def validate_channel_tokens() -> tuple[int, int]:
             failure += 1
 
     logger.info("Token validation: %d ok, %d failed", success, failure)
+
+    # Push fresh token-expiry gauges to pushgateway. Tokens were just refreshed
+    # above (ensure_fresh_credentials updates token_expires_at in DB), so this
+    # read sees current values and the Grafana panel sees real data.
+    try:
+        from shared.metrics import push_youtube_token_expiries
+        reported = push_youtube_token_expiries()
+        logger.info("Pushed cff_youtube_token_expires_in_seconds for %d channels", reported)
+    except Exception:
+        logger.exception("push_youtube_token_expiries failed")
+
     return success, failure
 
 
