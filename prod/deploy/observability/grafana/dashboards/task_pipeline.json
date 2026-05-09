@@ -128,7 +128,7 @@
       "description": "ERROR/CRITICAL только из pipeline-воркеров.",
       "gridPos": {"x": 12, "y": 25, "w": 12, "h": 10},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-(scheduler|publishing-worker|voice-worker|dle-ingestion-worker|dle-processor-worker|shorts-worker|stats-worker)\", level=~\"ERROR|CRITICAL\"} | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A", "maxLines": 100}],
+      "targets": [{"expr": "{unit=~\"cff-(scheduler|publishing-worker|voice-worker|dle-ingestion-worker|dle-processor-worker|shorts-worker|stats-worker)\", level=~\"ERROR|CRITICAL\"} | line_format \"[{{.unit}}] {{__line__}}\"", "refId": "A", "maxLines": 100}],
       "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "exact"}
     }
   ]
