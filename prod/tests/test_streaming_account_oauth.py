@@ -157,8 +157,34 @@ class TestStreamingAccountAuthorize:
 
 
 class TestStreamingAccountCallback:
+    @staticmethod
+    def _seed_state_via_authorize(admin_client, account_id: int = 1) -> str:
+        """The callback validates state against `request.session["streaming_oauth_state"]`,
+        which is only set by /authorize. Run /authorize first (TestClient keeps cookies),
+        extract the state from the redirect Location, return it.
+        """
+        row = {
+            "id": account_id,
+            "name": "test",
+            "client_id": "cid",
+            "client_secret": "secret",
+            "enabled": 1,
+        }
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=ADMIN_USER), \
+             _patched_db(row):
+            resp = admin_client.get(
+                f"/panel/streaming-accounts/{account_id}/authorize",
+                follow_redirects=False,
+            )
+        assert resp.status_code == 302
+        # Pull state= out of the Google authorize URL.
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(resp.headers["location"]).query)
+        return qs["state"][0]
+
     def test_valid_callback_persists_tokens_and_redirects(self, admin_client):
         """Callback with valid state + mocked code exchange → tokens saved, redirect."""
+        state = self._seed_state_via_authorize(admin_client, account_id=1)
         row = {
             "id": 1,
             "client_id": "cid",
@@ -180,7 +206,7 @@ class TestStreamingAccountCallback:
              _patched_db(row) as updates:
             resp = admin_client.get(
                 "/panel/streaming-accounts/oauth/callback",
-                params={"code": "google-auth-code", "state": "sa:1:nonce-xyz"},
+                params={"code": "google-auth-code", "state": state},
                 follow_redirects=False,
             )
 
@@ -235,6 +261,7 @@ class TestStreamingAccountCallback:
 
     def test_callback_token_exchange_failure_redirects_with_flash(self, admin_client):
         """Google returns 400 → flash error + redirect to /panel/streams (no crash)."""
+        state = self._seed_state_via_authorize(admin_client, account_id=1)
         row = {"id": 1, "client_id": "cid", "client_secret": "secret"}
 
         fake_resp = MagicMock()
@@ -247,23 +274,24 @@ class TestStreamingAccountCallback:
              _patched_db(row, allow_update=False):
             resp = admin_client.get(
                 "/panel/streaming-accounts/oauth/callback",
-                params={"code": "bad-code", "state": "sa:1:nonce"},
+                params={"code": "bad-code", "state": state},
                 follow_redirects=False,
             )
         assert resp.status_code == 302
         assert resp.headers["location"] == "/panel/streams"
 
     def test_callback_account_not_found_returns_400(self, admin_client):
-        """state.account_id refers to a missing row → 400."""
-        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=ADMIN_USER), \
-             _patched_db(None):
+        """state CSRF check fires before the DB lookup. Without prior /authorize the
+        session has no expected state, so any callback gets 400 — exactly what we
+        want for forged/stale callbacks. (Account-existence is then irrelevant.)"""
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=ADMIN_USER):
             resp = admin_client.get(
                 "/panel/streaming-accounts/oauth/callback",
                 params={"code": "abc", "state": "sa:9999:nonce"},
                 follow_redirects=False,
             )
         assert resp.status_code == 400
-        assert "not found" in resp.text.lower()
+        assert "state" in resp.text.lower()
 
     def test_callback_unauthenticated_redirects_to_login(self):
         """Cookie-less callback → /app/login (admin guard kicks in before state checks)."""
