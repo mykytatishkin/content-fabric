@@ -374,6 +374,110 @@ ssh root@46.21.250.43 'auditctl -D && augenrules --load && auditctl -l | wc -l'
 
 > Получение `.env` — у `@mykytatishkin` в ЛС.
 
+### 11a. SENTRY_DSN / GlitchTip configuration
+
+CFF использует self-hosted GlitchTip (Sentry-compatible) для error tracking.
+Контейнеры — `cff-glitchtip-{web,worker,redis,postgres}`, web-UI на
+`http://127.0.0.1:8001` (наружу не выведен; ходить через SSH-tunnel).
+
+SDK-обёртка: `prod/shared/error_tracking.py` (no-op если `SENTRY_DSN`
+пустой). Инициализируется один раз на старте каждого процесса
+(`prod/main.py`, `prod/workers/_job_bootstrap.py`) с `service` тегом и
+автодобавлением `trace_id`/`task_id` из `logging_context` (через
+`_before_send` hook).
+
+Ключи в `/opt/content-fabric/.env` (значения **redacted** — реальный DSN
+живёт только на хосте):
+
+```
+SENTRY_DSN=http://<32-char-public-key>@127.0.0.1:8001/<project_id>
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=0.05
+SENTRY_RELEASE=cff@<git-sha>
+```
+
+`SENTRY_TRACES_SAMPLE_RATE=0.05` — 5% транзакций сэмплятся для performance
+tracing; для error capture сэмплинг не применяется (все исключения летят
+в GlitchTip всегда).
+
+#### Bootstrap (один раз на чистом GlitchTip)
+
+```bash
+# 1) superuser (на сервере)
+docker exec -e DJANGO_SUPERUSER_PASSWORD='<pw>' cff-glitchtip-web \
+    ./manage.py createsuperuser --noinput --email admin@cff.local
+
+# 2) org "CFF" + project "cff-prod" + DSN — через Django shell
+docker exec cff-glitchtip-web ./manage.py shell -c '
+from django.contrib.auth import get_user_model
+from apps.organizations_ext.models import Organization, OrganizationUserRole
+from apps.projects.models import Project
+from apps.teams.models import Team
+admin = get_user_model().objects.get(email="admin@cff.local")
+admin.is_active = True; admin.save()
+org, _  = Organization.objects.get_or_create(name="CFF", slug="cff")
+ou      = org.add_user(admin, role=OrganizationUserRole.OWNER)
+team, _ = Team.objects.get_or_create(slug="cff", organization=org)
+team.members.add(ou)
+proj, _ = Project.objects.get_or_create(name="cff-prod", slug="cff-prod", organization=org)
+team.projects.add(proj)
+for k in proj.projectkey_set.all():
+    print("DSN:", k.get_dsn())
+'
+```
+
+DSN из вывода → пишем в `/opt/content-fabric/.env` под ключом `SENTRY_DSN`.
+**Никогда не коммитить реальный DSN в git.**
+
+#### Применение
+
+После правки `.env` рестартим API + всех воркеров (юниты грузят файл
+через `EnvironmentFile=`):
+
+```bash
+systemctl restart cff-api cff-{dle-ingestion,dle-processor,notification,\
+publishing,shorts,sora,stats,stream-control,voice}-worker cff-scheduler
+```
+
+#### Smoke-test
+
+```bash
+cd /opt/content-fabric/prod && set -a && . /opt/content-fabric/.env && set +a
+venv/bin/python -c '
+import sys; sys.path.insert(0, ".")
+from shared.error_tracking import init, capture_message
+import sentry_sdk
+init("smoke"); capture_message("smoke", level="warning"); sentry_sdk.flush(timeout=8)'
+```
+
+Событие должно появиться в GlitchTip (project `cff-prod`) в течение
+~5–10 секунд. Проверка через Django shell (UI не выведен наружу):
+
+```bash
+docker exec cff-glitchtip-web ./manage.py shell -c '
+from apps.issue_events.models import IssueEvent
+from apps.projects.models import Project
+print(IssueEvent.objects.filter(issue__project__slug="cff-prod").count())
+'
+```
+
+#### Rotation / revoke
+
+Удалить старый ключ и сгенерировать новый:
+
+```bash
+docker exec cff-glitchtip-web ./manage.py shell -c '
+from apps.projects.models import Project, ProjectKey
+p = Project.objects.get(slug="cff-prod")
+ProjectKey.objects.filter(project=p).delete()
+k = ProjectKey.objects.create(project=p)
+print("DSN:", k.get_dsn())
+'
+```
+
+Затем обновить `SENTRY_DSN` в `/opt/content-fabric/.env` и рестартнуть
+юниты (см. выше). Старый DSN мгновенно перестаёт принимать события.
+
 ---
 
 ## 12. Dependency hygiene
@@ -499,5 +603,9 @@ ssh root@46.21.250.43 'auditctl -D && augenrules --load && auditctl -l | wc -l'
     — baseline-skan, см. `prod/deploy/auditd/baseline-scan-2026-05-09.md`.
   - Dependency bump: `requests>=2.32.4`, `python-multipart>=0.0.18`,
     `psutil>=5.9.8`.
+  - **GlitchTip wiring.** `SENTRY_DSN` сконфигурирован в
+    `/opt/content-fabric/.env`, project `cff-prod` создан в локальном
+    GlitchTip (org `CFF`). cff-api + 10 воркеров рестартнуты, smoke-test
+    подтверждён. См. §11a.
 
 Будущие аудит-записи добавлять сюда же датой.
