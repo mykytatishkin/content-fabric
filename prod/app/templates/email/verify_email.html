@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="UTF-8"><title>Подтверждение email</title></head>
+<body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#f5f5f7;margin:0;padding:24px;color:#1d1d1f;">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:14px;padding:28px 28px;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+    <h2 style="margin:0 0 12px 0;font-size:20px;color:#1d1d1f;">Подтверждение email Content Fabric</h2>
+    <p style="margin:0 0 12px 0;font-size:14px;line-height:1.5;">Здравствуйте{% if user_name %}, {{ user_name }}{% endif %}!</p>
+    <p style="margin:0 0 16px 0;font-size:14px;line-height:1.5;">
+      Подтвердите ваш email, кликнув по кнопке ниже. Ссылка действует 24 часа.
+    </p>
+    <p style="text-align:center;margin:24px 0;">
+      <a href="{{ verify_url }}" style="display:inline-block;background:#E08A3C;color:#fff;text-decoration:none;padding:11px 22px;border-radius:100vh;font-weight:600;font-size:14px;">Подтвердить email</a>
+    </p>
+    <p style="margin:0 0 8px 0;font-size:12px;color:#6e6e73;">Если кнопка не работает, скопируйте ссылку:</p>
+    <p style="margin:0 0 16px 0;font-size:12px;color:#6e6e73;word-break:break-all;">{{ verify_url }}</p>
+    <hr style="border:none;border-top:1px solid #ececec;margin:20px 0;">
+    <p style="margin:0;font-size:12px;color:#86868b;">— Команда Content Fabric</p>
+  </div>
+</body>
+</html>
