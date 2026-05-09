@@ -310,8 +310,17 @@ def sample_dle_source_health() -> None:
 
 
 def sample_youtube_token_expiries() -> None:
-    """Read token_expires_at from platform_channels, update gauge."""
+    """Read token_expires_at from platform_channels, update gauge.
+
+    `token_expires_at` is stored as naive UTC (all writers use either
+    google-auth's naive UTC `creds.expiry` or `datetime.now(timezone.utc)`
+    explicitly — see token_refresh.py, reauth/service.py, app_portal.py).
+    Calling `.timestamp()` on a naive datetime interprets it as **server
+    local time**, which on MSK servers (UTC+3) makes every token look 3h
+    expired. Tag the value as UTC before timestamp().
+    """
     try:
+        from datetime import timezone as _tz
         from shared.db.connection import get_connection
         from sqlalchemy import text
         now = time.time()
@@ -326,6 +335,8 @@ def sample_youtube_token_expiries() -> None:
             if expires is None:
                 continue
             try:
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=_tz.utc)
                 ts = expires.timestamp()
             except AttributeError:
                 continue
