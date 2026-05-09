@@ -1,0 +1,24 @@
+[Unit]
+Description=Content Fabric Sora Worker
+After=network.target redis.service mysql.service
+Wants=redis.service mysql.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/content-fabric/prod
+EnvironmentFile=/opt/content-fabric/.env
+EnvironmentFile=-/opt/content-fabric/prod/.env
+ExecStart=/opt/content-fabric/prod/venv/bin/python -m workers.sora_worker
+Restart=always
+RestartSec=5
+TimeoutStopSec=120
+MemoryMax=2G
+StandardOutput=append:/var/log/cff-sora-worker.log
+StandardError=append:/var/log/cff-sora-worker.log
+SyslogIdentifier=cff-sora
+
+[Install]
+WantedBy=multi-user.target

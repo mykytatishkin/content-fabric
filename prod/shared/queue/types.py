@@ -75,6 +75,8 @@ class ShortsPayload:
 class SoraPayload:
     """Скрейпинг Sora AI feed → загрузка одного видео."""
     channel_id: int
+    limit: int = 3                       # Сколько новых постов скачать за раз
+    media_type: str = "shorts"           # "shorts" или "video"
     feed_url: str = "https://sora.chatgpt.com/backend/public/nf2/feed"
     min_views: int = 1000                # Минимум просмотров для обработки поста
     trace_id: str | None = None

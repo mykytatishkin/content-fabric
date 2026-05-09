@@ -10,12 +10,14 @@ from shared.queue.publisher import (
     enqueue_video_upload,
     enqueue_dle_ingestion,
     enqueue_shorts,
+    enqueue_sora,
     enqueue_voice_change,
 )
 from shared.queue.types import (
     VideoUploadPayload,
     DleIngestionPayload,
     ShortsPayload,
+    SoraPayload,
     VoiceChangePayload,
 )
 from shared.youtube.token_refresh import build_credentials, ensure_fresh_credentials
@@ -316,6 +318,12 @@ DLE_SHORTS_SLUSHAT: list[tuple[str, int, int]] = [
 # Что было в shel_youtube_shorts_from_video.sh (13:20) — shorts из донорских YT-видео
 SHORTS_FROM_VIDEO_CHANNELS: list[int] = [28]
 
+# Sora AI feed → shorts (Yii: php yii sora/get_video --channel-id=N, manual)
+# (channel_id, limit, media_type)
+SORA_DAILY_CHANNELS: list[tuple[int, int, str]] = [
+    (19, 3, "shorts"),
+]
+
 
 def enqueue_dle_nightly() -> int:
     """Запустить ночные DLE-ingestion (видео). Соответствует shel_youtube.sh@02:00."""
@@ -384,6 +392,26 @@ def enqueue_shorts_from_video() -> int:
     return count
 
 
+def enqueue_sora_daily() -> int:
+    """Запустить ежедневный Sora-скрейп. Соответствует Yii `sora/get_video --channel-id=N`.
+
+    Раньше вызывалось вручную; теперь — раз в сутки (см. _YII_CRON @ 11:00).
+    """
+    count = 0
+    for channel_id, limit, media_type in SORA_DAILY_CHANNELS:
+        try:
+            enqueue_sora(SoraPayload(
+                channel_id=channel_id,
+                limit=limit,
+                media_type=media_type,
+            ))
+            count += 1
+        except Exception:
+            logger.exception("Sora daily enqueue failed: channel=%s", channel_id)
+    logger.info("Sora daily: enqueued %d", count)
+    return count
+
+
 # ─── Cron-эмулятор для Yii pipelines (in-memory tracking) ────────────
 #
 # Каждый ключ → (hour, minute) когда срабатывает.
@@ -401,6 +429,7 @@ _YII_CRON: list[tuple[str, int, int, callable]] = [
     ("slushat_shorts_1",  17, 15, enqueue_slushat_shorts),     # shel_youtube_time_2.sh
     ("slushat_shorts_2",  20, 15, enqueue_slushat_shorts),
     ("shorts_from_video", 13, 20, enqueue_shorts_from_video),  # shel_youtube_shorts_from_video.sh
+    ("sora_daily",        11, 0,  enqueue_sora_daily),          # Yii sora/get_video, ранее вручную
 ]
 
 
