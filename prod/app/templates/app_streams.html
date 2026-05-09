@@ -183,6 +183,7 @@
           <td>${uptime}</td>
           <td class="stream-mono">${escapeHtml(pid)}</td>
           <td style="text-align:right;">
+            ${r.yid ? `<a class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener" href="/panel/streaming-accounts/${r.yid}/authorize" title="Re-auth Google account #${r.yid}">🔑 Auth</a>` : ''}
             <button class="btn btn-sm act-sync" data-id="${r.id}">Sync</button>
             <button class="btn btn-sm act-log" data-id="${r.id}">Log</button>
             <button class="btn btn-sm act-restart" data-id="${r.id}">Restart</button>
