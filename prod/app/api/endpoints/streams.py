@@ -28,6 +28,11 @@ from shared.streams import provisioner, systemd_manager
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# How long to wait after starting the systemd ffmpeg unit before transitioning
+# the YouTube broadcast to ``live``.  Mirrors the implicit delay the legacy Yii
+# code relied on (broadcast won't transition until ingest is "active").
+_GO_LIVE_DELAY_SEC = 8
+
 
 # ─── Schemas ─────────────────────────────────────────────────────────
 
@@ -117,6 +122,113 @@ async def tail_log(
     return {"ok": True, "log": systemd_manager.tail(s["service_name"], lines)}
 
 
+def _persist_broadcast_ids(
+    stream_id: int,
+    broadcast_id: str | None,
+    platform_stream_id: str | None,
+) -> None:
+    """Persist YouTube broadcast/stream identifiers back to the row."""
+    if not broadcast_id and not platform_stream_id:
+        return
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE live_stream_configurations
+                    SET platform_broadcast_id = COALESCE(:bid, platform_broadcast_id),
+                        platform_stream_id    = COALESCE(:sid, platform_stream_id),
+                        updated_at = NOW()
+                    WHERE id = :id
+                    """
+                ),
+                {"id": stream_id, "bid": broadcast_id, "sid": platform_stream_id},
+            )
+    except Exception:
+        logger.exception(
+            "Failed to persist broadcast ids for stream %s", stream_id
+        )
+
+
+def _start_youtube_broadcast(s: dict) -> dict:
+    """Pre-start YouTube prep: ensure broadcast, bind ingest, push meta.
+
+    Returns ``{"ok": bool, "broadcast_id": str|None, "stream_id": str|None,
+    "error": str|None}``.  Failures are logged but never raise — callers still
+    want the systemd unit to start.
+    """
+    if not s.get("streaming_account_id"):
+        return {"ok": True, "broadcast_id": None, "stream_id": None, "error": None}
+
+    try:
+        from shared.youtube.broadcasts import prepare_broadcast_for_start
+        from shared.youtube.streaming_accounts import (
+            build_service_for_streaming_account,
+        )
+
+        service, _account = build_service_for_streaming_account(
+            int(s["streaming_account_id"])
+        )
+        prep = prepare_broadcast_for_start(service, s)
+        return {
+            "ok": True,
+            "broadcast_id": prep.get("broadcast_id"),
+            "stream_id": prep.get("stream_id"),
+            "error": None,
+        }
+    except Exception as exc:
+        logger.exception(
+            "YouTube broadcast prep failed for stream %s; starting systemd anyway",
+            s.get("id"),
+        )
+        return {"ok": False, "broadcast_id": None, "stream_id": None, "error": str(exc)}
+
+
+def _go_live(s: dict, broadcast_id: str) -> dict:
+    """Transition broadcast to ``live`` after ffmpeg is pushing.  Tolerant to errors."""
+    try:
+        from shared.youtube.broadcasts import transition_broadcast
+        from shared.youtube.streaming_accounts import (
+            build_service_for_streaming_account,
+        )
+
+        service, _ = build_service_for_streaming_account(
+            int(s["streaming_account_id"])
+        )
+        transition_broadcast(service, broadcast_id, "live")
+        return {"ok": True, "error": None}
+    except Exception as exc:
+        logger.exception(
+            "transition_broadcast(live) failed for stream %s broadcast %s",
+            s.get("id"), broadcast_id,
+        )
+        return {"ok": False, "error": str(exc)}
+
+
+def _complete_broadcast(s: dict) -> dict:
+    """Transition broadcast to ``complete`` on stop.  Tolerant to errors."""
+    bid = (s.get("platform_broadcast_id") or "").strip()
+    if not bid or not s.get("streaming_account_id"):
+        return {"ok": True, "broadcast_id": None, "error": None}
+    try:
+        from shared.youtube.broadcasts import transition_broadcast
+        from shared.youtube.streaming_accounts import (
+            build_service_for_streaming_account,
+        )
+
+        service, _ = build_service_for_streaming_account(
+            int(s["streaming_account_id"])
+        )
+        transition_broadcast(service, bid, "complete")
+        return {"ok": True, "broadcast_id": bid, "error": None}
+    except Exception as exc:
+        logger.exception(
+            "transition_broadcast(complete) failed for stream %s broadcast %s",
+            s.get("id"), bid,
+        )
+        return {"ok": False, "broadcast_id": bid, "error": str(exc)}
+
+
 @router.post("/start")
 async def start_stream(id: int = Form(...), user: dict = Depends(get_current_admin)):
     s = _fetch_stream(id)
@@ -125,10 +237,24 @@ async def start_stream(id: int = Form(...), user: dict = Depends(get_current_adm
     if not s.get("enabled"):
         return {"ok": False, "error": "Stream disabled"}
 
+    # 1) YouTube prep (ensure broadcast / bind / meta / thumb) — BEFORE systemd.
+    yt_prep = _start_youtube_broadcast(s)
+    if yt_prep.get("broadcast_id") or yt_prep.get("stream_id"):
+        _persist_broadcast_ids(
+            id, yt_prep.get("broadcast_id"), yt_prep.get("stream_id")
+        )
+
+    # 2) systemd start (ffmpeg → RTMP).
     code, output = systemd_manager.start(s["service_name"])
+
+    # 3) Wait for ingest to come up, then transition broadcast → live.
+    yt_live: dict = {"ok": True, "error": None}
+    if code == 0 and yt_prep.get("broadcast_id"):
+        time.sleep(_GO_LIVE_DELAY_SEC)
+        yt_live = _go_live(s, yt_prep["broadcast_id"])
+
     st = systemd_manager.status(s["service_name"])
 
-    # Записать last_start_at
     if code == 0:
         try:
             with get_connection() as conn:
@@ -147,6 +273,10 @@ async def start_stream(id: int = Form(...), user: dict = Depends(get_current_adm
         "code": code,
         "output": output,
         "status": st,
+        "youtube_broadcast_id": yt_prep.get("broadcast_id"),
+        "youtube_stream_id": yt_prep.get("stream_id"),
+        "youtube_prep_error": yt_prep.get("error"),
+        "youtube_live_error": yt_live.get("error"),
         "ts": int(time.time()),
     }
 
@@ -157,7 +287,12 @@ async def stop_stream(id: int = Form(...), user: dict = Depends(get_current_admi
     if not s:
         return {"ok": False, "error": "Not found"}
 
+    # 1) systemd stop first — even if YouTube transition later fails, ffmpeg is gone.
     code, output = systemd_manager.stop(s["service_name"])
+
+    # 2) Transition YouTube broadcast → complete (best-effort).
+    yt = _complete_broadcast(s)
+
     st = systemd_manager.status(s["service_name"])
     return {
         "ok": code == 0,
@@ -167,6 +302,8 @@ async def stop_stream(id: int = Form(...), user: dict = Depends(get_current_admi
         "code": code,
         "output": output,
         "status": st,
+        "youtube_broadcast_id": yt.get("broadcast_id"),
+        "youtube_complete_error": yt.get("error"),
         "ts": int(time.time()),
     }
 
@@ -177,8 +314,30 @@ async def restart_stream(id: int = Form(...), user: dict = Depends(get_current_a
     if not s:
         return {"ok": False, "error": "Not found"}
 
-    code, output = systemd_manager.restart(s["service_name"])
+    # Reuse stop → start so the YouTube broadcast lifecycle (complete → ensure
+    # → live) is exercised end-to-end.  Plain `systemctl restart` would only
+    # bounce ffmpeg and leave the broadcast in whatever stale state it was in.
+    yt_complete = _complete_broadcast(s)
+    code_stop, out_stop = systemd_manager.stop(s["service_name"])
+
+    # re-fetch in case complete cleared platform_broadcast_id (it doesn't
+    # today, but keeps this safe if behaviour changes).
+    s = _fetch_stream(id) or s
+    yt_prep = _start_youtube_broadcast(s)
+    if yt_prep.get("broadcast_id") or yt_prep.get("stream_id"):
+        _persist_broadcast_ids(
+            id, yt_prep.get("broadcast_id"), yt_prep.get("stream_id")
+        )
+    code_start, out_start = systemd_manager.start(s["service_name"])
+
+    yt_live: dict = {"ok": True, "error": None}
+    if code_start == 0 and yt_prep.get("broadcast_id"):
+        time.sleep(_GO_LIVE_DELAY_SEC)
+        yt_live = _go_live(s, yt_prep["broadcast_id"])
+
     st = systemd_manager.status(s["service_name"])
+    code = code_start
+    output = (out_stop or "") + "\n" + (out_start or "")
     return {
         "ok": code == 0,
         "action": "restart",
@@ -187,6 +346,11 @@ async def restart_stream(id: int = Form(...), user: dict = Depends(get_current_a
         "code": code,
         "output": output,
         "status": st,
+        "youtube_broadcast_id": yt_prep.get("broadcast_id"),
+        "youtube_stream_id": yt_prep.get("stream_id"),
+        "youtube_complete_error": yt_complete.get("error"),
+        "youtube_prep_error": yt_prep.get("error"),
+        "youtube_live_error": yt_live.get("error"),
         "ts": int(time.time()),
     }
 
