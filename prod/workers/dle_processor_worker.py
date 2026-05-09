@@ -98,10 +98,10 @@ def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
 
 def main():
     """Запустити worker для обробки DLE завдань."""
-    redis_conn = get_redis()
-    worker = Worker(["dle_processing"], connection=redis_conn)
+    import sys
+    from shared.queue.worker_runner import run_worker
     logger.info("[DLE PROCESSOR WORKER] Starting worker on queue 'dle_processing'")
-    worker.work(with_scheduler=False)
+    sys.exit(run_worker(["dle_processing"], get_redis(), "cff-dle-processor"))
 
 
 if __name__ == "__main__":

@@ -22,14 +22,6 @@ def process_upload_job(payload: VideoUploadPayload) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    import shared.env  # noqa: F401 — load .env files
-
-    from rq import Worker
-
-    from shared.queue.config import get_redis, QUEUE_PUBLISHING
-
-    from shared.logging_config import setup_logging
-    setup_logging(service_name="cff-publishing")
-    redis_conn = get_redis()
-    worker = Worker([QUEUE_PUBLISHING], connection=redis_conn)
-    worker.work()
+    from shared.queue.config import QUEUE_PUBLISHING
+    from shared.queue.worker_runner import main
+    main([QUEUE_PUBLISHING], "cff-publishing")

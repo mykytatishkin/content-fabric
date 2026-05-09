@@ -125,14 +125,6 @@ def run_sora_job(payload: SoraPayload) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    import shared.env  # noqa: F401 — load .env files
-
-    from rq import Worker
-
-    from shared.logging_config import setup_logging
-    from shared.queue.config import QUEUE_SORA, get_redis
-
-    setup_logging(service_name="cff-sora")
-    redis_conn = get_redis()
-    worker = Worker([QUEUE_SORA], connection=redis_conn)
-    worker.work()
+    from shared.queue.config import QUEUE_SORA
+    from shared.queue.worker_runner import main
+    main([QUEUE_SORA], "cff-sora")

@@ -28,14 +28,6 @@ def send_notification(payload: NotificationPayload) -> bool:
 
 
 if __name__ == "__main__":
-    import shared.env  # noqa: F401 — load .env files
-
-    from rq import Worker
-
-    from shared.queue.config import get_redis, QUEUE_NOTIFICATIONS
-
-    from shared.logging_config import setup_logging
-    setup_logging(service_name="cff-notification")
-    redis_conn = get_redis()
-    worker = Worker([QUEUE_NOTIFICATIONS], connection=redis_conn)
-    worker.work()
+    from shared.queue.config import QUEUE_NOTIFICATIONS
+    from shared.queue.worker_runner import main
+    main([QUEUE_NOTIFICATIONS], "cff-notification")
