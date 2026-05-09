@@ -58,6 +58,84 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class CSRFMiddleware(BaseHTTPMiddleware):
+    """Origin/Referer-based CSRF protection for cookie-authenticated forms.
+
+    For state-changing methods on cookie-auth endpoints, require that
+    Origin (or Referer) matches the request's Host. Browsers always send
+    Origin on cross-origin POST, so an attacker on evil.com cannot forge
+    a request that looks same-origin.
+
+    Skipped for:
+      - Safe methods (GET/HEAD/OPTIONS).
+      - Bearer-token auth (CLI/API clients) — no cookie ⇒ no CSRF
+        vector, and forcing Origin on machine clients is impractical.
+      - /api/v1/auth/login — login is the bootstrap; no cookie yet.
+    """
+
+    SAFE = {"GET", "HEAD", "OPTIONS"}
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method in self.SAFE:
+            return await call_next(request)
+
+        # Bearer-token clients (machine-to-machine) bypass — they can't
+        # be CSRF'd because attacker can't read Authorization header from
+        # another origin.
+        if request.headers.get("authorization", "").lower().startswith("bearer "):
+            return await call_next(request)
+
+        # No cookie ⇒ no CSRF surface (login bootstrap, anonymous POSTs).
+        if not request.cookies.get("cff_token"):
+            return await call_next(request)
+
+        host = request.headers.get("host", "")
+        origin = request.headers.get("origin", "")
+        referer = request.headers.get("referer", "")
+
+        def _same_host(url: str) -> bool:
+            if not url or not host:
+                return False
+            for prefix in (f"http://{host}", f"https://{host}"):
+                if url == prefix or url.startswith(prefix + "/"):
+                    return True
+            return False
+
+        if origin:
+            if not _same_host(origin):
+                logging.getLogger("cff.csrf").warning(
+                    "CSRF reject: method=%s path=%s origin=%s host=%s",
+                    request.method, request.url.path, origin, host,
+                )
+                return JSONResponse(
+                    {"detail": "CSRF: cross-origin POST rejected"},
+                    status_code=403,
+                )
+        elif referer:
+            if not _same_host(referer):
+                logging.getLogger("cff.csrf").warning(
+                    "CSRF reject: method=%s path=%s referer=%s host=%s",
+                    request.method, request.url.path, referer, host,
+                )
+                return JSONResponse(
+                    {"detail": "CSRF: cross-origin referer"},
+                    status_code=403,
+                )
+        # No Origin and no Referer → most browsers send at least one for
+        # POST. Refuse to be safe (curl etc. should use Bearer auth).
+        else:
+            logging.getLogger("cff.csrf").warning(
+                "CSRF reject: method=%s path=%s — no Origin/Referer header",
+                request.method, request.url.path,
+            )
+            return JSONResponse(
+                {"detail": "CSRF: missing Origin/Referer header"},
+                status_code=403,
+            )
+
+        return await call_next(request)
+
+
 class TraceContextMiddleware(BaseHTTPMiddleware):
     """Bind a trace_id to every incoming HTTP request + log access.
 
@@ -118,6 +196,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(TraceContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
