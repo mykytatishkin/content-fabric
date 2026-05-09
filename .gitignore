@@ -117,3 +117,6 @@ CLAUDE.md
 *.png
 *.gif
 
+
+# Legacy Yii reference (not committed - 4MB UI extracted from server for porting)
+.legacy/
