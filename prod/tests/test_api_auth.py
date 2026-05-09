@@ -78,3 +78,37 @@ class TestMe:
             resp = app_client.get("/api/v1/auth/me", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["username"] == "testuser"
+
+
+class TestSubClaimValidation:
+    """Regression tests for /var/log/cff-api.log 2026-05-09 19:03:57 —
+    ``ValueError: invalid literal for int() with base 10: ''`` from
+    ``deps.get_current_user`` when JWT.sub is empty/non-numeric.
+    Should yield 401 instead of 500.
+    """
+
+    def _token(self, sub):
+        # bypass the cast-to-str inside create_access_token by signing a
+        # custom payload directly so we can put non-int / empty subs in.
+        import jwt as _jwt
+        from app.core.security import ALGORITHM, SECRET_KEY
+        from datetime import datetime, timedelta, timezone
+
+        payload = {"sub": sub, "exp": datetime.now(timezone.utc) + timedelta(hours=1)}
+        return _jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+    def test_empty_sub(self, app_client):
+        resp = app_client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {self._token('')}"})
+        assert resp.status_code == 401
+
+    def test_non_numeric_sub(self, app_client):
+        resp = app_client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {self._token('not-a-number')}"})
+        assert resp.status_code == 401
+
+    def test_zero_sub(self, app_client):
+        resp = app_client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {self._token('0')}"})
+        assert resp.status_code == 401
+
+    def test_negative_sub(self, app_client):
+        resp = app_client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {self._token('-5')}"})
+        assert resp.status_code == 401

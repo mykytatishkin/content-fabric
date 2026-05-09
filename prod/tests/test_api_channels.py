@@ -24,8 +24,9 @@ class TestListChannels:
 
     @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
     @patch(f"{_EP}.list_channels", return_value=[
-        {"id": 1, "name": "TestChannel", "platform_channel_id": "UC123",
+        {"id": 1, "uuid": "u-1", "name": "TestChannel", "platform_channel_id": "UC123",
          "console_id": 1, "enabled": True, "project_id": None, "created_by": 1,
+         "has_tokens": False, "token_expires_at": None,
          "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00"},
     ])
     def test_list_with_items(self, mock_list, mock_user, app_client, auth_headers):
@@ -34,6 +35,7 @@ class TestListChannels:
         channels = resp.json()
         assert len(channels) == 1
         assert channels[0]["name"] == "TestChannel"
+        assert channels[0]["uuid"] == "u-1"
 
 
 class TestGetChannel:
@@ -66,3 +68,76 @@ class TestGetConsoles:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["name"] == "Console1"
+
+
+_CHANNEL_OWNED = {
+    "id": 1, "uuid": "u-1", "name": "MyChannel", "platform_channel_id": "UC123",
+    "console_id": 1, "enabled": True, "project_id": None,
+    "created_by": TEST_USER["id"],
+    "has_tokens": True, "token_expires_at": None,
+    "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00",
+}
+
+
+class TestDeleteChannel:
+    @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
+    @patch(f"{_EP}.get_channel_by_id", return_value=None)
+    def test_not_found(self, mock_get, mock_user, app_client, auth_headers):
+        resp = app_client.delete("/api/v1/channels/999", headers=auth_headers)
+        assert resp.status_code == 404
+
+    @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
+    @patch(f"{_EP}.get_channel_by_id", return_value=_CHANNEL_OWNED)
+    @patch(f"{_EP}._channel_repo.delete_channel", return_value=True)
+    def test_owner_can_delete(self, mock_del, mock_get, mock_user, app_client, auth_headers):
+        resp = app_client.delete("/api/v1/channels/1", headers=auth_headers)
+        assert resp.status_code == 204
+        mock_del.assert_called_once_with(1)
+
+    @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
+    @patch(f"{_EP}.get_channel_by_id", return_value={**_CHANNEL_OWNED, "created_by": 999})
+    def test_non_owner_gets_404(self, mock_get, mock_user, app_client, auth_headers):
+        resp = app_client.delete("/api/v1/channels/1", headers=auth_headers)
+        assert resp.status_code == 404
+
+
+class TestRetryAllFailed:
+    @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
+    @patch(f"{_EP}.get_channel_by_id", return_value=None)
+    def test_not_found(self, mock_get, mock_user, app_client, auth_headers):
+        resp = app_client.post("/api/v1/channels/999/retry-all-failed", headers=auth_headers)
+        assert resp.status_code == 404
+
+    @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
+    @patch(f"{_EP}.get_channel_by_id", return_value=_CHANNEL_OWNED)
+    @patch(f"{_EP}._task_repo.retry_all_failed_by_channel", return_value=3)
+    def test_owner_retries(self, mock_retry, mock_get, mock_user, app_client, auth_headers):
+        resp = app_client.post("/api/v1/channels/1/retry-all-failed", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json() == {"channel_id": 1, "retried": 3}
+
+
+class TestStatsFallback:
+    @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
+    @patch(f"{_EP}.get_channel_by_id", return_value=_CHANNEL_OWNED)
+    @patch("shared.db.repositories.stats_repo.get_channel_stats")
+    def test_fallback_when_window_empty(self, mock_stats, mock_get, mock_user, app_client, auth_headers):
+        # First call (default 30 days) returns empty, fallback (3650) returns data
+        mock_stats.side_effect = [[], [{"snapshot_date": "2025-12-01", "subscribers": 1, "views": 1, "videos": 1, "likes": 0, "comments": 0}]]
+        resp = app_client.get("/api/v1/channels/1/stats", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["fallback_used"] is True
+        assert len(body["stats"]) == 1
+
+    @patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER)
+    @patch(f"{_EP}.get_channel_by_id", return_value=_CHANNEL_OWNED)
+    @patch("shared.db.repositories.stats_repo.get_channel_stats", return_value=[
+        {"snapshot_date": "2026-05-09", "subscribers": 0, "views": 0, "videos": 0, "likes": 0, "comments": 0},
+    ])
+    def test_no_fallback_when_window_has_data(self, mock_stats, mock_get, mock_user, app_client, auth_headers):
+        resp = app_client.get("/api/v1/channels/1/stats", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["fallback_used"] is False
+        assert len(body["stats"]) == 1

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -10,12 +11,33 @@ import jwt
 from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 
+logger = logging.getLogger(__name__)
+
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "")
 if not SECRET_KEY:
     raise RuntimeError(
         "JWT_SECRET_KEY environment variable is not set. "
         "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
     )
+# RFC 7518 §3.2: HS256 keys MUST be ≥ key-output (256 bits / 32 bytes).
+# PyJWT logs ``InsecureKeyLengthWarning`` once per token decode otherwise — see
+# 37 occurrences in /var/log/cff-api.log on 2026-05-09.  Allow the user to
+# explicitly opt-out only for local/test setups via JWT_ALLOW_SHORT_KEY=1.
+_MIN_KEY_BYTES = 32
+if len(SECRET_KEY.encode("utf-8")) < _MIN_KEY_BYTES:
+    if os.environ.get("JWT_ALLOW_SHORT_KEY", "").lower() in {"1", "true", "yes"}:
+        logger.warning(
+            "JWT_SECRET_KEY is %d bytes (< %d). Continuing because "
+            "JWT_ALLOW_SHORT_KEY=1, but this is insecure for production.",
+            len(SECRET_KEY.encode("utf-8")), _MIN_KEY_BYTES,
+        )
+    else:
+        raise RuntimeError(
+            f"JWT_SECRET_KEY is {len(SECRET_KEY.encode('utf-8'))} bytes; "
+            f"HS256 requires at least {_MIN_KEY_BYTES} bytes per RFC 7518 §3.2. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            " — or set JWT_ALLOW_SHORT_KEY=1 to override (NOT recommended)."
+        )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))  # 24h
 

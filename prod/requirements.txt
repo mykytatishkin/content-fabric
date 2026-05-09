@@ -13,8 +13,12 @@ google-auth>=2.35,<3.0
 google-auth-oauthlib>=1.2,<2.0
 jinja2==3.1.6
 PyJWT>=2.10,<3.0
+# NOTE: bcrypt 4.1+ removed ``bcrypt.__about__``, which passlib<1.7.5 still
+# probes on import. This produces a stack trace + WARNING on every login —
+# see /var/log/cff-api.log 2026-05-09 18:34:14 (passlib.handlers.bcrypt).
+# Pin to 4.0.x until passlib catches up.
 passlib[bcrypt]>=1.7,<2.0
-bcrypt>=4.0,<6.0
+bcrypt>=4.0,<4.1
 pyotp>=2.9,<3.0
 slowapi>=0.1.9,<1.0
 python-multipart>=0.0.18,<1.0
