@@ -369,6 +369,67 @@ def sample_youtube_token_expiries() -> None:
         logger.debug("sample_youtube_token_expiries failed: %s", exc)
 
 
+def push_youtube_token_expiries() -> int:
+    """Sample YouTube token expiries into a fresh registry and push to pushgateway.
+
+    Designed for the scheduler (no /metrics endpoint), which validates tokens
+    daily but otherwise never publishes the `cff_youtube_token_expires_in_seconds`
+    gauge. Without this push, Prometheus only sees the value when cff-api is
+    scraped — and the scheduler-side audit dashboards expect it through
+    pushgateway. Returns the number of channels reported (for logging).
+    """
+    try:
+        from datetime import timezone as _tz
+        from shared.db.connection import get_connection
+        from sqlalchemy import text
+
+        registry = CollectorRegistry()
+        gauge = Gauge(
+            "cff_youtube_token_expires_in_seconds",
+            "Seconds until OAuth token for a channel expires (negative = expired).",
+            ["channel"],
+            registry=registry,
+        )
+
+        now = time.time()
+        reported = 0
+        with get_connection() as conn:
+            rows = conn.execute(text("""
+                SELECT name, token_expires_at
+                FROM platform_channels
+                WHERE platform = 'youtube' AND enabled = 1 AND access_token IS NOT NULL
+            """)).fetchall()
+        for r in rows:
+            name, expires = r
+            if expires is None:
+                continue
+            try:
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=_tz.utc)
+                ts = expires.timestamp()
+            except AttributeError:
+                continue
+            gauge.labels(channel=str(name)).set(ts - now)
+            reported += 1
+
+        try:
+            push_to_gateway(
+                PUSHGATEWAY_URL,
+                job="cff-stats",
+                registry=registry,
+                grouping_key={"service": "scheduler"},
+                timeout=5,
+            )
+        except Exception as exc:
+            logger.warning("push_youtube_token_expiries: pushgateway send failed: %s", exc)
+            return 0
+
+        return reported
+    except Exception as exc:
+        logger.debug("push_youtube_token_expiries failed: %s", exc)
+        return 0
+
+
 def sample_stream_status() -> None:
     """Use systemctl to update stream_active + stream_uptime gauges."""
     import subprocess
