@@ -16,7 +16,9 @@ get structured fields (timestamp, message, priority, _SYSTEMD_UNIT, etc.) and
 post-process them to extract our own annotations (trace_id, task_id) from the
 text.
 
-Auth: same as other API endpoints (Depends get_current_user).
+Auth: admin only (Depends get_current_admin) — these endpoints expose
+host-level diagnostic data (journald logs, trace_ids) and must not leak
+to non-admin tenants.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -189,7 +191,7 @@ def _journal_query(
 
 
 @router.get("/services")
-async def list_services(user: dict = Depends(get_current_user)) -> dict[str, Any]:
+async def list_services(user: dict = Depends(get_current_admin)) -> dict[str, Any]:
     """Discoverable list of all log sources we expose."""
     streams = _list_stream_units()
     return {
@@ -209,7 +211,7 @@ async def list_logs(
     trace_id: str | None = Query(None, description="Filter by trace_id"),
     task_id: int | None = Query(None, description="Filter by task_id"),
     limit: int = Query(200, ge=1, le=5000),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_admin),
 ) -> dict[str, Any]:
     """Filtered log query.
 
@@ -258,7 +260,7 @@ async def list_logs(
 async def trace_path(
     trace_id: str,
     since: str | None = Query("24 hours ago"),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_admin),
 ) -> dict[str, Any]:
     """All log entries for a single trace_id across every CFF service.
 
@@ -292,7 +294,7 @@ async def tail_service(
     service: str,
     lines: int = Query(100, ge=1, le=2000),
     level: str | None = Query(None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_admin),
 ) -> dict[str, Any]:
     """Last N lines of one service. Cheap — no time filter, just `journalctl -n`."""
     pri = None
@@ -309,7 +311,7 @@ async def tail_service(
 @router.get("/analyze")
 async def analyze_logs(
     since: str = Query("1 hour ago"),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_admin),
 ) -> dict[str, Any]:
     """Aggregate + anomaly hints over a time window.
 
@@ -377,7 +379,7 @@ async def analyze_logs(
 @router.get("/stats")
 async def log_stats(
     since: str = Query("1 hour ago"),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_admin),
 ) -> dict[str, Any]:
     """Lightweight per-service counts. Faster than analyze when you only need volumes."""
     services = KNOWN_CFF_SERVICES + _list_stream_units()

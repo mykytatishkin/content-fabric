@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_admin
 from shared.db.connection import get_connection
 from shared.streams import provisioner, systemd_manager
 
@@ -85,7 +85,7 @@ def _fetch_stream(stream_id: int) -> dict | None:
 
 
 @router.get("/status")
-async def status_all(user: dict = Depends(get_current_user)):
+async def status_all(user: dict = Depends(get_current_admin)):
     """Список всех enabled стримов + текущий systemctl status каждого."""
     rows = _fetch_streams(only_enabled=True)
     data = []
@@ -109,7 +109,7 @@ async def status_all(user: dict = Depends(get_current_user)):
 async def tail_log(
     id: int = Query(..., gt=0),
     lines: int = Query(40, ge=1, le=1000),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_admin),
 ):
     s = _fetch_stream(id)
     if not s:
@@ -118,7 +118,7 @@ async def tail_log(
 
 
 @router.post("/start")
-async def start_stream(id: int = Form(...), user: dict = Depends(get_current_user)):
+async def start_stream(id: int = Form(...), user: dict = Depends(get_current_admin)):
     s = _fetch_stream(id)
     if not s:
         return {"ok": False, "error": "Not found"}
@@ -152,7 +152,7 @@ async def start_stream(id: int = Form(...), user: dict = Depends(get_current_use
 
 
 @router.post("/stop")
-async def stop_stream(id: int = Form(...), user: dict = Depends(get_current_user)):
+async def stop_stream(id: int = Form(...), user: dict = Depends(get_current_admin)):
     s = _fetch_stream(id)
     if not s:
         return {"ok": False, "error": "Not found"}
@@ -172,7 +172,7 @@ async def stop_stream(id: int = Form(...), user: dict = Depends(get_current_user
 
 
 @router.post("/restart")
-async def restart_stream(id: int = Form(...), user: dict = Depends(get_current_user)):
+async def restart_stream(id: int = Form(...), user: dict = Depends(get_current_admin)):
     s = _fetch_stream(id)
     if not s:
         return {"ok": False, "error": "Not found"}
@@ -192,7 +192,7 @@ async def restart_stream(id: int = Form(...), user: dict = Depends(get_current_u
 
 
 @router.post("/sync")
-async def sync_one(id: int = Form(...), user: dict = Depends(get_current_user)):
+async def sync_one(id: int = Form(...), user: dict = Depends(get_current_admin)):
     """Re-provision систему файлов одного стрима (env, runner, systemd unit)."""
     s = _fetch_stream(id)
     if not s:
@@ -206,7 +206,7 @@ async def sync_one(id: int = Form(...), user: dict = Depends(get_current_user)):
 
 
 @router.post("/sync-all")
-async def sync_all(user: dict = Depends(get_current_user)):
+async def sync_all(user: dict = Depends(get_current_admin)):
     """Re-provision ВСЕХ enabled стримов. Daemon-reload в конце."""
     streams = _fetch_streams(only_enabled=True)
     result = provisioner.provision_all(streams)
@@ -214,12 +214,12 @@ async def sync_all(user: dict = Depends(get_current_user)):
 
 
 @router.get("/")
-async def list_streams(user: dict = Depends(get_current_user)):
+async def list_streams(user: dict = Depends(get_current_admin)):
     return {"streams": _fetch_streams(only_enabled=False)}
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_stream(body: StreamCreateRequest, user: dict = Depends(get_current_user)):
+async def create_stream(body: StreamCreateRequest, user: dict = Depends(get_current_admin)):
     """Создать новый стрим + сразу провижионинг (env, runner, systemd unit)."""
     sql = text("""
         INSERT INTO live_stream_configurations

@@ -42,3 +42,13 @@ async def get_current_user(
 
     logger.debug("Authenticated user_id=%s email=%s", user["id"], user.get("email"))
     return user
+
+
+async def get_current_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Validate Bearer token and require admin status. Raises 403 if not admin."""
+    from app.core.auth import is_admin
+
+    if not is_admin(user):
+        logger.warning("Admin access denied: user_id=%s is not admin", user.get("id"))
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
