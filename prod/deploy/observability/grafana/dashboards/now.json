@@ -1,0 +1,141 @@
+{
+  "uid": "cff-now",
+  "title": "🏠 CFF — Now",
+  "tags": ["cff", "home"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "time": {"from": "now-15m", "to": "now"},
+  "templating": {"list": []},
+  "links": [
+    {"title": "📊 System Overview", "type": "link", "url": "/d/cff-system", "targetBlank": false, "icon": "dashboard"},
+    {"title": "📈 Task Pipeline",   "type": "link", "url": "/d/cff-pipeline", "targetBlank": false, "icon": "dashboard"},
+    {"title": "🔥 Incidents Now",   "type": "link", "url": "/d/cff-incidents", "targetBlank": false, "icon": "dashboard"},
+    {"title": "🔎 Trace Explorer",  "type": "link", "url": "/d/cff-trace", "targetBlank": false, "icon": "dashboard"}
+  ],
+  "panels": [
+    {
+      "type": "row",
+      "id": 100,
+      "title": "🚦 Status — что прямо сейчас",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat", "id": 1,
+      "title": "API",
+      "description": "Жив ли процесс cff-api (FastAPI/uvicorn).",
+      "gridPos": {"x": 0, "y": 1, "w": 4, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "up{job=\"cff-api\"}", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}, "textMode": "value_and_name"},
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 1, "color": "green"}]}}}
+    },
+    {
+      "type": "stat", "id": 2,
+      "title": "Workers",
+      "description": "Сколько cff-*-worker процессов сейчас живо. Норма = 9.",
+      "gridPos": {"x": 4, "y": 1, "w": 4, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "count(namedprocess_namegroup_num_procs{groupname=~\"cff-.*\"} > 0)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 8, "color": "yellow"}, {"value": 10, "color": "green"}]}}}
+    },
+    {
+      "type": "stat", "id": 3,
+      "title": "Streams в эфире",
+      "description": "Стримы со статусом active+running. Норма = 9.",
+      "gridPos": {"x": 8, "y": 1, "w": 4, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(cff_stream_active)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 9, "color": "green"}]}}}
+    },
+    {
+      "type": "stat", "id": 4,
+      "title": "Ошибки за 5 мин",
+      "description": "Кол-во записей в логах уровня ERROR/CRITICAL за последние 5 минут.",
+      "gridPos": {"x": 12, "y": 1, "w": 4, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(increase(cff_log_events_total{level=~\"ERROR|CRITICAL\"}[5m]))", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 25, "color": "red"}]}}}
+    },
+    {
+      "type": "stat", "id": 5,
+      "title": "DLE источники",
+      "description": "Сколько из 7 DLE-сайтов отвечают на SELECT 1.",
+      "gridPos": {"x": 16, "y": 1, "w": 4, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(cff_dle_source_up)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 7, "color": "green"}]}}}
+    },
+    {
+      "type": "stat", "id": 6,
+      "title": "Алерты",
+      "description": "Сколько правил Alerting сейчас в состоянии Firing.",
+      "gridPos": {"x": 20, "y": 1, "w": 4, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "red"}]}}}
+    },
+
+    {
+      "type": "row",
+      "id": 200,
+      "title": "🔥 Топ ошибок и шумные сервисы",
+      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 1},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "bargauge", "id": 10,
+      "title": "Errors per minute (по сервису)",
+      "description": "Текущая скорость генерации ошибок каждым сервисом.",
+      "gridPos": {"x": 0, "y": 7, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (worker) (rate(cff_log_events_total{level=~\"ERROR|CRITICAL\"}[5m])) * 60", "refId": "A", "legendFormat": "{{worker}}"}],
+      "options": {"orientation": "horizontal", "displayMode": "gradient", "valueMode": "color"},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "yellow"}, {"value": 5, "color": "red"}]}, "decimals": 2}}
+    },
+    {
+      "type": "logs", "id": 11,
+      "title": "Последние 50 ошибок",
+      "description": "ERROR/CRITICAL из всех cff-* + stream-* + nginx за последние 15 минут.",
+      "gridPos": {"x": 12, "y": 7, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*|nginx\", level=~\"ERROR|CRITICAL\"} | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A", "maxLines": 50}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "exact"}
+    },
+
+    {
+      "type": "row",
+      "id": 300,
+      "title": "📊 Throughput за 15 минут",
+      "gridPos": {"x": 0, "y": 15, "w": 24, "h": 1},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries", "id": 20,
+      "title": "Задачи в воронке",
+      "description": "Кол-во задач сейчас в каждом статусе (читается напрямую из MySQL раз в 30 с).",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_tasks_in_status", "legendFormat": "{{status}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 20, "stacking": {"mode": "none"}}}}
+    },
+    {
+      "type": "timeseries", "id": 21,
+      "title": "Глубина очередей",
+      "description": "Сколько RQ jobs ждут в каждой очереди. Растёт = воркеры не успевают.",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_queue_depth", "legendFormat": "{{queue}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60}}}
+    }
+  ]
+}

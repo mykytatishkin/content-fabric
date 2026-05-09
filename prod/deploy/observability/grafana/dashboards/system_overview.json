@@ -1,120 +1,164 @@
 {
   "uid": "cff-system",
-  "title": "CFF — System Overview",
+  "title": "📊 CFF — System Overview",
   "tags": ["cff", "overview"],
   "timezone": "browser",
   "refresh": "30s",
   "schemaVersion": 39,
   "time": {"from": "now-3h", "to": "now"},
   "templating": {"list": []},
+  "links": [
+    {"title": "🏠 Now",         "url": "/d/cff-now", "type": "link", "targetBlank": false, "icon": "home"},
+    {"title": "📈 Pipeline",    "url": "/d/cff-pipeline", "type": "link", "targetBlank": false},
+    {"title": "🔥 Incidents",   "url": "/d/cff-incidents", "type": "link", "targetBlank": false},
+    {"title": "🔎 Trace",       "url": "/d/cff-trace", "type": "link", "targetBlank": false}
+  ],
   "panels": [
     {
-      "type": "stat",
-      "title": "API up",
-      "id": 1,
-      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+      "type": "row", "id": 100,
+      "title": "🖥 Хост и процессы",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "stat", "id": 1,
+      "title": "API",
+      "description": "1 = up, 0 = down",
+      "gridPos": {"x": 0, "y": 1, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "up{job=\"cff-api\"}", "refId": "A"}],
       "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
-      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "text": "DOWN"}, "1": {"color": "green", "text": "UP"}}, "type": "value"}]}}
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}}
     },
     {
-      "type": "stat",
-      "title": "Workers up",
-      "id": 2,
-      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+      "type": "stat", "id": 2,
+      "title": "Workers",
+      "description": "Активные cff-*-worker процессы (норма 9)",
+      "gridPos": {"x": 4, "y": 1, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "count(namedprocess_namegroup_num_procs{groupname=~\"cff-.*\"} > 0)", "refId": "A"}]
+      "targets": [{"expr": "count(namedprocess_namegroup_num_procs{groupname=~\"cff-.*\"} > 0)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 8, "color": "yellow"}, {"value": 10, "color": "green"}]}}}
     },
     {
-      "type": "stat",
-      "title": "Streams running",
-      "id": 3,
-      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(cff_stream_active)", "refId": "A"}],
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 9, "color": "green"}]}}}
-    },
-    {
-      "type": "stat",
-      "title": "Disk free %",
-      "id": 4,
-      "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+      "type": "stat", "id": 3,
+      "title": "Disk free",
+      "description": "Свободно на /",
+      "gridPos": {"x": 8, "y": 1, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "100 * node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
       "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 15, "color": "yellow"}, {"value": 30, "color": "green"}]}}}
     },
     {
-      "type": "stat",
-      "title": "RAM used %",
-      "id": 5,
-      "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+      "type": "stat", "id": 4,
+      "title": "RAM used",
+      "description": "Использование памяти хоста",
+      "gridPos": {"x": 12, "y": 1, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "percent"}}
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 80, "color": "yellow"}, {"value": 92, "color": "red"}]}}}
     },
     {
-      "type": "stat",
-      "title": "DLE sources up",
-      "id": 6,
-      "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+      "type": "stat", "id": 5,
+      "title": "DLE up",
+      "description": "DLE источников отвечает (норма 7)",
+      "gridPos": {"x": 16, "y": 1, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "sum(cff_dle_source_up)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
       "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 7, "color": "green"}]}}}
     },
+    {
+      "type": "stat", "id": 6,
+      "title": "Streams в эфире",
+      "description": "Active+running стримы (норма 9)",
+      "gridPos": {"x": 20, "y": 1, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(cff_stream_active)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 9, "color": "green"}]}}}
+    },
 
     {
-      "type": "timeseries",
+      "type": "row", "id": 200,
+      "title": "💾 Память / CPU воркеров",
+      "gridPos": {"x": 0, "y": 5, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 10,
       "title": "Worker memory (RSS)",
-      "id": 10,
-      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "description": "Реальная память (Resident Set Size) каждого cff-*-worker. Если у одного растёт линейно — вероятный memory leak.",
+      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "namedprocess_namegroup_memory_bytes{groupname=~\"cff-.*\", memtype=\"resident\"}", "legendFormat": "{{groupname}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "bytes"}}
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 10}}}
     },
     {
-      "type": "timeseries",
-      "title": "Queue depth",
-      "id": 11,
-      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "type": "timeseries", "id": 11,
+      "title": "Worker CPU",
+      "description": "CPU time (rate) каждым cff-*-worker.",
+      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "cff_queue_depth", "legendFormat": "{{queue}}", "refId": "A"}]
+      "targets": [{"expr": "rate(namedprocess_namegroup_cpu_seconds_total{groupname=~\"cff-.*\"}[5m])", "legendFormat": "{{groupname}} ({{mode}})", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "custom": {"fillOpacity": 10}}}
     },
 
     {
-      "type": "timeseries",
-      "title": "Tasks by status (live)",
-      "id": 20,
-      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "cff_tasks_in_status", "legendFormat": "{{status}}", "refId": "A"}]
+      "type": "row", "id": 300,
+      "title": "📥 Очереди и задачи",
+      "gridPos": {"x": 0, "y": 14, "w": 24, "h": 1}, "collapsed": false, "panels": []
     },
     {
-      "type": "timeseries",
-      "title": "Streams by state",
-      "id": 21,
-      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "type": "timeseries", "id": 20,
+      "title": "Глубина очередей",
+      "description": "Кол-во RQ jobs ожидающих в каждой очереди.",
+      "gridPos": {"x": 0, "y": 15, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "cff_streams_in_state", "legendFormat": "{{state}}", "refId": "A"}]
+      "targets": [{"expr": "cff_queue_depth", "legendFormat": "{{queue}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60}}}
+    },
+    {
+      "type": "timeseries", "id": 21,
+      "title": "Задачи в каждом статусе",
+      "description": "Текущее количество строк в content_upload_queue_tasks по status (читается из MySQL раз в 30 с).",
+      "gridPos": {"x": 12, "y": 15, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_tasks_in_status", "legendFormat": "{{status}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 20}}}
     },
 
     {
-      "type": "timeseries",
-      "title": "DLE source up (1=connected, 0=down)",
-      "id": 30,
-      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "type": "row", "id": 400,
+      "title": "📡 Источники и стримы",
+      "gridPos": {"x": 0, "y": 23, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 30,
+      "title": "DLE источники up/down",
+      "description": "1 = SELECT 1 ответил, 0 = таймаут или ошибка.",
+      "gridPos": {"x": 0, "y": 24, "w": 8, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "cff_dle_source_up", "legendFormat": "{{source}}", "refId": "A"}],
       "fieldConfig": {"defaults": {"max": 1, "min": 0}}
     },
     {
-      "type": "timeseries",
-      "title": "Stream uptime (minutes)",
-      "id": 31,
-      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "type": "timeseries", "id": 31,
+      "title": "Stream uptime (минуты)",
+      "description": "Сколько минут стрим непрерывно работает.",
+      "gridPos": {"x": 8, "y": 24, "w": 8, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "cff_stream_uptime_seconds / 60", "legendFormat": "{{stream}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "m"}}
+      "fieldConfig": {"defaults": {"unit": "m", "custom": {"fillOpacity": 10}}}
+    },
+    {
+      "type": "timeseries", "id": 32,
+      "title": "Streams по состоянию",
+      "description": "Группировка 9 стримов по subState systemd.",
+      "gridPos": {"x": 16, "y": 24, "w": 8, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_streams_in_state", "legendFormat": "{{state}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 80, "stacking": {"mode": "normal"}}}}
     }
   ]
 }
