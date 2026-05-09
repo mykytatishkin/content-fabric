@@ -1491,10 +1491,14 @@ async def task_cancel(request: Request, task_uuid: str):
         return redirect
 
     from shared.db.repositories import task_repo
+    from app.core.flash import flash
+
     task = task_repo.get_task_by_uuid(task_uuid)
     if not task or (not is_admin(user) and task.get("created_by") != user["id"]):
+        flash(request, "error", "Task not found or access denied")
         return RedirectResponse("/app/tasks", status_code=302)
     task_repo.cancel_task(task["id"])
+    flash(request, "success", f"Task '{task.get('title') or task_uuid}' cancelled")
     return RedirectResponse("/app/tasks", status_code=302)
 
 
