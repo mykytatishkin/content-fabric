@@ -123,7 +123,8 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_ANONYMOUS_ENABLED=false
-      - GF_SERVER_ROOT_URL=http://127.0.0.1:3001
+      # No fixed root_url — derive from incoming request (tunnel-friendly)
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
       - GF_INSTALL_PLUGINS=
       - GF_LOG_LEVEL=info
       # SMTP wiring is intentionally a stub — real address provided later.
