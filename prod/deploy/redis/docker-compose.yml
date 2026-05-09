@@ -1,0 +1,50 @@
+# Dedicated CFF Redis (RQ broker + cache).
+#
+# Replaces the previous (mistaken) reuse of `tg-app-redis` from the tg-app
+# project — see /opt/content-fabric/prod/tg-app/tg-app/docker-compose.yml.
+# tg-app's backend never used Redis; CFF workers were the only consumers.
+#
+# Bind: 127.0.0.1:6379 only. External access is blocked at the host firewall
+# (DOCKER-USER chain: -i eno1 --dport 6379 DROP) and by this loopback bind.
+#
+# Bring up:
+#   cd /opt/content-fabric/prod/deploy/redis
+#   docker compose up -d
+#
+# CFF .env:
+#   REDIS_URL=redis://localhost:6379/0
+#
+# Persistence: AOF every second, plus periodic snapshots (default).
+
+name: cff-redis
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: cff-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - "512mb"
+      - --maxmemory-policy
+      - "noeviction"        # RQ requires noeviction so jobs aren't dropped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - cff-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  cff-redis-data:
