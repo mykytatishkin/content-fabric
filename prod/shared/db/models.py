@@ -12,7 +12,11 @@ class TaskStatus(IntEnum):
 
 
 class UserStatus(IntEnum):
-    INACTIVE = 0
+    # Aligned with legacy Yii (`common\models\User.php:18`): INACTIVE was 9 there,
+    # ACTIVE is 10. Existing rows migrated from Yii preserve their status verbatim,
+    # so keeping these integer values means a Yii row with status=9 is correctly
+    # filtered as INACTIVE in CFF code. ADMIN=1 is CFF-only (not a Yii concept).
+    INACTIVE = 9
     ADMIN = 1
     ACTIVE = 10
 

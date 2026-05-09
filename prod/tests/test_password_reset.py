@@ -12,7 +12,7 @@ from unittest.mock import patch
 from tests.conftest import TEST_USER
 
 ACTIVE_USER = {**TEST_USER, "status": 10}  # UserStatus.ACTIVE
-INACTIVE_USER = {**TEST_USER, "status": 0}  # UserStatus.INACTIVE
+INACTIVE_USER = {**TEST_USER, "status": 9}  # UserStatus.INACTIVE
 
 
 # ── /api/v1/auth/forgot-password ──────────────────────────────────────

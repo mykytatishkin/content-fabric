@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подтверждение email — aiyoutube</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "SF Pro", -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+            background: #ebebed;
+            color: #000;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; -webkit-font-smoothing: antialiased;
+        }
+        .login-card {
+            background: #fff; border-radius: 24px;
+            padding: 2.5rem 2rem; width: 100%; max-width: 360px;
+            border: 1px solid rgba(0,0,0,0.075);
+            box-shadow: rgba(0,0,0,0.08) 0px 12px 24px -4px, rgba(0,0,0,0.04) 0px 8px 16px -4px;
+        }
+        .login-card p { font-size: 13px; color: #858587; margin-bottom: 1.5rem; }
+        .form-group { margin-bottom: 0.9rem; }
+        .form-group label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 0.3rem; color: #5c5c60; }
+        .form-group input {
+            width: 100%; padding: 0.6rem 0.75rem;
+            border: 1px solid rgba(0,0,0,0.075); border-radius: 16px;
+            font-size: 13px; background: #fff; color: #000; font-family: inherit;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.075);
+        }
+        .form-group input:focus {
+            outline: none; border-color: rgba(224,138,60,0.5);
+            box-shadow: 0 0 0 3px rgba(224,138,60,0.15), inset 0 0 0 1px rgba(224,138,60,0.3);
+        }
+        .btn {
+            width: 100%; padding: 0.65rem; border-radius: 100vh;
+            font-size: 13px; font-weight: 600; border: none; cursor: pointer;
+            font-family: inherit;
+        }
+        .btn-primary {
+            background: #E08A3C; color: #fff;
+            border: 1px solid rgba(0,0,0,0.1);
+            box-shadow: 0 0 1px rgba(0,0,0,0.4), inset 0 0 1px 1px rgba(255,255,255,0.8), 0 4px 24px rgba(0,0,0,0.075);
+        }
+        .alert { padding: 0.6rem 0.85rem; border-radius: 16px; margin-bottom: 1rem; font-size: 13px; }
+        .alert-error { background: rgba(254,112,112,0.1); color: #c0392b; border: 1px solid rgba(254,112,112,0.15); }
+        .alert-success { background: rgba(224,138,60,0.1); color: #1a8f2d; border: 1px solid rgba(224,138,60,0.15); }
+        .links { text-align: center; margin-top: 1.2rem; font-size: 13px; color: #858587; }
+        .links a { color: #E08A3C; text-decoration: none; font-weight: 500; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        {% set _flashes = (get_flashes(request) if get_flashes is defined else []) %}
+        {% for _cat, _msg in _flashes %}
+          <div class="alert alert-{{ _cat }}">{{ _msg }}</div>
+        {% endfor %}
+        <div style="margin-bottom:0.6rem;text-align:center;">
+            <div style="display:inline-flex;align-items:center;gap:10px;">
+                <img src="/static/img/upcast-logo.svg?v=7" alt="aiyoutube" style="height:32px;">
+                <span style="font-size:22px;font-weight:600;letter-spacing:-0.4px;color:#1d1d1f;">aiyoutube</span>
+            </div>
+        </div>
+        <p style="text-align:center;">Не пришло письмо подтверждения email? Введите email — мы отправим заново.</p>
+
+        {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+        <form method="POST" action="/app/resend-verification">
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" name="email" required autofocus>
+            </div>
+            <button type="submit" class="btn btn-primary">Отправить письмо</button>
+        </form>
+
+        <div class="links">
+            <a href="/app/login">Назад к входу</a>
+        </div>
+    </div>
+</body>
+</html>
