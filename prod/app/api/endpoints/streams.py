@@ -15,6 +15,8 @@ URLs (compatible with Yii UI):
 from __future__ import annotations
 
 import logging
+import posixpath
+import re
 import time
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
@@ -22,6 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.api.deps import get_current_admin
+from app.core.config import settings
 from shared.db.connection import get_connection
 from shared.streams import provisioner, systemd_manager
 
@@ -39,8 +42,12 @@ _GO_LIVE_DELAY_SEC = 8
 
 class StreamCreateRequest(BaseModel):
     name: str
-    service_name: str
-    workdir: str
+    # ``service_name`` and ``workdir`` are auto-derived from ``name`` when
+    # omitted — Yii beforeValidate parity (StreamConfiguration::beforeValidate
+    # in the legacy frontend).  See ``_derive_service_name`` /
+    # ``_derive_workdir`` below.
+    service_name: str | None = None
+    workdir: str | None = None
     stream_key: str
     duration_sec: int = 42900
     rtmp_base: str | None = "rtmp://a.rtmp.youtube.com/live2/"
@@ -52,6 +59,24 @@ class StreamCreateRequest(BaseModel):
     tags: str | None = None
     thumbnail_path: str | None = None
     notes: str | None = None
+
+
+# ─── Yii-parity defaults ─────────────────────────────────────────────
+
+
+_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _derive_service_name(name: str) -> str:
+    """Yii parity: ``stream-<name>.service`` (matches existing rows)."""
+    return f"stream-{name}.service"
+
+
+def _derive_workdir(name: str) -> str:
+    """Yii parity: ``<STREAMS_ROOT>/<name>`` (always POSIX paths — server
+    runs on Linux even when this code is unit-tested on Windows)."""
+    root = (settings.STREAMS_ROOT or "").rstrip("/") or "/var/lib/cff/streams"
+    return posixpath.join(root, name)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────
@@ -384,7 +409,29 @@ async def list_streams(user: dict = Depends(get_current_admin)):
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_stream(body: StreamCreateRequest, user: dict = Depends(get_current_admin)):
-    """Создать новый стрим + сразу провижионинг (env, runner, systemd unit)."""
+    """Создать новый стрим + сразу провижионинг (env, runner, systemd unit).
+
+    Yii beforeValidate parity — ``service_name`` and ``workdir`` are
+    auto-derived from ``name`` if not supplied.
+    """
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    if not _NAME_RE.match(name):
+        raise HTTPException(
+            status_code=422,
+            detail="name must contain only [A-Za-z0-9_-]",
+        )
+    if not (body.stream_key or "").strip():
+        raise HTTPException(status_code=422, detail="stream_key is required")
+
+    payload = body.model_dump()
+    payload["name"] = name
+    if not (payload.get("service_name") or "").strip():
+        payload["service_name"] = _derive_service_name(name)
+    if not (payload.get("workdir") or "").strip():
+        payload["workdir"] = _derive_workdir(name)
+
     sql = text("""
         INSERT INTO live_stream_configurations
             (project_id, streaming_account_id, channel_id, name, service_name, workdir,
@@ -398,7 +445,7 @@ async def create_stream(body: StreamCreateRequest, user: dict = Depends(get_curr
              NOW(), NOW())
     """)
     with get_connection() as conn:
-        result = conn.execute(sql, body.model_dump())
+        result = conn.execute(sql, payload)
         new_id = result.lastrowid
         conn.commit()
 
