@@ -23,6 +23,7 @@ from app.repositories.channel_repository import (
 from app.schemas.channel import Channel, ChannelCreate, OAuthCredential
 from app.services.youtube_validator import validate_channel_id
 from shared.db.models import UserStatus
+from shared.db.repositories import channel_repo as _channel_repo, task_repo as _task_repo
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,12 @@ async def get_channel(channel_id: int, user: dict = Depends(get_current_user)):
 
 @router.get("/{channel_id}/stats")
 async def get_channel_stats(channel_id: int, days: int = 30, user: dict = Depends(get_current_user)):
-    """Get daily statistics for a channel (owner or admin only)."""
+    """Get daily statistics for a channel (owner or admin only).
+
+    If no snapshots fall in the requested window, falls back to the latest 30
+    snapshots so callers can still render a chart for channels that haven't
+    been refreshed recently (some legacy channels last collected 2+ months ago).
+    """
     from shared.db.repositories import stats_repo
     channel = get_channel_by_id(channel_id)
     if not channel:
@@ -135,4 +141,42 @@ async def get_channel_stats(channel_id: int, days: int = 30, user: dict = Depend
     if user["status"] != UserStatus.ADMIN.value and channel.get("created_by") != user["id"]:
         raise HTTPException(status_code=404, detail="Channel not found")
     stats = stats_repo.get_channel_stats(channel_id, days=days)
-    return {"channel_id": channel_id, "days": days, "stats": stats}
+    fallback_used = False
+    if not stats:
+        # Try a much wider window so the UI can still show "stale" historical data.
+        stats = stats_repo.get_channel_stats(channel_id, days=3650)
+        fallback_used = bool(stats)
+    return {
+        "channel_id": channel_id,
+        "days": days,
+        "fallback_used": fallback_used,
+        "stats": stats,
+    }
+
+
+@router.delete("/{channel_id}", status_code=204)
+async def delete_channel(channel_id: int, user: dict = Depends(get_current_user)):
+    """Delete a channel (owner or admin only). Also removes login credentials."""
+    channel = get_channel_by_id(channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if user["status"] != UserStatus.ADMIN.value and channel.get("created_by") != user["id"]:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    ok = _channel_repo.delete_channel(channel_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Channel delete failed")
+    logger.info("Channel deleted via API: id=%s by user=%s", channel_id, user["id"])
+    return None
+
+
+@router.post("/{channel_id}/retry-all-failed")
+async def retry_all_failed(channel_id: int, user: dict = Depends(get_current_user)):
+    """Reset failed/cancelled tasks for a channel back to pending. Returns count."""
+    channel = get_channel_by_id(channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if user["status"] != UserStatus.ADMIN.value and channel.get("created_by") != user["id"]:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    count = _task_repo.retry_all_failed_by_channel(channel_id)
+    logger.info("retry-all-failed: channel=%s reset=%s by user=%s", channel_id, count, user["id"])
+    return {"channel_id": channel_id, "retried": count}

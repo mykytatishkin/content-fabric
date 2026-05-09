@@ -635,13 +635,24 @@ async def channels_page(request: Request):
                     FROM content_upload_queue_tasks GROUP BY channel_id
                 ) ts ON ts.channel_id = c.id
                 LEFT JOIN (
+                    -- One row per channel: pick the latest completed task,
+                    -- breaking ties on `id` so duplicate (channel_id, completed_at)
+                    -- pairs don't multiply the parent row. The previous version
+                    -- joined on equality of completed_at and produced extra rows
+                    -- when two tasks shared a timestamp (e.g. channel 21 caused
+                    -- the count to display 38 for 37 actual channels).
                     SELECT t1.channel_id, t1.completed_at, t1.title
                     FROM content_upload_queue_tasks t1
                     INNER JOIN (
-                        SELECT channel_id, MAX(completed_at) as max_completed
-                        FROM content_upload_queue_tasks WHERE status = 1
+                        SELECT channel_id, MAX(id) AS max_id
+                        FROM content_upload_queue_tasks t_inner
+                        WHERE status = 1 AND completed_at = (
+                            SELECT MAX(t2.completed_at)
+                            FROM content_upload_queue_tasks t2
+                            WHERE t2.channel_id = t_inner.channel_id AND t2.status = 1
+                        )
                         GROUP BY channel_id
-                    ) t2 ON t1.channel_id = t2.channel_id AND t1.completed_at = t2.max_completed
+                    ) latest ON t1.id = latest.max_id
                 ) last_t ON last_t.channel_id = c.id
                 WHERE {ch_where} ORDER BY c.id
             """), ch_params).fetchall()
@@ -2301,14 +2312,45 @@ async def voice_process(request: Request):
     if not user:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid or missing JSON body"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "JSON body must be an object"}, status_code=400)
+
     input_path = body.get("input_path", "").strip()
     if not input_path:
         return JSONResponse({"error": "No input file specified"}, status_code=400)
 
     import os
-    if not os.path.exists(input_path):
+    # Security: input_path must live under UPLOAD_DIR/voice/ — prevents path
+    # traversal / arbitrary file disclosure (e.g. /etc/passwd, .env). The
+    # voice changer would fail on non-audio anyway, but we shouldn't spawn a
+    # worker thread that touches a file outside the upload area.
+    upload_root = Path(os.environ.get("UPLOAD_DIR", "/opt/content-fabric/uploads")) / "voice"
+    try:
+        resolved = Path(input_path).resolve(strict=True)
+        resolved.relative_to(upload_root.resolve())
+    except FileNotFoundError:
         return JSONResponse({"error": f"File not found: {input_path}"}, status_code=400)
+    except ValueError:
+        return JSONResponse(
+            {"error": "input_path must be a previously-uploaded file under the voice upload directory"},
+            status_code=400,
+        )
+
+    # Reject obvious non-audio extensions before queuing a thread.
+    _voice_allowed_exts = {
+        ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma",
+        ".mp4", ".mkv", ".avi", ".mov", ".webm",
+    }
+    if resolved.suffix.lower() not in _voice_allowed_exts:
+        return JSONResponse(
+            {"error": f"Unsupported audio/video extension: {resolved.suffix}"},
+            status_code=400,
+        )
+    input_path = str(resolved)
 
     voice = body.get("voice", "kseniya")
     method = body.get("method", "silero")

@@ -23,11 +23,16 @@ logger = logging.getLogger(__name__)
 def list_channels(project_id: int | None = None) -> list[dict[str, Any]]:
     cols = [
         platform_channels.c.id,
+        platform_channels.c.uuid,
         platform_channels.c.name,
         platform_channels.c.platform_channel_id,
         platform_channels.c.console_id,
         platform_channels.c.enabled,
         platform_channels.c.project_id,
+        platform_channels.c.access_token,
+        platform_channels.c.refresh_token,
+        platform_channels.c.token_expires_at,
+        platform_channels.c.created_by,
         platform_channels.c.created_at,
         platform_channels.c.updated_at,
     ]
@@ -38,11 +43,16 @@ def list_channels(project_id: int | None = None) -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(stmt).fetchall()
 
+    # Don't leak raw access/refresh tokens in list responses;
+    # surface a derived boolean `has_tokens` instead so callers can render UI hints.
     return [
         {
-            "id": r[0], "name": r[1], "platform_channel_id": r[2],
-            "console_id": r[3], "enabled": bool(r[4]), "project_id": r[5],
-            "created_at": r[6], "updated_at": r[7],
+            "id": r[0], "uuid": r[1], "name": r[2], "platform_channel_id": r[3],
+            "console_id": r[4], "enabled": bool(r[5]), "project_id": r[6],
+            "has_tokens": bool(r[7] and r[8]),
+            "token_expires_at": r[9],
+            "created_by": r[10],
+            "created_at": r[11], "updated_at": r[12],
         }
         for r in rows
     ]
@@ -51,6 +61,7 @@ def list_channels(project_id: int | None = None) -> list[dict[str, Any]]:
 def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
     cols = [
         platform_channels.c.id,
+        platform_channels.c.uuid,
         platform_channels.c.name,
         platform_channels.c.platform_channel_id,
         platform_channels.c.console_id,
@@ -69,11 +80,12 @@ def get_channel_by_id(channel_id: int) -> dict[str, Any] | None:
     if not row:
         return None
     return {
-        "id": row[0], "name": row[1], "platform_channel_id": row[2],
-        "console_id": row[3], "enabled": bool(row[4]), "project_id": row[5],
-        "access_token": row[6], "refresh_token": row[7],
-        "token_expires_at": row[8], "created_by": row[9],
-        "created_at": row[10], "updated_at": row[11],
+        "id": row[0], "uuid": row[1], "name": row[2], "platform_channel_id": row[3],
+        "console_id": row[4], "enabled": bool(row[5]), "project_id": row[6],
+        "access_token": row[7], "refresh_token": row[8],
+        "has_tokens": bool(row[7] and row[8]),
+        "token_expires_at": row[9], "created_by": row[10],
+        "created_at": row[11], "updated_at": row[12],
     }
 
 
