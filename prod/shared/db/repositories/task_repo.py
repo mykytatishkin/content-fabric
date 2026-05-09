@@ -150,6 +150,34 @@ def get_all_tasks(
     return [_row_to_dict(r) for r in rows]
 
 
+def count_tasks(
+    status: int | None = None,
+    statuses: list[int] | None = None,
+    channel_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    created_by: int | None = None,
+) -> int:
+    """Total number of tasks matching the same filters as get_all_tasks (without limit/offset)."""
+    t = content_upload_queue_tasks
+    stmt = select(func.count()).select_from(t)
+    if created_by is not None:
+        stmt = stmt.where(t.c.created_by == created_by)
+    if status is not None:
+        stmt = stmt.where(t.c.status == status)
+    elif statuses:
+        stmt = stmt.where(t.c.status.in_(statuses))
+    if channel_id is not None:
+        stmt = stmt.where(t.c.channel_id == channel_id)
+    if date_from is not None:
+        stmt = stmt.where(t.c.scheduled_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(t.c.scheduled_at <= date_to)
+    with get_connection() as conn:
+        row = conn.execute(stmt).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
 def get_token_related_failed_tasks(channel_id: int) -> list[dict[str, Any]]:
     """Get failed tasks with token-related error messages."""
     t = content_upload_queue_tasks

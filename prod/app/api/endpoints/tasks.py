@@ -87,6 +87,7 @@ async def list_tasks(
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
 ):
+    uid = scoped_user_id(user)
     tasks = task_repo.get_all_tasks(
         status=status_filter,
         channel_id=channel_id,
@@ -94,27 +95,48 @@ async def list_tasks(
         offset=offset,
         date_from=date_from,
         date_to=date_to,
-        created_by=scoped_user_id(user),
+        created_by=uid,
+    )
+    total = task_repo.count_tasks(
+        status=status_filter,
+        channel_id=channel_id,
+        date_from=date_from,
+        date_to=date_to,
+        created_by=uid,
     )
     return TaskListResponse(
         items=[TaskResponse(**t) for t in tasks],
-        total=len(tasks),
+        total=total,
     )
 
 
 @router.get("/calendar")
 async def task_calendar(
-    date_from: datetime = Query(..., alias="from"),
-    date_to: datetime = Query(..., alias="to"),
+    # Accept both ``from``/``to`` (canonical, used by the panel UI) and
+    # ``start_date``/``end_date`` (used by external monitoring + Yii-era
+    # clients).  Either pair works; if both are provided, ``from``/``to``
+    # win.  Without this both /var/log/cff-api.log shows 5x 422 from the
+    # smoke probe on 2026-05-09 20:03.
+    date_from: datetime | None = Query(None, alias="from"),
+    date_to: datetime | None = Query(None, alias="to"),
+    start_date: datetime | None = Query(None),
+    end_date: datetime | None = Query(None),
     channel_id: int | None = None,
     user: dict = Depends(get_current_user),
 ):
     """Tasks grouped by day for calendar view."""
+    df = date_from or start_date
+    dt = date_to or end_date
+    if df is None or dt is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide a date range as ?from=&to= or ?start_date=&end_date=",
+        )
     from collections import defaultdict
     tasks = task_repo.get_all_tasks(
         channel_id=channel_id,
-        date_from=date_from,
-        date_to=date_to,
+        date_from=df,
+        date_to=dt,
         limit=500,
         created_by=scoped_user_id(user),
     )
@@ -150,6 +172,7 @@ async def task_history(
         statuses_list = [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]
         single_status = None
 
+    uid = scoped_user_id(user)
     tasks = task_repo.get_all_tasks(
         status=single_status,
         statuses=statuses_list,
@@ -158,11 +181,19 @@ async def task_history(
         offset=offset,
         date_from=date_from,
         date_to=date_to,
-        created_by=scoped_user_id(user),
+        created_by=uid,
+    )
+    total = task_repo.count_tasks(
+        status=single_status,
+        statuses=statuses_list,
+        channel_id=channel_id,
+        date_from=date_from,
+        date_to=date_to,
+        created_by=uid,
     )
     return TaskListResponse(
         items=[TaskResponse(**t) for t in tasks],
-        total=len(tasks),
+        total=total,
     )
 
 
@@ -241,13 +272,28 @@ async def get_task_progress(task_id: int, user: dict = Depends(get_current_user)
     check_owner_or_404(task, user)
 
     progress = _get_progress_from_redis(task_id)
+    # Derive sensible defaults from terminal task state when Redis has no live progress.
+    task_status = task["status"]
+    status_val = task_status.value if hasattr(task_status, "value") else int(task_status)
+    if status_val == TaskStatus.COMPLETED.value:
+        default_pct, default_stage = 100, "completed"
+    elif status_val == TaskStatus.FAILED.value:
+        default_pct, default_stage = 0, "failed"
+    elif status_val == TaskStatus.CANCELLED.value:
+        default_pct, default_stage = 0, "cancelled"
+    elif status_val == TaskStatus.PROCESSING.value:
+        default_pct, default_stage = 0, "processing"
+    elif status_val == TaskStatus.PENDING.value:
+        default_pct, default_stage = 0, "pending"
+    else:
+        default_pct, default_stage = 0, "unknown"
     return {
         "task_id": task["id"],
-        "status": task["status"],
-        "progress_pct": progress.get("pct", 0),
+        "status": status_val,
+        "progress_pct": progress.get("pct", default_pct),
         "bytes_uploaded": progress.get("bytes_uploaded", 0),
         "total_bytes": progress.get("total_bytes", 0),
-        "stage": progress.get("stage", "unknown"),
+        "stage": progress.get("stage", default_stage),
     }
 
 
