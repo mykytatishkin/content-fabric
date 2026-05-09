@@ -2,10 +2,7 @@
 {% block title %}DLE Sources — aiyoutube{% endblock %}
 {% block content %}
 <style>
-  .dle-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 500; align-items: center; justify-content: center; }
-  .dle-modal.open { display: flex; }
-  .dle-modal-card { background: #fff; border-radius: 16px; max-width: 540px; width: 92%; padding: 1.25rem; box-shadow: 0 24px 48px rgba(0,0,0,0.2); }
-  .dle-modal-card h3 { margin: 0 0 0.85rem; font-size: 15px; }
+  /* Modal styles now provided by /static/js/modal.js */
   .small-muted { font-size: 11px; color: #858587; }
   .stream-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
   .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
@@ -49,52 +46,62 @@
 </div>
 {% endif %}
 
-<!-- Run-now modal -->
-<div class="dle-modal" id="runModal">
-  <div class="dle-modal-card">
-    <h3>▶️ Run ingestion: <span id="runSlug"></span></h3>
-    <div class="form-group">
-      <label>Channel</label>
-      <select id="runChannelId">
-        {% for c in channels %}
-        <option value="{{ c.id }}">#{{ c.id }} — {{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Limit (posts)</label>
-      <input type="number" id="runLimit" value="1" min="1" max="50">
-    </div>
-    <div class="form-group">
-      <label>Media type</label>
-      <select id="runMedia">
-        <option value="video">video</option>
-        <option value="shorts">shorts</option>
-      </select>
-    </div>
-    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
-      <button class="btn" onclick="closeRun()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitRun()">✓ Enqueue</button>
-    </div>
+<!-- Hidden form template for the Run modal — moved into modal body via innerHTML -->
+<script type="text/html" id="runFormTpl">
+  <div class="form-group">
+    <label>Channel</label>
+    <select id="runChannelId">
+      {% for c in channels %}
+      <option value="{{ c.id }}">#{{ c.id }} — {{ c.name }}</option>
+      {% endfor %}
+    </select>
   </div>
-</div>
+  <div class="form-group">
+    <label>Limit (posts)</label>
+    <input type="number" id="runLimit" value="1" min="1" max="50">
+  </div>
+  <div class="form-group">
+    <label>Media type</label>
+    <select id="runMedia">
+      <option value="video">video</option>
+      <option value="shorts">shorts</option>
+    </select>
+  </div>
+</script>
 
 <script>
 let currentSlug = null;
-const runModal = document.getElementById('runModal');
+let runModalHandle = null;
+
+function _esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
 
 function openRunModal(slug) {
   currentSlug = slug;
-  document.getElementById('runSlug').textContent = slug;
-  runModal.classList.add('open');
+  const bodyHtml = document.getElementById('runFormTpl').innerHTML;
+  if (runModalHandle) { try { runModalHandle.close(); } catch (e) {} runModalHandle = null; }
+  runModalHandle = window.openModal({
+    title: '▶️ Run ingestion: ' + slug,
+    bodyHtml: bodyHtml,
+    footerButtons: [
+      { label: 'Cancel', onClick: m => m.close() },
+      { label: '✓ Enqueue', kind: 'primary', onClick: () => submitRun() }
+    ]
+  });
 }
-function closeRun() { runModal.classList.remove('open'); }
+
+function closeRun() { if (runModalHandle) { runModalHandle.close(); runModalHandle = null; } }
 
 async function submitRun() {
   if (!currentSlug) return;
-  const channelId = parseInt(document.getElementById('runChannelId').value);
-  const limit = parseInt(document.getElementById('runLimit').value);
-  const media = document.getElementById('runMedia').value;
+  const channelEl = document.getElementById('runChannelId');
+  const limitEl = document.getElementById('runLimit');
+  const mediaEl = document.getElementById('runMedia');
+  if (!channelEl || !limitEl || !mediaEl) return;
+  const channelId = parseInt(channelEl.value);
+  const limit = parseInt(limitEl.value);
+  const media = mediaEl.value;
   try {
     const res = await fetch(`/api/v1/dle-sources/${encodeURIComponent(currentSlug)}/run-now`, {
       method: 'POST',
@@ -104,12 +111,12 @@ async function submitRun() {
     });
     const json = await res.json();
     if (json.ok) {
-      alert(`✓ Enqueued. Job ID: ${json.job_id}`);
+      window.toast(`Enqueued. Job ID: ${json.job_id}`, 'success');
       closeRun();
     } else {
-      alert('Error: ' + (json.detail || JSON.stringify(json)));
+      window.toast('Error: ' + (json.detail || JSON.stringify(json)), 'error');
     }
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { window.toast('Error: ' + e.message, 'error'); }
 }
 
 async function previewSource(slug) {
@@ -117,12 +124,20 @@ async function previewSource(slug) {
     const res = await fetch(`/api/v1/dle-sources/${encodeURIComponent(slug)}/preview?limit=5`, {credentials: 'same-origin'});
     const json = await res.json();
     if (json.posts) {
-      const lines = json.posts.map(p => `#${p.id}  ${p.title}\n  Author: ${p.normalized.author || 'N/A'}`).join('\n\n');
-      alert(`Preview ${slug} (${json.count} posts):\n\n${lines}`);
+      const rows = json.posts.map(p =>
+        `<div style="padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.06);">
+           <div style="font-weight:500;">#${_esc(p.id)} ${_esc(p.title)}</div>
+           <div class="small-muted">Author: ${_esc((p.normalized && p.normalized.author) || 'N/A')}</div>
+         </div>`).join('');
+      window.openModal({
+        title: `Preview ${slug} (${json.count} posts)`,
+        bodyHtml: rows || '<p class="small-muted">No posts</p>',
+        footerButtons: [{ label: 'Close', kind: 'primary', onClick: m => m.close() }]
+      });
     } else {
-      alert('Error: ' + JSON.stringify(json));
+      window.toast('Error: ' + JSON.stringify(json), 'error');
     }
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { window.toast('Error: ' + e.message, 'error'); }
 }
 
 async function checkAll() {
@@ -142,7 +157,7 @@ async function checkAll() {
         cell.title = s.error || '';
       }
     }
-  } catch (e) { alert('Error: ' + e.message); }
+  } catch (e) { window.toast('Error: ' + e.message, 'error'); }
 }
 
 checkAll();

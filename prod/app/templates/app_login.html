@@ -80,10 +80,21 @@
         .links { text-align: center; margin-top: 1.2rem; font-size: 13px; color: #858587; }
         .links a { color: #E08A3C; text-decoration: none; font-weight: 500; }
         .links a:hover { text-decoration: underline; }
+        .alert { padding: 0.6rem 0.85rem; border-radius: 16px; margin-bottom: 1rem; font-size: 13px; }
+        .alert-error { background: rgba(254,112,112,0.1); color: #c0392b; border: 1px solid rgba(254,112,112,0.15); }
+        .alert-success { background: rgba(224,138,60,0.1); color: #1a8f2d; border: 1px solid rgba(224,138,60,0.15); }
+        .alert-info { background: rgba(106,173,250,0.1); color: #2b60a0; border: 1px solid rgba(106,173,250,0.15); }
+        .alert-warning { background: rgba(224,205,99,0.1); color: #8a7a00; border: 1px solid rgba(224,205,99,0.15); }
     </style>
+    <script defer src="/static/js/toast.js?v=1"></script>
+    <script defer src="/static/js/modal.js?v=1"></script>
 </head>
 <body>
     <div class="login-card">
+        {% set _flashes = (get_flashes(request) if get_flashes is defined else []) %}
+        {% for _cat, _msg in _flashes %}
+          <div class="alert alert-{{ _cat }}">{{ _msg }}</div>
+        {% endfor %}
         <div style="margin-bottom:0.6rem;text-align:center;">
             <div style="display:inline-flex;align-items:center;gap:10px;">
                 <img src="/static/img/upcast-logo.svg?v=7" alt="aiyoutube" style="height:32px;">
