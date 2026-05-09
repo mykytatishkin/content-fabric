@@ -83,9 +83,40 @@ async def status_sources(user: dict = Depends(get_current_admin)):
 
 @router.post("/{slug}/run-now")
 async def run_now(slug: str, body: RunNowRequest, user: dict = Depends(get_current_admin)):
-    """Enqueue DLE ingestion для одного источника прямо сейчас."""
+    """Enqueue DLE ingestion для одного источника прямо сейчас.
+
+    Validates BEFORE enqueuing:
+      * source slug exists in dle_settings
+      * channel_id exists in platform_channels (FK guard — иначе worker упадёт на FK)
+      * media_type is one of {video, shorts}
+    Returns 400 on validation failures so the UI can surface a useful error
+    instead of silently enqueuing a job that will crash the worker.
+    """
     if slug not in dle_settings.all_sources():
         raise HTTPException(status_code=404, detail=f"DLE source '{slug}' not configured")
+
+    if body.media_type not in ("video", "shorts"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid media_type '{body.media_type}' (expected 'video' or 'shorts')",
+        )
+
+    if body.limit < 1 or body.limit > 50:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid limit {body.limit} (must be 1..50)",
+        )
+
+    # FK guard: enqueue would otherwise create a job that fails inside the
+    # worker on an FK violation (platform_channels.id) — observable only in
+    # logs. Validate up-front and return a friendly 400.
+    from shared.db.repositories.channel_repo import get_channel_by_id
+    channel = get_channel_by_id(body.channel_id)
+    if not channel:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Channel id={body.channel_id} not found",
+        )
 
     job_id = enqueue_dle_ingestion(DleIngestionPayload(
         source_slug=slug,
