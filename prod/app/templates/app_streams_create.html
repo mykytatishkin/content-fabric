@@ -13,12 +13,12 @@
       <input type="text" name="name" required placeholder="knigi-online">
     </div>
     <div class="form-group">
-      <label>Service name (systemd unit, например <code>stream-knigi-online.service</code>)</label>
-      <input type="text" name="service_name" required placeholder="stream-knigi-online.service">
+      <label>Service name <span class="small-muted">(optional — auto-derived as <code>stream-&lt;name&gt;.service</code>)</span></label>
+      <input type="text" name="service_name" placeholder="stream-knigi-online.service">
     </div>
     <div class="form-group">
-      <label>Workdir (полный путь к директории стрима)</label>
-      <input type="text" name="workdir" required placeholder="/var/www/.../data/streams/knigi-online">
+      <label>Workdir <span class="small-muted">(optional — auto-derived from STREAMS_ROOT/&lt;name&gt;)</span></label>
+      <input type="text" name="workdir" placeholder="/var/www/.../data/streams/knigi-online">
     </div>
     <div class="form-group">
       <label>Stream Key (YouTube RTMP)</label>

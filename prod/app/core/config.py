@@ -99,6 +99,14 @@ class Settings(BaseSettings):
     MYSQL_USER: str
     MYSQL_PASSWORD: str
 
+    # Filesystem root used to auto-derive ``workdir`` for newly created streams
+    # when the request body does not specify one (Yii ``beforeValidate``
+    # parity — see prod/app/api/endpoints/streams.py).  Each stream lives in
+    # ``<STREAMS_ROOT>/<name>``.
+    STREAMS_ROOT: str = (
+        "/var/www/fastuser/data/www/aiyoutube.pbnbots.com/data/streams"
+    )
+
     model_config = {
         "env_file": [".env", str(ENV_DB)],
         "env_file_encoding": "utf-8",
