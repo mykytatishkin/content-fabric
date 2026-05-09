@@ -21,13 +21,20 @@ import logging
 import os
 import re
 import subprocess
-from typing import Any
+from typing import Any, Literal
 
 import requests
 
 from shared.voice.changer import process_voice_change
 
 logger = logging.getLogger(__name__)
+
+# Audio source mode for DLE post processing.
+# - "mp3"        — legacy default: download an existing MP3 file (URL/scrape).
+# - "tts_openai" — render `full_story`/annotation via shared.tts.openai_tts.
+#                  Used by knigi_online_club / books_online_info "TXT-flavour"
+#                  posts that ship long-form text rather than a ready audiofile.
+AudioSource = Literal["mp3", "tts_openai"]
 
 
 # Cover URL templates per source. Если cover в xfields — это просто имя файла,
@@ -46,8 +53,20 @@ COVER_URL_TEMPLATES = {
 class DleProcessor:
     """Обрабатывает одну DLE-задачу: скачивание → voice → видео."""
 
-    def __init__(self, work_dir: str = "/tmp/dle_processing"):
+    def __init__(self, work_dir: str = "/tmp/dle_processing",
+                 audio_source: AudioSource = "mp3"):
+        """
+        Args:
+            work_dir: scratch directory for intermediate files.
+            audio_source: how to obtain source audio.
+                "mp3"        (default) — download a pre-existing MP3.
+                "tts_openai" — synthesise from `full_story` text via OpenAI TTS,
+                               using `shared.tts.source_defaults` for per-slug
+                               voice/instructions. Replaces the legacy Yii
+                               `actionTts_openai` shell-out.
+        """
         self.work_dir = work_dir
+        self.audio_source = audio_source
         os.makedirs(self.work_dir, exist_ok=True)
 
     # ── Public API ───────────────────────────────────────────────
@@ -59,8 +78,8 @@ class DleProcessor:
         source_slug = legacy.get("dle_source") or ""
         dle_id = legacy.get("dle_post_id")
 
-        logger.info("[DLE PROCESSOR] START task=%s source=%s dle_id=%s",
-                    task.get("id"), source_slug, dle_id)
+        logger.info("[DLE PROCESSOR] START task=%s source=%s dle_id=%s audio_source=%s",
+                    task.get("id"), source_slug, dle_id, self.audio_source)
 
         task_dir = os.path.join(self.work_dir, f"task_{task.get('id')}")
         os.makedirs(task_dir, exist_ok=True)
@@ -78,7 +97,10 @@ class DleProcessor:
             )
 
             # 3. Audio
-            audio_path = self._resolve_audio(task_dir, source_slug, normalized, legacy)
+            if self.audio_source == "tts_openai":
+                audio_path = self._render_tts(task_dir, source_slug, normalized, legacy)
+            else:
+                audio_path = self._resolve_audio(task_dir, source_slug, normalized, legacy)
             if not audio_path:
                 raise RuntimeError("Failed to resolve audio source")
 
@@ -255,6 +277,54 @@ class DleProcessor:
         logger.warning("[DLE PROCESSOR] Could not resolve audio for source=%s. "
                        "Add specific logic in _resolve_audio_for_source_<slug>().", source_slug)
         return None
+
+    def _render_tts(self, task_dir: str, source_slug: str,
+                    normalized: dict[str, Any], legacy: dict[str, Any]) -> str | None:
+        """Synthesize source audio from `full_story` (or fallback fields) via OpenAI TTS.
+
+        Used when `audio_source="tts_openai"`. Replaces the legacy Yii
+        `actionTts_openai` flow used by 8 DLE controllers; per-slug defaults
+        come from `shared.tts.source_defaults`.
+        """
+        # Lazy-import to avoid hard dependency in the default mp3 path
+        try:
+            from shared.tts.openai_tts import synthesize
+            from shared.tts.source_defaults import get_defaults_for_source
+        except ImportError as exc:
+            logger.error("[DLE PROCESSOR] tts module unavailable: %s", exc)
+            return None
+
+        text = (
+            normalized.get("full_story")
+            or legacy.get("full_story")
+            or normalized.get("annotation")
+            or normalized.get("anotation")
+            or normalized.get("description")
+            or ""
+        )
+        text = (text or "").strip()
+        if not text:
+            logger.warning("[DLE PROCESSOR] TTS requested but no text found for source=%s", source_slug)
+            return None
+
+        defaults = get_defaults_for_source(source_slug)
+        out_path = os.path.join(task_dir, "source_audio.mp3")
+
+        try:
+            from pathlib import Path as _P
+            synthesize(
+                text,
+                _P(out_path),
+                voice=defaults.get("voice", "nova"),
+                language=defaults.get("language"),
+                instructions=defaults.get("instructions"),
+                response_format="mp3",
+            )
+            return out_path if os.path.isfile(out_path) and os.path.getsize(out_path) > 0 else None
+        except Exception as exc:
+            logger.exception("[DLE PROCESSOR] TTS synthesis failed for source=%s: %s",
+                             source_slug, exc)
+            return None
 
     @staticmethod
     def _scrape_mp3_from_page(url: str) -> str | None:
