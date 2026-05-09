@@ -9,6 +9,15 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse
 
 from app.core.auth import require_admin
+from app.core.flash import flash
+from app.core.oauth_helpers import (
+    STREAMING_OAUTH_SCOPES,
+    build_google_auth_url,
+    exchange_code_for_tokens,
+    expires_at_from_payload,
+    make_state,
+    parse_state,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -614,3 +623,185 @@ async def broadcast_send(
         "request": request, "active": "broadcast",
         "message": f"Broadcast sent to {count} users", "error": None, "recent": [],
     })
+
+
+# ── Streaming-account OAuth ──────────────────────────────────────
+#
+# Replaces the Yii ``YoutubeOauthController`` (parity gap G3) — admins click
+# "Auth" next to a row on /panel/streams to (re)authorise the
+# ``live_streaming_accounts`` row backing that stream.  The button lives in
+# ``app_streams.html``; both endpoints below are admin-only.
+
+_STATE_PREFIX = "sa"  # ``sa:{account_id}:{nonce}``
+
+
+def _streaming_oauth_redirect_uri(request: Request) -> str:
+    from app.core.config import settings
+
+    base_url = (settings.BASE_URL or str(request.base_url)).rstrip("/")
+    return f"{base_url}/panel/streaming-accounts/oauth/callback"
+
+
+@router.get("/streaming-accounts/{account_id}/authorize")
+async def streaming_account_authorize(request: Request, account_id: int):
+    """Send admin to Google's consent screen for ``live_streaming_accounts.{id}``."""
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    try:
+        with get_connection() as conn:
+            row = conn.execute(sql_text("""
+                SELECT id, name, client_id, client_secret, enabled
+                FROM live_streaming_accounts
+                WHERE id = :id
+            """), {"id": account_id}).mappings().first()
+    except Exception:
+        logger.exception("streaming_account_authorize: DB error for id=%s", account_id)
+        flash(request, "error", "Database error while loading streaming account.")
+        return RedirectResponse("/panel/streams", status_code=302)
+
+    if not row:
+        flash(request, "error", f"Streaming account #{account_id} not found.")
+        return RedirectResponse("/panel/streams", status_code=302)
+    if not row.get("client_id") or not row.get("client_secret"):
+        flash(
+            request,
+            "error",
+            f"Streaming account #{account_id} is missing client_id / client_secret.",
+        )
+        return RedirectResponse("/panel/streams", status_code=302)
+
+    redirect_uri = _streaming_oauth_redirect_uri(request)
+    state = make_state(_STATE_PREFIX, account_id)
+    request.session["streaming_oauth_state"] = state
+
+    auth_url = build_google_auth_url(
+        client_id=row["client_id"],
+        redirect_uri=redirect_uri,
+        scopes=STREAMING_OAUTH_SCOPES,
+        state=state,
+    )
+    return RedirectResponse(auth_url, status_code=302)
+
+
+@router.get("/streaming-accounts/oauth/callback")
+async def streaming_account_oauth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    """Exchange ``code`` for tokens and persist them to ``live_streaming_accounts``."""
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from fastapi.responses import PlainTextResponse
+
+    if error:
+        logger.warning(
+            "Streaming OAuth callback returned error: %s - %s",
+            error,
+            error_description,
+        )
+        flash(request, "error", f"Google OAuth error: {error_description or error}")
+        return RedirectResponse("/panel/streams", status_code=302)
+
+    if not code or not state:
+        return PlainTextResponse(
+            "ERROR: missing code or state\n", status_code=400
+        )
+
+    account_id, _nonce = parse_state(state, _STATE_PREFIX)
+    if account_id is None:
+        return PlainTextResponse("ERROR: bad state\n", status_code=400)
+
+    expected_state = request.session.pop("streaming_oauth_state", None)
+    if expected_state and expected_state != state:
+        return PlainTextResponse("ERROR: state mismatch\n", status_code=400)
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    try:
+        with get_connection() as conn:
+            row = conn.execute(sql_text("""
+                SELECT id, client_id, client_secret
+                FROM live_streaming_accounts
+                WHERE id = :id
+            """), {"id": account_id}).mappings().first()
+    except Exception:
+        logger.exception(
+            "streaming_account_oauth_callback: DB error for id=%s", account_id
+        )
+        flash(request, "error", "Database error while completing OAuth.")
+        return RedirectResponse("/panel/streams", status_code=302)
+
+    if not row:
+        return PlainTextResponse(
+            f"ERROR: streaming_account #{account_id} not found\n", status_code=400
+        )
+
+    redirect_uri = _streaming_oauth_redirect_uri(request)
+
+    try:
+        payload = exchange_code_for_tokens(
+            client_id=row["client_id"],
+            client_secret=row["client_secret"],
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+    except Exception as exc:
+        logger.error("Token exchange failed for streaming_account=%s: %s", account_id, exc)
+        flash(request, "error", f"Token exchange failed: {exc}")
+        return RedirectResponse("/panel/streams", status_code=302)
+
+    access_token = payload.get("access_token")
+    refresh_token = payload.get("refresh_token")
+    if not access_token:
+        flash(request, "error", "Google did not return an access_token.")
+        return RedirectResponse("/panel/streams", status_code=302)
+
+    expires_at = expires_at_from_payload(payload)
+
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                sql_text("""
+                    UPDATE live_streaming_accounts
+                    SET access_token = :access_token,
+                        refresh_token = COALESCE(:refresh_token, refresh_token),
+                        token_expires_at = :token_expires_at,
+                        updated_at = NOW()
+                    WHERE id = :id
+                """),
+                {
+                    "id": account_id,
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_expires_at": expires_at,
+                },
+            )
+    except Exception:
+        logger.exception(
+            "Failed to persist tokens for streaming_account=%s", account_id
+        )
+        flash(request, "error", "Failed to save tokens to DB.")
+        return RedirectResponse("/panel/streams", status_code=302)
+
+    logger.info(
+        "OAuth tokens saved for streaming_account=%s (refresh_token=%s)",
+        account_id,
+        "present" if refresh_token else "absent",
+    )
+    flash(
+        request,
+        "success",
+        f"Streaming account #{account_id} authorized successfully.",
+    )
+    return RedirectResponse("/panel/streams", status_code=302)
