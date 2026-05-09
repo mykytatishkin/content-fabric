@@ -5,34 +5,79 @@ fileMatchPattern: ['prod/app/api/**/*.py', 'prod/app/schemas/**/*.py']
 
 # API Endpoint Conventions
 
-## Route structure
-All API routes under `/api/v1/` via `prod/app/api/routes.py`:
-- `/api/v1/auth/` — login, register, /me, 2FA
-- `/api/v1/channels/` — CRUD
-- `/api/v1/tasks/` — CRUD + calendar, stats, history
-- `/api/v1/templates/` — schedule templates
-- `/api/v1/admin/` — admin-only
-- `/api/v1/uploads/` — file upload
+Last updated: 2026-05-09
 
-## Authentication
-API uses Bearer JWT token:
+## Route structure
+
+All API routes mounted under `/api/v1/` via `prod/app/api/routes.py`:
+
+| Prefix | Module | Auth |
+|--------|--------|------|
+| `/api/v1/auth/` | endpoints/auth.py | public + 2FA |
+| `/api/v1/channels/` | endpoints/channels.py | user (Bearer or cookie) |
+| `/api/v1/tasks/` | endpoints/tasks.py | user |
+| `/api/v1/templates/` | endpoints/templates.py | user |
+| `/api/v1/uploads/` | endpoints/uploads.py | user |
+| `/api/v1/admin/` | endpoints/admin.py | admin |
+| `/api/v1/streams/` | endpoints/streams.py | **admin only** |
+| `/api/v1/dle-sources/` | endpoints/dle_sources.py | **admin only** |
+| `/api/v1/logs/` | endpoints/logs.py | **admin only** |
+
+`streams`, `dle-sources`, `logs` use `Depends(get_current_admin)` because they expose host-level diagnostics (journald, DSNs, systemd units) — see `prod/app/api/endpoints/logs.py:36`, `streams.py:24`, `dle_sources.py:17`.
+
+---
+
+## Authentication: cookie OR Bearer
+
+`get_current_user` in `prod/app/api/deps.py:26-57` accepts **either**:
+
+- `Authorization: Bearer <jwt>` (machine clients, CLI, tests)
+- `Cookie: cff_token=<jwt>` (browser — same cookie set by `/app/login`)
+
+When both present, **Bearer wins** (`deps.py:31-35`). Cookie path is covered by CSRFMiddleware so cross-site POSTs are still rejected (see CSRF section below).
+
 ```python
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_admin
 
 @router.get("/something")
 async def something(user: dict = Depends(get_current_user)):
-    # user has: id, email, username, status, display_name
+    # user has: id, email, username, status, display_name, ...
+    ...
+
+@router.post("/admin-thing")
+async def admin_thing(user: dict = Depends(get_current_admin)):
+    # 403 if not admin
     ...
 ```
 
-Admin check:
+Inline admin check (when you need user dict + admin gate together):
 ```python
 from shared.db.models import UserStatus
 if user["status"] != UserStatus.ADMIN.value:
     raise HTTPException(403, "Admin only")
 ```
 
+---
+
+## CSRF middleware
+
+`CSRFMiddleware` in `prod/main.py:61-136` protects cookie-authenticated state-changing requests by checking that `Origin` (or `Referer`) matches the request's `Host`.
+
+Skipped for:
+- Safe methods (GET/HEAD/OPTIONS).
+- `Authorization: Bearer ...` requests — no cookie ⇒ no CSRF surface.
+- No `cff_token` cookie — anonymous POSTs (login bootstrap).
+
+Rejects:
+- Cross-origin Origin/Referer → 403 with `{"detail": "CSRF: cross-origin POST rejected"}`.
+- POST without any Origin/Referer header → 403 (curl should use Bearer instead).
+
+Practical implication: **API endpoints work transparently** for both Bearer (machine) and cookie (browser) clients. Tests that use `auth_headers` (Bearer) bypass CSRF; tests that drive the portal via cookie need correct `Origin`/`Referer` or rely on `TestClient`'s defaults.
+
+---
+
 ## Rate limiting
+
 ```python
 from app.core.config import limiter
 
@@ -42,7 +87,12 @@ async def create(request: Request, ...):
     ...
 ```
 
+Default global limit: 120/minute (see `prod/main.py:27`).
+
+---
+
 ## Pydantic v2 schemas
+
 Located in `prod/app/schemas/`. Use:
 ```python
 from pydantic import BaseModel, Field, field_validator
@@ -58,91 +108,67 @@ class MySchema(BaseModel):
     model_config = {"from_attributes": True}
 ```
 
-## User-scoped data
-Non-admin users see only their own resources:
+---
+
+## User-scoped data (IDOR protection)
+
+Non-admin users see only their own resources. Pass `created_by` to repos:
+
 ```python
-# In repo calls, pass created_by filter for non-admins
 tasks = task_repo.list_tasks(
     created_by=user["id"] if user["status"] != UserStatus.ADMIN.value else None
 )
 ```
 
-## Response format
-- Single item: return Pydantic model directly
-- List: return `list[Model]` (FastAPI serializes automatically)
-- Errors: `raise HTTPException(status_code, detail="message")`
-
-## Ownership checks (IDOR protection)
-Non-admin users only see their own resources. Every endpoint that accesses channels, templates, or tasks MUST verify ownership:
+Per-resource ownership check:
 ```python
 from shared.db.models import UserStatus
 
-# Pattern for single resource:
 if user["status"] != UserStatus.ADMIN.value and resource.get("created_by") != user["id"]:
-    raise HTTPException(status_code=404, detail="Not found")
+    raise HTTPException(status_code=404, detail="Not found")  # 404, not 403 — intentional
+```
 
-# Pattern for list:
+For lists:
+```python
 if user["status"] != UserStatus.ADMIN.value:
     items = [i for i in items if i.get("created_by") == user["id"]]
 ```
 
+---
+
 ## UUID in URLs
-Portal uses UUID in URLs to prevent IDOR. API can use both int ID and UUID.
-Tables with UUID: platform_channels, content_upload_queue_tasks, schedule_templates.
-API endpoints that look up resources by UUID must also validate ownership (created_by check) for non-admin users.
+
+Portal uses UUID to prevent ID enumeration. API can use both int ID and UUID. Tables with UUID: `platform_channels`, `content_upload_queue_tasks`, `schedule_templates`. Endpoints that look up by UUID still must validate ownership for non-admin users.
+
+---
+
+## Response format
+
+- Single item: return Pydantic model directly
+- List: return `list[Model]` (FastAPI serializes automatically)
+- Errors: `raise HTTPException(status_code, detail="message")`
+
+---
 
 ## Portal Routes
 
-All SSR portal routes are defined in `prod/app/views/app_portal.py`. They use cookie-based auth (`require_user(request)`) and return `TemplateResponse` with Jinja2 templates. Data is user-scoped via `scoped_where()`.
+All SSR portal routes are in `prod/app/views/app_portal.py`. Cookie-based auth (`require_user(request)`), `TemplateResponse` with Jinja2, data user-scoped via `scoped_where()`. See portal-views.md for full handler list.
 
 ### User Portal (`/app/*`)
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/app/login` | `login_page` | Login form |
-| POST | `/app/login` | `login_submit` | Login + 2FA handling |
-| GET | `/app/register` | `register_page` | Registration form |
-| POST | `/app/register` | `register_submit` | Create user account |
-| GET | `/app/logout` | `logout` | Clear cookie, redirect |
-| GET | `/app/` | `dashboard` | Stats cards, upcoming/recent tasks |
-| GET | `/app/channels` | `channels_page` | Channel list with token expiration, updated_at |
-| GET | `/app/channels/add` | `add_channel_page` | Add channel form |
-| POST | `/app/channels/add` | `add_channel_submit` | Create channel |
-| GET | `/app/channels/{uuid}` | `channel_detail` | Channel info, console name, credentials, tasks |
-| GET | `/app/channels/{uuid}/edit` | `edit_channel_page` | Edit channel form |
-| POST | `/app/channels/{uuid}/edit` | `edit_channel_submit` | Update channel |
-| POST | `/app/channels/{uuid}/delete` | `delete_channel` | Delete channel |
-| GET | `/app/tasks` | `tasks_page` | Task list with filters, media type, completed_at, retries |
-| GET | `/app/tasks/create` | `create_task_page` | Create task form with file upload |
-| POST | `/app/tasks/create` | `create_task_submit` | Create upload task |
-| GET | `/app/tasks/{uuid}` | `task_detail` | Task info, reschedule, retry/cancel |
-| POST | `/app/tasks/{uuid}/cancel` | `cancel_task` | Cancel pending task |
-| POST | `/app/tasks/{uuid}/retry` | `retry_task` | Retry failed/cancelled task |
-| POST | `/app/tasks/{uuid}/reschedule` | `reschedule_task` | Update scheduled_at |
-| GET | `/app/templates` | `templates_page` | Template list with slot counts |
-| GET | `/app/templates/create` | `create_template_page` | Create template form |
-| POST | `/app/templates/create` | `create_template_submit` | Create template |
-| GET | `/app/templates/{uuid}` | `template_detail` | Template with slot management |
-| POST | `/app/templates/{uuid}/slots` | `add_slot` | Add time slot |
-| POST | `/app/templates/{uuid}/slots/{id}/delete` | `delete_slot` | Delete time slot |
-| POST | `/app/templates/{uuid}/delete` | `delete_template` | Delete template |
-| GET | `/app/settings` | `settings_page` | Profile, password, 2FA |
-| POST | `/app/settings/profile` | `update_profile` | Update display name, timezone |
-| POST | `/app/settings/password` | `change_password` | Change password |
-| POST | `/app/settings/2fa/setup` | `setup_2fa` | Generate TOTP secret + QR |
-| POST | `/app/settings/2fa/verify` | `verify_2fa` | Verify TOTP code, enable 2FA |
-| POST | `/app/settings/2fa/disable` | `disable_2fa` | Disable 2FA |
+`/app/login`, `/app/register`, `/app/logout`, `/app/`, `/app/channels[…]`, `/app/tasks[…]`, `/app/templates[…]`, `/app/settings[…]`, plus new post-cutover pages: `/app/streams`, `/app/analytics`, `/app/channels/{uuid}/stats`, `/app/notifications`, `/app/voice`, `/app/reauth`. See portal-views.md for full table.
 
 ### Admin Panel (`/panel/*`)
-
-Admin routes are in `prod/app/views/panel.py` and require admin status.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/panel/` | Admin dashboard |
-| GET | `/panel/channels` | All channels (all users) |
-| GET | `/panel/tasks` | All tasks (all users) |
+| GET | `/panel/channels` | All channels |
+| GET | `/panel/tasks` | All tasks |
 | GET | `/panel/users` | User management |
 | GET | `/panel/credentials` | OAuth credentials |
-| GET | `/panel/health` | Service health, disk/memory, queues |
-| GET | `/panel/logs` | journalctl log viewer |
+| GET | `/panel/streams` | 9 live streams (start/stop/restart) |
+| GET | `/panel/dle-sources` | 7 DLE source statuses |
+| GET | `/panel/stats` | Global stats (uses `channel_daily_statistics.snapshot_date`) |
+| GET | `/panel/health` | Service/disk/memory/queue health |
+| GET | `/panel/logs` | journalctl viewer for all `cff-*` units |

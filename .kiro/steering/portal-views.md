@@ -5,6 +5,8 @@ fileMatchPattern: ['prod/app/views/**/*.py', 'prod/app/templates/**/*.html']
 
 # Portal (SSR Views) Conventions
 
+Last updated: 2026-05-09
+
 ## Two portals
 - **User Portal** (`/app/*`) — `prod/app/views/app_portal.py` (1000+ lines)
 - **Admin Panel** (`/panel/*`) — `prod/app/views/panel.py`
@@ -12,7 +14,9 @@ fileMatchPattern: ['prod/app/views/**/*.py', 'prod/app/templates/**/*.html']
 ## Cookie-based auth (NOT Bearer JWT)
 Views use cookies, NOT `Depends(get_current_user)`.
 
-**Cookie Secure flag:** `_set_token_cookie()` sets `secure` based on `HTTPS_ENABLED` env var. On HTTP-only deployments (current prod), `secure=False` — otherwise browsers won't send the cookie and users get infinite redirect loops.
+**Production runs HTTPS** (`aiyoutube.pbnbots.com` via nginx). Cookie `Secure` flag is driven by env var `HTTPS_ENABLED` — `True` in prod. `_set_token_cookie()` uses this; if you flip prod back to plain HTTP for any reason, also unset `HTTPS_ENABLED` or browsers won't send the cookie and users get infinite redirect loops.
+
+CSRF is enforced by `CSRFMiddleware` (`prod/main.py:61-136`) — see api-endpoints.md.
 
 ```python
 from app.core.auth import require_user, require_admin, is_admin
@@ -68,25 +72,71 @@ if not channel or (not is_admin(user) and channel.get("created_by") != user["id"
     return RedirectResponse("/app/channels", status_code=302)
 ```
 
-## Template files
+## JSON islands in Jinja templates (XSS-safe)
+
+When embedding server-side data into a `<script>` block for client-side JS, use the `|tojson` filter — it produces RFC-8259-valid JSON AND escapes `</script>`/HTML-significant chars:
+
+```jinja
+<script id="streams-data" type="application/json">{{ streams | tojson }}</script>
+<script>
+  const streams = JSON.parse(document.getElementById("streams-data").textContent);
+</script>
 ```
-app_base.html          — base layout for user portal (sidebar, nav)
-app_login.html         — login form
-app_register.html      — registration form
-app_dashboard.html     — user dashboard
-app_channels.html      — channel list
-app_channel_add.html   — add channel form
-app_channel_detail.html — channel detail page
-app_channel_edit.html  — edit channel form
-app_tasks.html         — task list
-app_task_new.html      — create task form
-app_task_detail.html   — task detail page
-app_templates.html     — schedule templates list
-app_template_new.html  — create template form
-app_template_detail.html — template detail page
-app_settings.html      — user settings (2FA, password)
-base.html              — admin panel base layout
-dashboard.html         — admin dashboard
-channels.html / tasks.html / users.html — admin lists
-health.html / logs.html — admin monitoring
+
+Used in: `app_streams.html`, `app_channel_stats.html`, `app_analytics.html`, `app_channels.html`, `app_task_detail.html`. Patched in commit `87d6a1c` (fix: Stored XSS via Jinja tojson).
+
+**Never** do `const x = {{ obj }};` directly — that is a Stored XSS sink.
+
+## Template files
+
+```
+# Base / auth
+app_base.html              — base layout for user portal (sidebar, nav)
+app_login.html             — login form
+app_register.html          — registration form
+app_totp.html              — 2FA verification
+
+# Dashboard
+app_dashboard.html         — user dashboard
+
+# Channels
+app_channels.html          — channel list
+app_channel_add.html       — add channel form
+app_channel_detail.html    — channel detail
+app_channel_edit.html      — edit channel
+app_channel_stats.html     — per-channel stats (uses |tojson)
+app_reauth.html            — Playwright reauth status
+
+# Tasks
+app_tasks.html
+app_task_new.html
+app_task_detail.html       — uses |tojson
+
+# Templates (schedule)
+app_templates.html
+app_template_new.html
+app_template_detail.html
+
+# Settings
+app_settings.html          — profile, password, 2FA
+
+# Post-cutover (Yii migration)
+app_streams.html           — 9 live streams (uses |tojson)
+app_streams_create.html
+app_dle_sources.html       — 7 DLE sources status
+app_stats_overview.html    — global stats overview
+app_analytics.html         — analytics dashboard (uses |tojson)
+app_notifications.html
+app_voice.html             — voice change UI
+
+# Admin panel
+base.html                  — admin panel base layout
+dashboard.html
+channels.html / tasks.html / users.html / credentials.html
+health.html / logs.html
+broadcast.html             — broadcast notification form
+payment.html
+
+# Errors
+404.html
 ```
