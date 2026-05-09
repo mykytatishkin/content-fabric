@@ -1837,8 +1837,25 @@ async def settings_update_profile(
     if redirect:
         return redirect
 
+    display_name = display_name.strip()
+    timezone = timezone.strip()
+
+    # Validate display name: cannot be empty, max 255 chars (DB column).
+    if not display_name:
+        return _template_response("app_settings.html", {
+            "request": request, "user": user, "active": "settings",
+            "message": None, "error": "Display name cannot be empty",
+            "totp_uri": None, "backup_codes": None,
+        })
+    if len(display_name) > 255:
+        return _template_response("app_settings.html", {
+            "request": request, "user": user, "active": "settings",
+            "message": None, "error": "Display name must be 255 characters or fewer",
+            "totp_uri": None, "backup_codes": None,
+        })
+
     from shared.db.repositories import user_repo
-    user_repo.update_profile(user["id"], display_name=display_name or None, timezone=timezone or None)
+    user_repo.update_profile(user["id"], display_name=display_name, timezone=timezone or None)
     user = user_repo.get_user_by_id(user["id"])
 
     return _template_response("app_settings.html", {
@@ -1927,6 +1944,13 @@ async def settings_2fa_disable(
     if redirect:
         return redirect
 
+    if not user.get("totp_enabled"):
+        return _template_response("app_settings.html", {
+            "request": request, "user": user, "active": "settings",
+            "message": None, "error": "2FA is not enabled",
+            "totp_uri": None, "backup_codes": None,
+        })
+
     if not verify_password(password, user["password_hash"]):
         return _template_response("app_settings.html", {
             "request": request, "user": user, "active": "settings",
@@ -2000,7 +2024,10 @@ async def settings_change_email(
         return _template_response("app_settings.html", ctx)
 
     new_email = new_email.strip().lower()
-    if not new_email or "@" not in new_email:
+    # Reasonable email validation: local@domain.tld, no spaces, no double-@.
+    import re
+    _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+    if not new_email or not _EMAIL_RE.match(new_email) or len(new_email) > 254:
         ctx["error"] = "Invalid email"
         return _template_response("app_settings.html", ctx)
 
