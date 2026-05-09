@@ -546,9 +546,9 @@ async def stats_overview_page(request: Request):
     try:
         with get_connection() as conn:
             rows = conn.execute(sql_text("""
-                SELECT recorded_at, SUM(subscribers), SUM(views), SUM(videos)
+                SELECT snapshot_date, SUM(subscribers), SUM(views), SUM(videos)
                 FROM channel_daily_statistics
-                GROUP BY recorded_at ORDER BY recorded_at DESC LIMIT 30
+                GROUP BY snapshot_date ORDER BY snapshot_date DESC LIMIT 30
             """)).fetchall()
             stats = [
                 {"date": r[0], "subscribers": r[1], "views": r[2], "videos": r[3]}
