@@ -12,6 +12,7 @@ from shared.db.repositories.task_repo import get_task, update_task
 from shared.db.models import TaskStatus
 from shared.ingestion.dle.processor import DleProcessor
 from shared.notifications import telegram
+from shared.metrics import instrument_job
 from shared.queue.config import get_redis
 from shared.queue.types import DleProcessingPayload
 from workers._job_bootstrap import bootstrap_job
@@ -30,6 +31,7 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 
+@instrument_job("dle-processor")
 def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
     """Обробити DLE завдання: скачати → обробити → зберегти шлях."""
     bootstrap_job(payload, "cff-dle-processor")

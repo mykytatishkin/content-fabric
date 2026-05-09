@@ -1,0 +1,30 @@
+{
+  "uid": "cff-trace",
+  "title": "CFF — Trace Explorer",
+  "tags": ["cff", "trace"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "time": {"from": "now-24h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "trace",
+        "type": "textbox",
+        "label": "trace_id",
+        "current": {"value": "", "text": ""}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "logs",
+      "title": "Timeline: every log line for trace_id=$trace",
+      "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 28},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*\"} |~ \"$trace\"", "refId": "A"}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Ascending"}
+    }
+  ]
+}

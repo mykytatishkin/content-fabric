@@ -1,0 +1,195 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: cff-services
+    folder: CFF Alerts
+    interval: 1m
+    rules:
+      # ─── Critical: services dead ─────────────────────────────────
+      - uid: cff-api-down
+        title: cff-api is down
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              expr: up{job="cff-api"} == 0
+              intervalMs: 60000
+              maxDataPoints: 43200
+              refId: A
+        for: 2m
+        labels:
+          severity: critical
+          service: cff-api
+        annotations:
+          summary: "API process unreachable for 2 minutes"
+          runbook: "Check journalctl -u cff-api and restart if needed"
+
+      - uid: cff-worker-missing
+        title: CFF worker process missing
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              expr: namedprocess_namegroup_num_procs{groupname=~"cff-.*-worker"} == 0
+              refId: A
+        for: 5m
+        labels:
+          severity: critical
+          service: '{{ $labels.groupname }}'
+        annotations:
+          summary: "Worker {{ $labels.groupname }} has no processes"
+
+      # ─── Warning: queue backlog ──────────────────────────────────
+      - uid: cff-queue-growing
+        title: Queue depth growing
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 1800, to: 0}
+            model:
+              expr: cff_queue_depth > 50 and deriv(cff_queue_depth[15m]) > 0
+              refId: A
+        for: 15m
+        labels:
+          severity: warning
+          service: '{{ $labels.queue }}'
+        annotations:
+          summary: "Queue {{ $labels.queue }} backlog growing — workers cannot keep up"
+
+      # ─── Warning: failure rate ───────────────────────────────────
+      - uid: cff-failure-rate
+        title: Task failure rate above 30%
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 1800, to: 0}
+            model:
+              expr: |
+                100 * sum(rate(cff_tasks_failed_total[15m]))
+                  / clamp_min(sum(rate(cff_tasks_created_total[15m])), 0.0001) > 30
+              refId: A
+        for: 10m
+        labels:
+          severity: warning
+          service: pipeline
+        annotations:
+          summary: "Failure rate >30% over the last 15 minutes"
+
+      # ─── Warning: predictive — OAuth tokens close to expiry ──────
+      - uid: cff-token-expiring
+        title: YouTube OAuth token expires within 24h
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              expr: cff_youtube_token_expires_in_seconds < 86400 and cff_youtube_token_expires_in_seconds > 0
+              refId: A
+        for: 5m
+        labels:
+          severity: warning
+          service: youtube-oauth
+        annotations:
+          summary: "Token for channel {{ $labels.channel }} expires in <24h"
+          runbook: "Run python -m cli.reauth --channel-id <id> before it lapses"
+
+      # ─── Warning: predictive — worker memory pressure ────────────
+      - uid: cff-worker-mem
+        title: Worker memory >80% of limit
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 1800, to: 0}
+            model:
+              expr: |
+                namedprocess_namegroup_memory_bytes{groupname=~"cff-.*", memtype="resident"}
+                  / 1024 / 1024 / 1024 > 0.8
+              refId: A
+        for: 10m
+        labels:
+          severity: warning
+          service: '{{ $labels.groupname }}'
+        annotations:
+          summary: "{{ $labels.groupname }} approaching MemoryMax"
+
+      # ─── Warning: DLE source flapping ────────────────────────────
+      - uid: cff-dle-flapping
+        title: DLE source connection flapping
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 3600, to: 0}
+            model:
+              expr: changes(cff_dle_source_up[1h]) > 4
+              refId: A
+        for: 5m
+        labels:
+          severity: info
+          service: dle
+        annotations:
+          summary: "DLE source {{ $labels.source }} bouncing up/down"
+
+      # ─── Info: disk filling ──────────────────────────────────────
+      - uid: cff-disk-low
+        title: Root filesystem free below 20GB
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              expr: node_filesystem_avail_bytes{mountpoint="/"} < 20 * 1024 * 1024 * 1024
+              refId: A
+        for: 10m
+        labels:
+          severity: warning
+          service: host
+        annotations:
+          summary: "<20 GB free on /"
+
+      # ─── Warning: ffmpeg restart loop ────────────────────────────
+      - uid: cff-stream-restart-loop
+        title: Stream restarting more than 5 times/hour
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 3600, to: 0}
+            model:
+              expr: |
+                rate(node_systemd_unit_state{state="active", name=~"stream-.*"}[1h]) > 5
+              refId: A
+        for: 5m
+        labels:
+          severity: warning
+          service: streaming
+        annotations:
+          summary: "{{ $labels.name }} restart loop — possible YouTube ban risk"
+
+      # ─── Critical: error spike ───────────────────────────────────
+      - uid: cff-error-spike
+        title: Error count >50 in 5 minutes
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: {from: 600, to: 0}
+            model:
+              expr: sum(increase(cff_errors_total[5m])) > 50
+              refId: A
+        for: 2m
+        labels:
+          severity: critical
+          service: pipeline
+        annotations:
+          summary: "Sudden error spike across CFF — see Incidents Now dashboard"

@@ -7,12 +7,14 @@ from typing import Any
 
 from shared.queue.types import StatsPayload
 from scheduler.jobs import collect_channel_stats, collect_video_stats
+from shared.metrics import instrument_job
 from shared.notifications import telegram
 from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
+@instrument_job("stats")
 def run_stats_job(payload: StatsPayload) -> dict[str, Any]:
     """Job handler called by rq.
 

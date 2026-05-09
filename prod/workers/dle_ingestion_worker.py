@@ -7,12 +7,14 @@ from typing import Any
 
 from shared.queue.types import DleIngestionPayload
 from shared.ingestion.dle.pipeline import DleIngestionPipeline
+from shared.metrics import instrument_job
 from shared.notifications import telegram
 from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
+@instrument_job("dle-ingestion")
 def run_ingestion_job(payload: DleIngestionPayload) -> dict[str, Any]:
     """Job handler called by rq.
 
