@@ -1,7 +1,9 @@
 apiVersion: 1
 
 # Notifications stay inside Grafana for now.
-# Email is wired but disabled until SMTP creds + recipient address are filled in .env.
+# Email contact point will be added manually via Grafana UI once SMTP creds
+# and recipient address are provided. Adding it here with empty addresses
+# fails validation, so we leave it out.
 
 contactPoints:
   - orgId: 1
@@ -15,18 +17,5 @@ contactPoints:
           url: http://127.0.0.1:3000/api/annotations
           httpMethod: POST
           username: admin
-          # No password — webhook is internal; replaced once Grafana inits.
           maxAlerts: 0
-        disableResolveMessage: false
-
-  - orgId: 1
-    name: cff-email-stub
-    receivers:
-      - uid: email-stub
-        type: email
-        settings:
-          # Real address provided later; keep stub so policies validate.
-          addresses: ${ALERT_EMAIL_TO}
-          singleEmail: true
-          subject: "[CFF Alert] {{ .CommonLabels.alertname }}"
         disableResolveMessage: false

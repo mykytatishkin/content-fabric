@@ -9,12 +9,10 @@ policies:
     group_wait: 30s
     group_interval: 5m
     repeat_interval: 4h
-    routes:
-      # Critical paged alerts go to email IF SMTP is configured.
-      # Until then, ALERT_EMAIL_TO is empty and this contact point is a no-op.
-      - receiver: cff-email-stub
-        matchers:
-          - severity = critical
-        continue: true
-        group_wait: 0s
-        repeat_interval: 1h
+    # Once an email contact point is added via UI (after we get an address),
+    # add a child route here:
+    #   routes:
+    #     - receiver: cff-email
+    #       matchers:
+    #         - severity = critical
+    #       continue: true

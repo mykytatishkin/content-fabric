@@ -12,31 +12,31 @@ scrape_configs:
   # Prometheus self-monitoring
   - job_name: prometheus
     static_configs:
-      - targets: ["localhost:9090"]
+      - targets: ["127.0.0.1:9090"]
 
   # Host metrics
   - job_name: node
     static_configs:
-      - targets: ["host.docker.internal:9100"]
+      - targets: ["127.0.0.1:9100"]
         labels:
           host: cff-prod
 
   # Per-process metrics for systemd-managed cff-* and stream-*
   - job_name: process
     static_configs:
-      - targets: ["host.docker.internal:9256"]
+      - targets: ["127.0.0.1:9256"]
 
   # Pushgateway for short-lived rq workers
   - job_name: pushgateway
     honor_labels: true
     static_configs:
-      - targets: ["pushgateway:9091"]
+      - targets: ["127.0.0.1:9091"]
 
   # CFF API exposes /metrics directly
   - job_name: cff-api
     metrics_path: /metrics
     static_configs:
-      - targets: ["host.docker.internal:8000"]
+      - targets: ["127.0.0.1:8000"]
         labels:
           service: cff-api
 
