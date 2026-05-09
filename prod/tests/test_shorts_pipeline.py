@@ -5,6 +5,8 @@ from unittest.mock import patch, MagicMock
 from shared.shorts.downloader import download_video
 from shared.shorts.transcriber import transcribe_audio
 from shared.shorts.highlight import find_highlights
+from shared.queue.types import ShortsPayload
+from workers.shorts_worker import run_shorts_job
 
 @patch("subprocess.run")
 def test_download_video_success(mock_run):
@@ -52,3 +54,43 @@ def test_find_highlights(mock_openai_class):
         assert len(res) == 1
         assert res[0]["start"] == 10
         assert res[0]["title"] == "Highlight 1"
+
+
+# ── Regression: shorts worker must not blow up on None donor URL ────
+
+
+@patch("workers.shorts_worker.telegram")
+@patch("workers.shorts_worker.download_video")
+def test_shorts_job_skips_when_donor_url_missing(mock_download, mock_tg):
+    """Reproduces prod failure: ShortsPayload(donor_video_url=None) used to
+    surface as `expected str, bytes or os.PathLike object, not NoneType`
+    inside subprocess. We now return a clean skipped result and notify."""
+    payload = ShortsPayload(channel_id=28, donor_video_url=None, limit=5)
+
+    res = run_shorts_job(payload)
+
+    assert res == {
+        "ok": False,
+        "error": (
+            "donor_video_url is missing for channel 28; configure a default "
+            "donor URL on the channel or pass one in the payload"
+        ),
+        "skipped": True,
+    }
+    # No download attempted
+    mock_download.assert_not_called()
+    # Telegram alert fired
+    mock_tg.send.assert_called_once()
+
+
+@patch("workers.shorts_worker.telegram")
+@patch("workers.shorts_worker.download_video")
+def test_shorts_job_skips_on_blank_donor_url(mock_download, mock_tg):
+    """Whitespace-only donor URLs are also rejected."""
+    payload = ShortsPayload(channel_id=28, donor_video_url="   ", limit=5)
+
+    res = run_shorts_job(payload)
+
+    assert res["ok"] is False
+    assert res["skipped"] is True
+    mock_download.assert_not_called()
