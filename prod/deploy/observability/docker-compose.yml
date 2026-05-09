@@ -33,13 +33,14 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
       - --web.enable-lifecycle
-      - --web.listen-address=0.0.0.0:9090
+      - --web.listen-address=127.0.0.1:9090
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
-    ports:
-      - "127.0.0.1:9090:9090"
+    # Host network so Prometheus can scrape uvicorn (127.0.0.1:8000)
+    # and process_exporter without docker network gymnastics.
+    network_mode: host
 
   pushgateway:
     image: prom/pushgateway:v1.10.0
@@ -67,7 +68,7 @@ services:
       - /:/host:ro,rslave
 
   process_exporter:
-    image: ncabatoff/process-exporter:0.8.4
+    image: ncabatoff/process-exporter:0.8.7
     container_name: cff-process-exporter
     <<: [*restart, *default-logging]
     command:
