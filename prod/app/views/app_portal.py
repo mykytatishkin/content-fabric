@@ -2151,7 +2151,10 @@ async def portal_upload_video(
                 return JSONResponse({"error": "File too large (max 10 GB)"}, status_code=400)
             f.write(chunk)
 
-    return JSONResponse({"path": str(dest.name), "filename": file.filename, "size": dest.stat().st_size})
+    # Return absolute path so workers can access it directly. Worker code
+    # (shared/youtube/upload.py) calls os.path.getsize(source_file_path)
+    # which requires an absolute, server-resolvable path.
+    return JSONResponse({"path": str(dest), "filename": file.filename, "size": dest.stat().st_size})
 
 
 @router.post("/upload/thumbnail", response_class=HTMLResponse)
@@ -2190,7 +2193,8 @@ async def portal_upload_thumbnail(
                 return JSONResponse({"error": "File too large (max 50 MB)"}, status_code=400)
             f.write(chunk)
 
-    return JSONResponse({"path": str(dest.name), "filename": file.filename, "size": dest.stat().st_size})
+    # Absolute path matches what publishing/voice workers expect.
+    return JSONResponse({"path": str(dest), "filename": file.filename, "size": dest.stat().st_size})
 
 
 # ── Voice Processing ───────────────────────────────────────────────
