@@ -43,12 +43,27 @@ async def get_current_user(
         logger.warning("Auth failed: invalid/expired JWT token")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    user_id: int | None = payload.get("sub")
-    if user_id is None:
-        logger.warning("Auth failed: JWT missing 'sub' claim")
+    sub = payload.get("sub")
+    # JWT spec stores ``sub`` as a string; ``create_access_token`` casts the
+    # user id to ``str`` before signing.  Empty / non-numeric / missing values
+    # used to bubble up as a 500 (``ValueError: invalid literal for int()``)
+    # because ``int('')`` blows up — see /var/log/cff-api.log 2026-05-09
+    # 19:03:57 GET /api/v1/streams/status / /dle-sources/ / /logs/services.
+    # Reject those explicitly with a 401 so probes/expired-cookie flows don't
+    # generate exception traces.
+    if sub is None or sub == "":
+        logger.warning("Auth failed: JWT missing or empty 'sub' claim")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        logger.warning("Auth failed: JWT 'sub' is not an integer: %r", sub)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+    if user_id <= 0:
+        logger.warning("Auth failed: JWT 'sub' must be a positive integer: %r", sub)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-    user = user_repo.get_user_by_id(int(user_id))
+    user = user_repo.get_user_by_id(user_id)
     if user is None:
         logger.warning("Auth failed: user_id=%s not found in DB", user_id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
