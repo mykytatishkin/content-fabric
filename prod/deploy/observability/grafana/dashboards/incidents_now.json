@@ -26,42 +26,44 @@
       "id": 2,
       "gridPos": {"x": 0, "y": 8, "w": 24, "h": 12},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-.*\"} |~ \"ERROR|CRITICAL\"", "refId": "A"}],
+      "targets": [{"expr": "{unit=~\"cff-.*\"} |~ \"ERROR|CRITICAL\" | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A"}],
       "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
-    },
-    {
-      "type": "stat",
-      "title": "Alerts firing now",
-      "id": 3,
-      "gridPos": {"x": 0, "y": 20, "w": 6, "h": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "count(ALERTS{alertstate=\"firing\"})", "refId": "A"}],
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "red"}]}}}
-    },
-    {
-      "type": "stat",
-      "title": "Errors / hour (1h)",
-      "id": 4,
-      "gridPos": {"x": 6, "y": 20, "w": 6, "h": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(increase(cff_errors_total[1h]))", "refId": "A"}]
     },
     {
       "type": "stat",
       "title": "Tasks failed (1h)",
       "id": 5,
-      "gridPos": {"x": 12, "y": 20, "w": 6, "h": 4},
+      "gridPos": {"x": 0, "y": 20, "w": 6, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(increase(cff_tasks_failed_total[1h]))", "refId": "A"}]
+      "targets": [{"expr": "cff_tasks_failed_recent{window=\"1h\"}", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["last"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Tasks failed (24h)",
+      "id": 6,
+      "gridPos": {"x": 6, "y": 20, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_tasks_failed_recent{window=\"24h\"}", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["last"]}}
     },
     {
       "type": "stat",
       "title": "DLE sources up",
-      "id": 6,
-      "gridPos": {"x": 18, "y": 20, "w": 6, "h": 4},
+      "id": 7,
+      "gridPos": {"x": 12, "y": 20, "w": 6, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "sum(cff_dle_source_up)", "refId": "A"}],
       "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 7, "color": "green"}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Streams running",
+      "id": 8,
+      "gridPos": {"x": 18, "y": 20, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(cff_stream_active)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 9, "color": "green"}]}}}
     }
   ]
 }

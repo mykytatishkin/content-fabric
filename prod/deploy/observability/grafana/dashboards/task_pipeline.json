@@ -6,19 +6,7 @@
   "refresh": "30s",
   "schemaVersion": 39,
   "time": {"from": "now-6h", "to": "now"},
-  "templating": {
-    "list": [
-      {
-        "name": "channel",
-        "type": "query",
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
-        "query": "label_values(cff_tasks_created_total, channel)",
-        "refresh": 2,
-        "includeAll": true,
-        "multi": true
-      }
-    ]
-  },
+  "templating": {"list": []},
   "panels": [
     {
       "type": "stat",
@@ -26,7 +14,8 @@
       "id": 1,
       "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(increase(cff_tasks_created_total{channel=~\"$channel\"}[1h]))", "refId": "A"}]
+      "targets": [{"expr": "cff_tasks_created_recent{window=\"1h\"}", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["last"]}}
     },
     {
       "type": "stat",
@@ -34,7 +23,8 @@
       "id": 2,
       "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(increase(cff_tasks_completed_total{channel=~\"$channel\"}[1h]))", "refId": "A"}]
+      "targets": [{"expr": "cff_tasks_completed_recent{window=\"1h\"}", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["last"]}}
     },
     {
       "type": "stat",
@@ -42,7 +32,8 @@
       "id": 3,
       "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(increase(cff_tasks_failed_total{channel=~\"$channel\"}[1h]))", "refId": "A"}],
+      "targets": [{"expr": "cff_tasks_failed_recent{window=\"1h\"}", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["last"]}},
       "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 20, "color": "red"}]}}}
     },
     {
@@ -51,18 +42,18 @@
       "id": 4,
       "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "100 * sum(rate(cff_tasks_failed_total{channel=~\"$channel\"}[1h])) / clamp_min(sum(rate(cff_tasks_created_total{channel=~\"$channel\"}[1h])), 0.0001)", "refId": "A"}],
+      "targets": [{"expr": "100 * cff_tasks_failed_recent{window=\"1h\"} / clamp_min(cff_tasks_created_recent{window=\"1h\"}, 1)", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["last"]}},
       "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 10, "color": "yellow"}, {"value": 30, "color": "red"}]}}}
     },
 
     {
       "type": "timeseries",
-      "title": "Stage duration p95 (sec)",
+      "title": "Tasks by status (live from DB)",
       "id": 10,
       "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (stage, le) (rate(cff_task_stage_duration_seconds_bucket[10m])))", "legendFormat": "{{stage}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "s"}}
+      "targets": [{"expr": "cff_tasks_in_status", "legendFormat": "{{status}}", "refId": "A"}]
     },
     {
       "type": "timeseries",
@@ -75,21 +66,24 @@
     },
 
     {
-      "type": "table",
-      "title": "Errors by worker × kind (last 1h)",
+      "type": "timeseries",
+      "title": "Worker outcomes (jobs/min)",
       "id": 20,
       "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum by (worker, error_kind) (increase(cff_errors_total[1h])) > 0", "refId": "A", "format": "table", "instant": true}]
+      "targets": [{"expr": "sum by (worker, outcome) (rate(cff_worker_jobs_total[5m])) * 60", "legendFormat": "{{worker}} • {{outcome}}", "refId": "A"}]
     },
     {
       "type": "table",
-      "title": "YouTube tokens — time to expiry",
+      "title": "YouTube tokens — hours to expiry",
       "id": 21,
       "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "cff_youtube_token_expires_in_seconds / 3600", "refId": "A", "format": "table", "instant": true}],
-      "fieldConfig": {"defaults": {"unit": "h", "thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 24, "color": "yellow"}, {"value": 72, "color": "green"}]}}}
+      "fieldConfig": {"defaults": {"unit": "h", "thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 24, "color": "yellow"}, {"value": 72, "color": "green"}]}}},
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "instance": true, "job": true, "service": true, "host": true}}}
+      ]
     },
 
     {
@@ -98,8 +92,8 @@
       "id": 30,
       "gridPos": {"x": 0, "y": 20, "w": 24, "h": 10},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-.*\"} |~ \"ERROR|CRITICAL\"", "refId": "A"}],
-      "options": {"showTime": true, "wrapLogMessage": true, "dedupStrategy": "none"}
+      "targets": [{"expr": "{unit=~\"cff-.*\"} |~ \"ERROR|CRITICAL\" | json | line_format \"{{.MESSAGE}}\"", "refId": "A"}],
+      "options": {"showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending"}
     }
   ]
 }
