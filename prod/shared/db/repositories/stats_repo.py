@@ -81,11 +81,23 @@ def record_stats(
     likes: int | None = None,
     comments: int | None = None,
 ) -> int:
-    """Insert a daily snapshot. Returns new row ID."""
+    """Upsert a daily snapshot. UNIQUE key (channel_id, snapshot_date) → idempotent.
+
+    Without ON DUPLICATE KEY UPDATE the scheduler's hourly stats job hits
+    `IntegrityError 1062 Duplicate entry '<id>-YYYY-MM-DD'` on every run after
+    the first one of the day. Verified in V05 audit (2026-05-09): every
+    `collect_channel_stats` tick was failing 100% with that error.
+    """
     sql = text(
         "INSERT INTO channel_daily_statistics "
         "(channel_id, platform_channel_id, snapshot_date, subscribers, views, videos, likes, comments, created_at) "
-        "VALUES (:cid, :pcid, NOW(), :subs, :views, :vids, :likes, :comments, NOW())"
+        "VALUES (:cid, :pcid, CURDATE(), :subs, :views, :vids, :likes, :comments, NOW()) "
+        "ON DUPLICATE KEY UPDATE "
+        "  subscribers = COALESCE(VALUES(subscribers), subscribers), "
+        "  views       = COALESCE(VALUES(views), views), "
+        "  videos      = COALESCE(VALUES(videos), videos), "
+        "  likes       = COALESCE(VALUES(likes), likes), "
+        "  comments    = COALESCE(VALUES(comments), comments)"
     )
     with get_connection() as conn:
         result = conn.execute(sql, {
@@ -93,8 +105,8 @@ def record_stats(
             "subs": subscribers, "views": views, "vids": videos,
             "likes": likes, "comments": comments,
         })
-        logger.info("Stats recorded: channel=%s subs=%s views=%s videos=%s", channel_id, subscribers, views, videos)
-        return result.lastrowid
+        logger.info("Stats upserted: channel=%s subs=%s views=%s videos=%s", channel_id, subscribers, views, videos)
+        return result.lastrowid or 0
 
 
 def get_video_stats(task_id: int, days: int = 30) -> list[dict[str, Any]]:
