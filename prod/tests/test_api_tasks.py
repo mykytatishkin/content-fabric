@@ -119,9 +119,14 @@ class TestListTasks:
 
 
 class TestTaskProgress:
+    """Default progress values derived from terminal task status when Redis has
+    no live progress entry. The endpoint reads `_get_progress_from_redis` and
+    falls back to defaults when that returns empty dict — so we mock both."""
+
     def test_progress_completed_defaults_to_100(self, app_client, auth_headers):
         with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
-             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=1)):
+             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=1)), \
+             patch("app.api.endpoints.tasks._get_progress_from_redis", return_value={}):
             resp = app_client.get("/api/v1/tasks/1/progress", headers=auth_headers)
         assert resp.status_code == 200
         body = resp.json()
@@ -131,14 +136,49 @@ class TestTaskProgress:
 
     def test_progress_failed(self, app_client, auth_headers):
         with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
-             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=2)):
+             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=2)), \
+             patch("app.api.endpoints.tasks._get_progress_from_redis", return_value={}):
             resp = app_client.get("/api/v1/tasks/1/progress", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["stage"] == "failed"
 
     def test_progress_pending(self, app_client, auth_headers):
         with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
-             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=0)):
+             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=0)), \
+             patch("app.api.endpoints.tasks._get_progress_from_redis", return_value={}):
             resp = app_client.get("/api/v1/tasks/1/progress", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["stage"] == "pending"
+
+
+class TestCalendarAliases:
+    """Regression tests for /var/log/cff-api.log 2026-05-09 20:03:27 —
+    smoketest hits /api/v1/tasks/calendar with ``start_date``/``end_date``
+    instead of ``from``/``to``, getting 5x 422.  Both alias forms should
+    work."""
+
+    def test_from_to(self, app_client, auth_headers):
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.task_repo.get_all_tasks", return_value=[]):
+            resp = app_client.get(
+                "/api/v1/tasks/calendar?from=2026-05-01&to=2026-05-31",
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+
+    def test_start_date_end_date(self, app_client, auth_headers):
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.task_repo.get_all_tasks", return_value=[]):
+            resp = app_client.get(
+                "/api/v1/tasks/calendar?start_date=2026-05-01&end_date=2026-05-31",
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+
+    def test_missing_range_400(self, app_client, auth_headers):
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER):
+            resp = app_client.get("/api/v1/tasks/calendar", headers=auth_headers)
+        # Should be 400 (helpful) rather than 422 (cryptic).
+        assert resp.status_code == 400

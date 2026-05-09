@@ -5,7 +5,7 @@ import uuid
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
