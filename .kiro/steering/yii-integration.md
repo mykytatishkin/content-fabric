@@ -2,70 +2,73 @@
 inclusion: always
 ---
 
-# Yii2 → CFF Интеграция
+# Yii2 → CFF Integration (historical record)
 
-## Контекст
+Last updated: 2026-05-09
 
-Yii2 (PHP) — legacy-приложение на том же сервере (`/var/www/fastuser/data/www/aiyoutube.pbnbots.com/`). Работало параллельно с CFF через общую БД `content_fabric`. Вся его логика перенесена в CFF на ветке `feat/yii-integration`. Ждём weekend cutover для финального переключения.
+## Status: COMPLETE
 
----
+Yii2 → CFF миграция завершена. Yii2 на сервере остановлен и удалён из `/var/www/fastuser/data/www/aiyoutube.pbnbots.com/`. Crontab Yii снят. Никакого PHP-кода в проде не осталось.
 
-## Что делал Yii2 → что делает CFF сейчас
+Legacy Yii-код архивирован локально в `.legacy/yii/` (см. `.gitignore`) — только для справки/раскопок. Не редактировать, не деплоить.
 
-| Yii2 (PHP) | CFF (Python) | Статус |
-|-----------|-------------|--------|
-| `php yii unique_audio/upload_to_youtube` | `cff-dle-ingestion-worker` + `cff-publishing-worker` | ✅ Готово |
-| `php yii audiokniga_one_com/upload_to_youtube` | `cff-dle-ingestion-worker` | ✅ Готово |
-| `php yii bazaknig_net/upload_to_youtube` | `cff-dle-ingestion-worker` | ✅ Готово |
-| `php yii shorts_from_video/shorts_from_donors` | `cff-shorts-worker` | ✅ Готово |
-| `php yii youtube_stats/stat` | `cff-stats-worker` | ✅ Готово |
-| `php yii stream/start\|stop\|restart` | `cff-stream-control-worker` | ✅ Готово |
-| Crontab (5 задач) | Scheduler + rq workers | ✅ Готово |
-| Web UI стримов (frontend) | `/panel/streams` в CFF Admin Panel | ✅ Готово |
-| Web UI DLE sources | `/panel/dle-sources` в CFF Admin Panel | ✅ Готово |
+7 внешних DLE source-баз (отдельные MySQL-серверы) **продолжают существовать** — это контент-доноры, не имеют отношения к Yii. CFF читает их напрямую через `prod/shared/ingestion/dle/`.
+
+Этот файл оставлен как карта соответствий: «что делал Yii → где это в CFF сейчас». Если нужен код — смотрите ссылки на `prod/...`, не на `.legacy/yii/`.
 
 ---
 
-## DLE Ingestion Pipeline
+## Что делал Yii2 → что делает CFF
 
-7 внешних MySQL серверов → CFF tasks → publishing worker → YouTube
+| Yii2 (PHP, удалён) | CFF (Python, актуально) |
+|--------------------|------------------------|
+| `php yii unique_audio/upload_to_youtube` | queue `dle_ingestion` + `publishing` |
+| `php yii audiokniga_one_com/upload_to_youtube` | queue `dle_ingestion` |
+| `php yii bazaknig_net/upload_to_youtube` | queue `dle_ingestion` |
+| `php yii shorts_from_video/shorts_from_donors` | queue `shorts` |
+| `php yii youtube_stats/stat` | queue `stats` |
+| `php yii stream/start\|stop\|restart` | queue `stream_control` |
+| Crontab (5 задач) | Scheduler (`prod/scheduler/`) + 9 RQ workers |
+| Web UI стримов (frontend Yii) | `/panel/streams` + `/api/v1/streams/*` |
+| Web UI DLE sources (frontend Yii) | `/panel/dle-sources` + `/api/v1/dle-sources/*` |
+
+---
+
+## DLE Ingestion Pipeline (актуально)
+
+7 внешних MySQL-серверов → CFF tasks → publishing worker → YouTube.
 
 ```
-DleClient (shared/ingestion/dle/client.py)
+DleClient (prod/shared/ingestion/dle/client.py)
   → fetch_recent_posts() из dle_post + dle_post_extras
-  → xfields_parser.py нормализует поля (author/avtor, cover/wallpaper, performer/chtec)
-  → DleIngestionPipeline.run() создаёт CFF tasks
-  → cff-dle-ingestion-worker потребляет из Redis queue 'dle_ingestion'
+  → xfields_parser.py нормализует (author/avtor, cover/wallpaper, performer/chtec)
+  → DleIngestionPipeline.run() (prod/shared/ingestion/dle/pipeline.py)
+  → enqueue → cff-dle-ingestion-worker (queue 'dle_ingestion')
+  → создаёт CFF tasks (status=PENDING)
+  → scheduler потом enqueue'ит в 'publishing'
 ```
+
+`slug_to_host(slug)` в `pipeline.py` — конвертит slug DLE-источника в host для построения `dle_post_url`. Без тестов — кандидат на покрытие (см. testing.md).
 
 ### DSN конфиг (prod/app/core/config.py → dle_settings)
 
-Источники читаются из `prod/.env/.env.dle`:
-```
-DLE_DSN_KNIGI_AUDIO_BIZ=mysql+pymysql://knigiaudiobiz_u:j2yvMQh0hcW68nRJ@77.220.213.172:3306/knigi_audio_biz_db
-DLE_DSN_AUDIOKNIGA_ONE_COM=mysql+pymysql://audiokniga_one_com_u:lR9sU3dC@185.154.15.251:3310/audiokniga_one_com_db
-DLE_DSN_CLUB_BOOKS_RU=mysql+pymysql://club_books_ru_u:wC8mU6yR8t@185.244.217.9:3311/club_books_ru_db
-DLE_DSN_BOOKS_ONLINE_INFO=mysql+pymysql://booksonlineinfo:fQ3wH9sL5i@91.211.251.57:3306/booksonlineinfo
-DLE_DSN_SLUSHAT_KNIGI_COM=mysql+pymysql://slushat_knigi_com_u:sW6jA6dN0q@80.85.141.91:3310/slushat_knigi_com_db
-DLE_DSN_KNIGI_ONLINE_CLUB=mysql+pymysql://knigi_online_club_u:gY2yE2lD1z@185.224.133.132:3310/knigi_online_club_db
-DLE_DSN_BAZAKNIG_NET=mysql+pymysql://bazaknig_net_u:tG5xR3eF8n@185.224.133.132:3310/bazaknig_net_db
-```
+Источники читаются из `prod/.env/.env.dle`. Семь записей: `DLE_DSN_KNIGI_AUDIO_BIZ`, `DLE_DSN_AUDIOKNIGA_ONE_COM`, `DLE_DSN_CLUB_BOOKS_RU`, `DLE_DSN_BOOKS_ONLINE_INFO`, `DLE_DSN_SLUSHAT_KNIGI_COM`, `DLE_DSN_KNIGI_ONLINE_CLUB`, `DLE_DSN_BAZAKNIG_NET`.
 
-### XFields нормализация (несовместимости между источниками)
+### XFields нормализация
 
 | Поле | Стандарт | Исключения |
 |------|---------|-----------|
-| author | `author` | slushat_knigi_com использует `avtor` |
-| performer | `performer` | slushat_knigi_com использует `chtec` |
-| cover | `cover` | books_online_info использует `wallpaper` |
-| playerlist | `1` | audiokniga_one_com использует `txt` |
+| author | `author` | slushat_knigi_com → `avtor` |
+| performer | `performer` | slushat_knigi_com → `chtec` |
+| cover | `cover` | books_online_info → `wallpaper` |
+| playerlist | `1` | audiokniga_one_com → `txt` |
 
-`xfields_parser.py` нормализует всё это в единый формат перед созданием task.
+`xfields_parser.py` нормализует всё это перед созданием task.
 
 ### Маппинг DLE источник → YouTube канал
 
-| DLE источник | channel_id в CFF |
-|-------------|-----------------|
+| DLE источник | channel_id |
+|-------------|-----------|
 | knigi_audio_biz | 3, 6 |
 | audiokniga_one_com | 5 |
 | club_books_ru | 21 |
@@ -75,9 +78,9 @@ DLE_DSN_BAZAKNIG_NET=mysql+pymysql://bazaknig_net_u:tG5xR3eF8n@185.224.133.132:3
 
 ---
 
-## Live Streams (9 каналов)
+## Live Streams (9 каналов) — управление через CFF
 
-Управляются через systemd. Каждый стрим — ffmpeg loop на RTMP.
+Каждый стрим = ffmpeg RTMP loop как отдельный systemd unit:
 
 ```
 stream-audiokniga-one.service
@@ -91,11 +94,9 @@ stream-Readbooks-online.service
 stream-RelaxingHolidayLive.service
 ```
 
-**Важно:** есть дубли `stream-stream-*.service.service` — баг скрипта `mass_create_streams.sh`. Не трогать, они не активны.
+`knigiaudiobiz` использует кастомный `my_runner.sh` (видео + фоновая музыка + звуки + мурлыканье). Остальные — стандартный `yt_stream_runner.sh`.
 
-`knigiaudiobiz` использует кастомный `my_runner.sh` (видео + фоновая музыка + звуки огня + мурлыканье). Остальные — стандартный `yt_stream_runner.sh`.
-
-Управление через CFF:
+Управление:
 ```python
 from shared.streams.systemd_manager import SystemdManager
 mgr = SystemdManager()
@@ -103,98 +104,57 @@ mgr.start("stream-knigaza30sekund")
 mgr.status("stream-knigaza30sekund")
 ```
 
+Или через API: `POST /api/v1/streams/{start,stop,restart}` (admin-only).
+
+**Дубли** `stream-stream-*.service.service` от старого `mass_create_streams.sh` на сервере должны быть подчищены. Если встречаются — игнорировать, они не активны.
+
 ---
 
-## Shorts Pipeline
+## Shorts Pipeline (queue `shorts`)
 
 ```
 ShortsPayload (donor_video_url, channel_id, limit)
   → download_video() — yt-dlp
   → transcribe_with_timestamps() — OpenAI Whisper
-  → find_highlights() — GPT-4 (5 лучших моментов 10-30 сек)
-  → cut_segment() — ffmpeg VERT (1080x1920)
-  → pick_best_thumbnail() — GPT Vision оценивает кадры
-  → create_task() — CFF task готов к публикации
+  → find_highlights() — GPT-4 (5 best 10-30s segments)
+  → cut_segment() — ffmpeg → vertical 1080x1920
+  → pick_best_thumbnail() — GPT Vision
+  → create_task() — CFF task ready for publishing
 ```
 
-Worker: `cff-shorts-worker` → queue `shorts`
+Worker: `cff-shorts-worker` (`prod/workers/shorts_worker.py`).
 
 ---
 
-## Новые Admin Panel маршруты (добавлены в feat/yii-integration)
+## Admin Panel маршруты (post-cutover)
 
-| Путь | Описание |
+| Path | Описание |
 |------|---------|
-| `/panel/streams` | Мониторинг и управление 9 стримами (Start/Stop/Restart) |
+| `/panel/streams` | Мониторинг и управление 9 стримами |
 | `/panel/dle-sources` | Статус 7 DLE источников, ручной триггер |
-| `/panel/stats` | Глобальная статистика (просмотры, подписчики, видео) |
-| `/panel/logs` | Расширенный лог-вьюер (5 новых воркеров) |
+| `/panel/stats` | Глобальная статистика (использует `snapshot_date` из `channel_daily_statistics`) |
+| `/panel/logs` | journalctl-вьюер по всем `cff-*` сервисам |
 
 ---
 
-## Новые systemd сервисы (добавлены в feat/yii-integration)
+## Общая БД — кто пишет что
 
-Файлы в `prod/deploy/systemd/`:
-- `cff-dle-ingestion-worker.service`
-- `cff-shorts-worker.service`
-- `cff-stats-worker.service`
-- `cff-stream-control-worker.service`
+После cutover все таблицы пишет только CFF.
 
-Запуск: `python -m workers.{dle_ingestion,shorts,stats,stream}_worker`
+| Таблица (новое имя) | Заменила Yii-таблицу |
+|--------------------|---------------------|
+| `platform_oauth_credentials` | `youtube_account` |
+| `platform_channels` | `youtube_channels` |
+| `live_stream_configurations` | `stream` |
+| `content_upload_queue_tasks` | `tasks` |
+| `channel_daily_statistics` | `youtube_channel_daily` |
 
----
-
-## Новые Redis очереди
-
-| Очередь | Worker | Payload тип |
-|---------|--------|------------|
-| `dle_ingestion` | cff-dle-ingestion-worker | `DleIngestionPayload` |
-| `shorts` | cff-shorts-worker | `ShortsPayload` |
-| `stats` | cff-stats-worker | `StatsPayload` |
-| `stream_control` | cff-stream-control-worker | `StreamControlPayload` |
-
-Все типы в `shared/queue/types.py`.
+См. database.md для полного списка таблиц.
 
 ---
 
-## Weekend Cutover Plan
+## Rollback (на всякий)
 
-**Порядок действий:**
+Откат к Yii больше **не поддерживается**: PHP-код удалён, crontab снят, БД-схема ушла вперёд. Если что-то сломается — чинить в CFF, не пытаться вернуть Yii.
 
-1. **Freeze Yii** — остановить crontab (`crontab -r` или закомментировать все строки)
-2. **Freeze streams** — `systemctl stop stream-*.service` (все 9)
-3. **DB migration** — выполнить `database/DDL/migrations/004_yii_decommission.sql`
-4. **Deploy** — `git pull origin feat/yii-integration` на сервере
-5. **Env** — создать `prod/.env/.env.dle` с DSN для 7 баз
-6. **Install services** — `bash prod/deploy/install-services.sh` (4 новых воркера)
-7. **Start streams** — `systemctl start stream-*.service`
-8. **Verify** — `python3 -m scripts.compare_yii_cff_data` + `pytest tests/ -v`
-
-**Rollback:** `git checkout main`, восстановить crontab из `yii-audit/crontab-root.txt`
-
----
-
-## Общая БД (важно)
-
-Yii и CFF пишут в одну БД `content_fabric`. После cutover Yii больше не пишет.
-
-Таблицы, которые писал Yii (теперь только читает CFF или мигрированы):
-- `youtube_account` — OAuth credentials (теперь `platform_oauth_credentials`)
-- `youtube_channels` — каналы (теперь `platform_channels`)
-- `stream` — конфиги стримов (теперь `live_stream_configurations`)
-- `tasks` — старая очередь (теперь `content_upload_queue_tasks`)
-- `youtube_channel_daily` — статистика (теперь `channel_daily_statistics`)
-
----
-
-## Тесты (15 новых в feat/yii-integration)
-
-```
-test_web_ui.py                  — новые admin panel маршруты
-test_scheduler_routing.py       — smart task routing по DLE источникам
-test_dle_pipeline_integration.py — полный DLE→CFF цикл
-test_dle_ingestion.py           — xfields парсинг и нормализация
-test_shorts_pipeline.py         — AI-driven video processing
-```
-
-Запуск: `cd prod && python -m pytest tests/ -v --tb=short`
+Архивная копия Yii-кода: `.legacy/yii/` локально + git tag перед merge'ом feat/yii-integration (если был выставлен).
