@@ -63,31 +63,23 @@
 </table>
 </div>
 
-<!-- Modal -->
-<div id="tasksModal" style="display:none;position:fixed;inset:0;z-index:500;align-items:center;justify-content:center;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);" onclick="if(event.target===this)closeModal()">
-    <div style="background:#fff;border-radius:16px;max-width:600px;width:calc(100% - 2rem);max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2);margin:1rem;">
-        <div style="padding:1.25rem 1.5rem;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;">
-            <h3 id="modalTitle" style="font-size:15px;font-weight:600;margin:0;"></h3>
-            <button onclick="closeModal()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#858587;padding:4px;">✕</button>
-        </div>
-        <div id="modalBody" style="padding:1rem 1.5rem;"></div>
-    </div>
-</div>
-
 <script type="application/json" id="channelTasksData">{{ channel_tasks|tojson }}</script>
 <script>
 var _channelTasks = {};
 try { _channelTasks = JSON.parse(document.getElementById('channelTasksData').textContent); } catch(e) {}
+var _tasksModalHandle = null;
+
+function _escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(m){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];});
+}
 
 function showTasks(chId, chName) {
     var tasks = _channelTasks[chId] || [];
-    document.getElementById('modalTitle').textContent = chName + ' — Recent Activity';
-    var body = document.getElementById('modalBody');
-
+    var html;
     if (!tasks.length) {
-        body.innerHTML = '<p style="color:#858587;font-size:13px;">No tasks yet</p>';
+        html = '<p style="color:#858587;font-size:13px;">No tasks yet</p>';
     } else {
-        var html = '<div style="display:flex;flex-direction:column;gap:6px;">';
+        html = '<div style="display:flex;flex-direction:column;gap:6px;">';
         tasks.forEach(function(t) {
             var statusBadge = '';
             var borderColor = 'transparent';
@@ -99,34 +91,30 @@ function showTasks(chId, chName) {
 
             html += '<div style="padding:0.6rem 0.75rem;border:1px solid rgba(0,0,0,0.06);border-left:3px solid '+borderColor+';border-radius:8px;font-size:13px;">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">';
-            html += '<div style="font-weight:500;color:#1d1d1f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + (t.title || '—') + '</div>';
+            html += '<div style="font-weight:500;color:#1d1d1f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + _escHtml(t.title || '—') + '</div>';
             html += statusBadge;
             html += '</div>';
 
             var meta = [];
-            if (t.scheduled_at) meta.push('📅 ' + t.scheduled_at);
-            else if (t.completed_at) meta.push(t.completed_at);
-            if (t.completed_at && t.scheduled_at) meta.push('✓ ' + t.completed_at);
-            if (t.upload_id) meta.push('<a href="https://youtube.com/watch?v='+t.upload_id+'" target="_blank" style="color:#0ea5e9;text-decoration:none;">▶ YouTube</a>');
+            if (t.scheduled_at) meta.push('📅 ' + _escHtml(t.scheduled_at));
+            else if (t.completed_at) meta.push(_escHtml(t.completed_at));
+            if (t.completed_at && t.scheduled_at) meta.push('✓ ' + _escHtml(t.completed_at));
+            if (t.upload_id) meta.push('<a href="https://youtube.com/watch?v='+encodeURIComponent(t.upload_id)+'" target="_blank" style="color:#0ea5e9;text-decoration:none;">▶ YouTube</a>');
             if (meta.length) html += '<div style="font-size:11px;color:#858587;margin-top:3px;">'+meta.join(' · ')+'</div>';
 
-            if (t.error && t.status === 2) html += '<div style="font-size:11px;color:#dc2626;margin-top:3px;">'+t.error+'</div>';
+            if (t.error && t.status === 2) html += '<div style="font-size:11px;color:#dc2626;margin-top:3px;">'+_escHtml(t.error)+'</div>';
 
             html += '</div>';
         });
         html += '</div>';
-        body.innerHTML = html;
     }
-
-    var modal = document.getElementById('tasksModal');
-    modal.style.display = 'flex';
+    if (_tasksModalHandle) { try { _tasksModalHandle.close(); } catch(e) {} _tasksModalHandle = null; }
+    _tasksModalHandle = window.openModal({
+        title: chName + ' — Recent Activity',
+        bodyHtml: html,
+        footerButtons: [{ label: 'Close', kind: 'primary', onClick: function(m){ m.close(); } }]
+    });
 }
-
-function closeModal() {
-    document.getElementById('tasksModal').style.display = 'none';
-}
-
-document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 </script>
 
 {% else %}

@@ -146,6 +146,10 @@
         .alert { padding: 0.6rem 0.85rem; border-radius: 16px; margin-bottom: 1rem; font-size: 13px; }
         .alert-info { background: rgba(106,173,250,0.1); color: #2b60a0; border: 1px solid rgba(106,173,250,0.15); }
         .alert-warn { background: rgba(224,205,99,0.1); color: #8a7a00; border: 1px solid rgba(224,205,99,0.15); }
+        .alert-warning { background: rgba(224,205,99,0.1); color: #8a7a00; border: 1px solid rgba(224,205,99,0.15); }
+        .alert-success { background: rgba(224,138,60,0.1); color: #1a8f2d; border: 1px solid rgba(224,138,60,0.15); }
+        .alert-error { background: rgba(254,112,112,0.1); color: #c0392b; border: 1px solid rgba(254,112,112,0.15); }
+        .alert-danger { background: rgba(254,112,112,0.1); color: #c0392b; border: 1px solid rgba(254,112,112,0.15); }
         .stub-notice { background: rgba(224,205,99,0.1); border: 1px dashed rgba(224,205,99,0.4); border-radius: 16px; padding: 1rem; margin-bottom: 1rem; font-size: 13px; color: #8a7a00; }
         .stub-notice strong { color: #5a4a00; }
         .section { margin-bottom: 1.5rem; }
@@ -200,6 +204,8 @@
             .cards { grid-template-columns: 1fr; }
         }
     </style>
+    <script defer src="/static/js/toast.js?v=1"></script>
+    <script defer src="/static/js/modal.js?v=1"></script>
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -250,6 +256,10 @@
     </div>
     <div class="sidebar-spacer"></div>
     <div class="main">
+        {% set _flashes = (get_flashes(request) if get_flashes is defined else []) %}
+        {% for _cat, _msg in _flashes %}
+          <div class="alert alert-{{ _cat }}">{{ _msg }}</div>
+        {% endfor %}
         {% block content %}{% endblock %}
     </div>
 </div>

@@ -14,6 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import JSONResponse
 
 from app.api.routes import router
@@ -198,6 +199,27 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(TraceContextMiddleware)
+
+# ─── SessionMiddleware (cookie-signed sessions, used for flash messages) ───
+# Starlette adds middleware in reverse order, so registering this AFTER
+# CSRFMiddleware means it sits *inside* CSRF (closer to the handler) — the
+# session is decoded only after Origin/Referer checks pass. Keep it after
+# TraceContext too so trace_id is bound for any session-related logging.
+_session_secret = (
+    os.environ.get("CFF_SESSION_SECRET")
+    or os.environ.get("JWT_SECRET_KEY")
+    or "cff-dev-session-secret-change-me"
+)
+_session_https_only = os.environ.get("ENV", "production") == "production" and (
+    os.environ.get("HTTPS_ENABLED", "").lower() in ("1", "true", "yes")
+)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_session_secret,
+    https_only=_session_https_only,
+    same_site="lax",
+    session_cookie="cff_session",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -269,6 +291,22 @@ async def _robots():
 app.include_router(router, prefix="/api/v1")
 app.include_router(panel_router, prefix="/panel", tags=["panel"])
 app.include_router(app_portal_router, prefix="/app", tags=["portal"])
+
+
+# ─── Register `get_flashes` as a Jinja global on every Jinja2Templates ───
+# Two router modules (app_portal, panel) each instantiate their own
+# Jinja2Templates pointing at the same template dir. Inject the helper
+# into both so {% for cat, msg in get_flashes(request) %} works in any
+# template, regardless of which router rendered it.
+try:
+    from app.core.flash import get_flashes as _get_flashes
+    from app.views.app_portal import templates as _portal_templates
+    from app.views.panel import templates as _panel_templates
+
+    for _t in (_portal_templates, _panel_templates, _error_templates):
+        _t.env.globals["get_flashes"] = _get_flashes
+except Exception:
+    logging.getLogger("cff.flash").exception("failed to register get_flashes global")
 
 
 # ─── Prometheus /metrics — opt-in HTTP instrumentation + custom gauges ───

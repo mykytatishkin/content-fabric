@@ -21,27 +21,7 @@
   .stream-title-link:hover { text-decoration: underline; }
   .small-muted { font-size: 11px; color: #858587; }
 
-  /* Modal */
-  .modal-backdrop {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 500;
-    align-items: center; justify-content: center;
-  }
-  .modal-backdrop.open { display: flex; }
-  .modal-card {
-    background: #fff; border-radius: 16px; max-width: 1100px; width: 92%; max-height: 80vh;
-    display: flex; flex-direction: column; overflow: hidden;
-    box-shadow: 0 24px 48px rgba(0,0,0,0.2);
-  }
-  .modal-head { display: flex; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid rgba(0,0,0,0.075); }
-  .modal-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
-  .modal-body { padding: 1rem 1.25rem; overflow: auto; flex: 1; }
-  .modal-foot { padding: 0.75rem 1.25rem; border-top: 1px solid rgba(0,0,0,0.075); display: flex; gap: 0.5rem; justify-content: flex-end; }
-  .modal-body pre {
-    background: #1d1d1f; color: #f5f5f7; padding: 0.85rem; border-radius: 12px;
-    font-size: 11px; font-family: ui-monospace, Menlo, monospace;
-    white-space: pre-wrap; max-height: 60vh; overflow: auto; margin: 0;
-  }
-  .modal-close { background: none; border: none; cursor: pointer; font-size: 20px; color: #858587; }
+  /* Modal styles now provided by /static/js/modal.js */
 </style>
 
 <div class="header-row">
@@ -86,24 +66,6 @@
 </table>
 </div>
 
-<!-- Log modal -->
-<div class="modal-backdrop" id="logModal">
-  <div class="modal-card">
-    <div class="modal-head">
-      <div>
-        <h3>📋 Log</h3>
-        <div class="small-muted" id="logSub">—</div>
-      </div>
-      <button class="modal-close" onclick="closeLog()">×</button>
-    </div>
-    <div class="modal-body"><pre id="logBody">Loading...</pre></div>
-    <div class="modal-foot">
-      <button class="btn btn-sm" id="btnLogRefresh">Refresh</button>
-      <button class="btn btn-sm" onclick="closeLog()">Close</button>
-    </div>
-  </div>
-</div>
-
 <script>
 (() => {
   const URLs = {
@@ -129,11 +91,9 @@
   const btnStopAll = document.getElementById('btnStopAll');
   const btnRestartAll = document.getElementById('btnRestartAll');
 
-  const logModalEl = document.getElementById('logModal');
-  const logBody = document.getElementById('logBody');
-  const logSub = document.getElementById('logSub');
-  const btnLogRefresh = document.getElementById('btnLogRefresh');
+  // Log modal handle (created on demand via window.openModal)
   let currentLogId = null;
+  let logModalHandle = null;
 
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -263,7 +223,7 @@
       body: body.toString()
     });
     if (!json.ok) {
-      alert(`❌ ${action.toUpperCase()} #${id}\n` + (json.output || json.error || 'Unknown error'));
+      window.toast(`${action.toUpperCase()} #${id}: ` + (json.output || json.error || 'Unknown error'), 'error');
     }
     return json;
   }
@@ -274,7 +234,7 @@
     if (!confirm(`${action.toUpperCase()} ALL (${ids.length} streams)?`)) return;
     for (const id of ids) {
       try { await unitAction(action, id); }
-      catch (e) { alert(`❌ ${action.toUpperCase()} #${id}\n${e.message}`); }
+      catch (e) { window.toast(`${action.toUpperCase()} #${id}: ${e.message}`, 'error'); }
       await new Promise(r => setTimeout(r, 400));
       await refreshStatus();
     }
@@ -282,17 +242,27 @@
 
   function openLog(id) {
     currentLogId = id;
-    logBody.textContent = 'Loading...';
     const row = data.find(x => x.id === id);
-    logSub.textContent = row ? `${row.name} • ${row.service}` : `#${id}`;
-    logModalEl.classList.add('open');
+    const subtitle = row ? `${row.name} • ${row.service}` : `#${id}`;
+    const subEsc = escapeHtml(subtitle);
+    if (logModalHandle) { try { logModalHandle.close(); } catch (e) {} logModalHandle = null; }
+    logModalHandle = window.openModal({
+      title: '📋 Log — ' + subtitle,
+      bodyHtml: '<div class="small-muted" id="logSub">' + subEsc + '</div><pre id="logBody">Loading…</pre>',
+      footerButtons: [
+        { label: 'Refresh', onClick: () => loadLog() },
+        { label: 'Close', kind: 'primary', onClick: m => m.close() }
+      ]
+    });
     loadLog();
   }
-  function closeLog() { logModalEl.classList.remove('open'); }
+  function closeLog() { if (logModalHandle) { logModalHandle.close(); logModalHandle = null; } }
   window.closeLog = closeLog;
 
   async function loadLog() {
     if (!currentLogId) return;
+    const logBody = document.getElementById('logBody');
+    if (!logBody) return;
     try {
       const url = URLs.tail + '?id=' + encodeURIComponent(currentLogId) + '&lines=120';
       const json = await httpJson(url, { method: 'GET', credentials: 'same-origin' });
@@ -311,10 +281,9 @@
       else if (btn.classList.contains('act-restart')) { await unitAction('restart', id); await refreshStatus(); }
       else if (btn.classList.contains('act-sync'))    { await unitAction('sync', id); await refreshStatus(); }
       else if (btn.classList.contains('act-log'))     { openLog(id); }
-    } catch (e2) { alert('Error: ' + e2.message); }
+    } catch (e2) { window.toast('Error: ' + e2.message, 'error'); }
   });
 
-  btnLogRefresh.addEventListener('click', loadLog);
   btnRefresh.addEventListener('click', refreshStatus);
   btnPause.addEventListener('click', () => {
     paused = !paused;
