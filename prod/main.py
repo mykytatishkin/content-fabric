@@ -37,6 +37,29 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class TraceContextMiddleware(BaseHTTPMiddleware):
+    """Bind a trace_id to every incoming HTTP request.
+
+    Trace_id is taken from X-Trace-Id header (so external callers can correlate
+    their request with our logs) or generated fresh. The same id is echoed back
+    in the response, and is automatically attached to every log line emitted
+    while handling the request (via TraceContextFilter in logging_config).
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        from shared.logging_context import new_trace_id, set_trace_id, set_worker
+
+        incoming = request.headers.get("X-Trace-Id", "").strip()
+        trace_id = incoming if incoming else new_trace_id()
+        set_trace_id(trace_id)
+        set_worker("cff-api")
+
+        request.state.trace_id = trace_id
+        response: Response = await call_next(request)
+        response.headers["X-Trace-Id"] = trace_id
+        return response
+
+
 _is_dev = os.environ.get("ENV", "production") == "development"
 app = FastAPI(
     title=settings.APP_NAME,
@@ -50,12 +73,13 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(TraceContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Trace-Id"],
 )
 
 

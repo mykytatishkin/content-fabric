@@ -6,6 +6,7 @@ from typing import Any
 
 from shared.db.repositories.task_repo import create_task, get_task_by_dle_id
 from shared.ingestion.dle.client import DleClient
+from shared.logging_context import ensure_trace_id, get_trace_id, set_trace_id
 from shared.queue.publisher import enqueue_job
 from shared.queue.types import DleProcessingPayload
 from app.core.config import dle_settings
@@ -66,37 +67,47 @@ class DleIngestionPipeline:
         return get_task_by_dle_id(self.source_slug, dle_post_id) is not None
 
     def _create_cff_task(self, post: dict[str, Any], channel_id: int, media_type: str) -> int | None:
-        """Create a new task in the CFF queue based on DLE post."""
+        """Create a new task in the CFF queue based on DLE post.
+
+        Generates a per-task trace_id which is:
+          - stored in legacy_add_info.trace_id (queryable from DB)
+          - set as logging context for the rest of this call
+          - propagated into the DleProcessingPayload → all downstream workers
+        """
+        # One trace_id per CFF task — uniquely identifies the path through every worker.
+        trace_id = ensure_trace_id() if get_trace_id() else None
+        # Always start with a fresh trace_id per task to keep traces isolated.
+        from shared.logging_context import new_trace_id
+        trace_id = new_trace_id()
+        set_trace_id(trace_id)
+
         legacy_info = {
             "dle_source": self.source_slug,
             "dle_post_id": post["id"],
             "dle_post_url": f"https://{self.source_slug.replace('_', '.')}/{post['id']}-{post['alt_name']}.html",
-            "normalized": post["normalized"]
+            "normalized": post["normalized"],
+            "trace_id": trace_id,
         }
-        
-        # Use DLE title for now. GPT title generation can be a separate step in the worker.
+
         title = post["title"]
-        
-        # Schedule slightly in the future to allow processing workers to pick it up.
         scheduled_at = datetime.now() + timedelta(minutes=5)
-        
-        # source_file_path is empty; DLE processor worker will fill it.
+
         task_id = create_task(
             channel_id=channel_id,
-            source_file_path="", 
+            source_file_path="",
             title=title,
             scheduled_at=scheduled_at,
             media_type=media_type,
-            legacy_add_info=legacy_info
+            legacy_add_info=legacy_info,
         )
-        logger.info("Created DLE task %s for channel %d (DLE ID: %d)", task_id, channel_id, post["id"])
-        
-        # Enqueue for DLE processor worker
+        logger.info("Created DLE task %s for channel %d (DLE ID: %d) trace_id=%s",
+                    task_id, channel_id, post["id"], trace_id)
+
         try:
-            payload = DleProcessingPayload(task_id=task_id)
+            payload = DleProcessingPayload(task_id=task_id, trace_id=trace_id)
             enqueue_job("dle_processing", "workers.dle_processor_worker.process_dle_task", payload)
-            logger.info("Enqueued task %s for DLE processing", task_id)
+            logger.info("Enqueued task %s for DLE processing trace_id=%s", task_id, trace_id)
         except Exception as e:
             logger.error("Failed to enqueue task %s for DLE processing: %s", task_id, e)
-        
+
         return task_id

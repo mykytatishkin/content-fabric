@@ -14,6 +14,7 @@ from shared.ingestion.dle.processor import DleProcessor
 from shared.notifications import telegram
 from shared.queue.config import get_redis
 from shared.queue.types import DleProcessingPayload
+from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -31,6 +32,7 @@ logger.addHandler(console_handler)
 
 def process_dle_task(payload: DleProcessingPayload) -> dict[str, Any]:
     """Обробити DLE завдання: скачати → обробити → зберегти шлях."""
+    bootstrap_job(payload, "cff-dle-processor")
     task_id = payload.task_id
     logger.info("[DLE PROCESSOR WORKER] START task_id=%s", task_id)
 
