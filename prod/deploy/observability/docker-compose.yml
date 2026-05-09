@@ -106,6 +106,8 @@ services:
       - /var/log/journal:/var/log/journal:ro
       - /run/log/journal:/run/log/journal:ro
       - /etc/machine-id:/etc/machine-id:ro
+      # cff-* file logs (six services use StandardOutput=append:/var/log/...)
+      - /var/log:/var/log:ro
       - promtail-data:/promtail
     depends_on:
       - loki

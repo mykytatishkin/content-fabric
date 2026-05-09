@@ -15,15 +15,16 @@
       "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "up{job=\"cff-api\"}", "refId": "A"}],
-      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}}
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "text": "DOWN"}, "1": {"color": "green", "text": "UP"}}, "type": "value"}]}}
     },
     {
       "type": "stat",
-      "title": "Workers active",
+      "title": "Workers up",
       "id": 2,
       "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "count(namedprocess_namegroup_num_procs{groupname=~\"cff-.*-worker\"} > 0)", "refId": "A"}]
+      "targets": [{"expr": "count(namedprocess_namegroup_num_procs{groupname=~\"cff-.*\"} > 0)", "refId": "A"}]
     },
     {
       "type": "stat",
@@ -54,12 +55,12 @@
     },
     {
       "type": "stat",
-      "title": "Active alerts",
+      "title": "DLE sources up",
       "id": 6,
       "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "count(ALERTS{alertstate=\"firing\"})", "refId": "A"}],
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "red"}]}}}
+      "targets": [{"expr": "sum(cff_dle_source_up)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 7, "color": "green"}]}}}
     },
 
     {
@@ -79,18 +80,24 @@
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "cff_queue_depth", "legendFormat": "{{queue}}", "refId": "A"}]
     },
+
     {
       "type": "timeseries",
-      "title": "Tasks per minute (created vs completed vs failed)",
+      "title": "Tasks by status (live)",
       "id": 20,
-      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 8},
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [
-        {"expr": "sum(rate(cff_tasks_created_total[5m])) * 60", "legendFormat": "created/min", "refId": "A"},
-        {"expr": "sum(rate(cff_tasks_completed_total[5m])) * 60", "legendFormat": "completed/min", "refId": "B"},
-        {"expr": "sum(rate(cff_tasks_failed_total[5m])) * 60", "legendFormat": "failed/min", "refId": "C"}
-      ]
+      "targets": [{"expr": "cff_tasks_in_status", "legendFormat": "{{status}}", "refId": "A"}]
     },
+    {
+      "type": "timeseries",
+      "title": "Streams by state",
+      "id": 21,
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_streams_in_state", "legendFormat": "{{state}}", "refId": "A"}]
+    },
+
     {
       "type": "timeseries",
       "title": "DLE source up (1=connected, 0=down)",
@@ -102,7 +109,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Stream uptime",
+      "title": "Stream uptime (minutes)",
       "id": 31,
       "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},

@@ -133,6 +133,34 @@ errors_total = Counter(
     ["worker", "error_kind"],
 )
 
+# DB-backed gauges — sample_all() refreshes these from MySQL every 30s.
+# Useful even when Counter-based metrics are stuck at 0 (no new traffic yet).
+tasks_in_status = Gauge(
+    "cff_tasks_in_status",
+    "Current count of content_upload_queue_tasks rows by status.",
+    ["status"],   # pending|completed|failed|processing|cancelled
+)
+tasks_created_recent = Gauge(
+    "cff_tasks_created_recent",
+    "Tasks inserted within the last N minutes (by window).",
+    ["window"],   # 1h|24h
+)
+tasks_completed_recent = Gauge(
+    "cff_tasks_completed_recent",
+    "Tasks reaching status=completed within the last N minutes.",
+    ["window"],
+)
+tasks_failed_recent = Gauge(
+    "cff_tasks_failed_recent",
+    "Tasks reaching status=failed within the last N minutes.",
+    ["window"],
+)
+streams_in_state = Gauge(
+    "cff_streams_in_state",
+    "Live stream systemd units grouped by state.",
+    ["state"],   # active_running | inactive_dead | failed | activating
+)
+
 build_info = Info(
     "cff_build",
     "Static build/version info (filled at startup).",
@@ -338,9 +366,86 @@ def sample_stream_status() -> None:
         logger.debug("sample_stream_status failed: %s", exc)
 
 
+def sample_db_task_counts() -> None:
+    """Read current task distribution from MySQL — fills tasks_in_status + recent windows."""
+    try:
+        from shared.db.connection import get_connection
+        from sqlalchemy import text
+
+        status_names = {0: "pending", 1: "completed", 2: "failed",
+                         3: "processing", 4: "cancelled"}
+
+        with get_connection() as conn:
+            # By-status totals
+            rows = conn.execute(text(
+                "SELECT status, COUNT(*) FROM content_upload_queue_tasks GROUP BY status"
+            )).fetchall()
+            seen: set[str] = set()
+            for status_int, cnt in rows:
+                name = status_names.get(int(status_int), f"unknown_{status_int}")
+                tasks_in_status.labels(status=name).set(int(cnt))
+                seen.add(name)
+            # Zero out missing statuses so gauges don't hold stale values
+            for name in set(status_names.values()) - seen:
+                tasks_in_status.labels(status=name).set(0)
+
+            # Sliding windows (created in last hour / day)
+            for window, hours in (("1h", 1), ("24h", 24)):
+                row = conn.execute(text(f"""
+                    SELECT
+                        SUM(CASE WHEN created_at >= NOW() - INTERVAL :h HOUR THEN 1 ELSE 0 END) as created,
+                        SUM(CASE WHEN status = 1 AND completed_at >= NOW() - INTERVAL :h HOUR THEN 1 ELSE 0 END) as completed,
+                        SUM(CASE WHEN status = 2 AND completed_at >= NOW() - INTERVAL :h HOUR THEN 1 ELSE 0 END) as failed
+                    FROM content_upload_queue_tasks
+                """), {"h": hours}).fetchone()
+                tasks_created_recent.labels(window=window).set(int(row[0] or 0))
+                tasks_completed_recent.labels(window=window).set(int(row[1] or 0))
+                tasks_failed_recent.labels(window=window).set(int(row[2] or 0))
+    except Exception as exc:
+        logger.debug("sample_db_task_counts failed: %s", exc)
+
+
+def sample_stream_state_counts() -> None:
+    """Aggregate stream_active gauge into streams_in_state by sub-state."""
+    import subprocess
+    counts = {"active_running": 0, "inactive_dead": 0, "failed": 0, "activating": 0}
+    try:
+        r = subprocess.run(
+            ["systemctl", "list-units", "stream-*.service", "--no-legend",
+             "--no-pager", "--all"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in r.stdout.strip().splitlines():
+            parts = line.split(None, 4)
+            if len(parts) < 4:
+                continue
+            unit = parts[0].lstrip("●").strip()
+            if not unit.endswith(".service"):
+                continue
+            active = parts[2] if len(parts) > 2 else ""
+            sub = parts[3] if len(parts) > 3 else ""
+            key = f"{active}_{sub}".lower()
+            if key in counts:
+                counts[key] += 1
+            elif sub == "running":
+                counts["active_running"] += 1
+            elif sub == "dead":
+                counts["inactive_dead"] += 1
+            elif active == "failed":
+                counts["failed"] += 1
+            elif active == "activating":
+                counts["activating"] += 1
+        for state, n in counts.items():
+            streams_in_state.labels(state=state).set(n)
+    except Exception as exc:
+        logger.debug("sample_stream_state_counts failed: %s", exc)
+
+
 def sample_all() -> None:
     """Single entry point — call from scheduler/run.py loop or a periodic task."""
     sample_queue_depths()
     sample_dle_source_health()
     sample_youtube_token_expiries()
     sample_stream_status()
+    sample_db_task_counts()
+    sample_stream_state_counts()

@@ -9,6 +9,49 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
+  # File-based logs — most cff-* services write to /var/log/cff-*.log
+  # via systemd StandardOutput=append:. Need to scrape the files because
+  # journald never sees them.
+  - job_name: cff-files
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: cff-files
+          __path__: /var/log/cff-*.log
+    pipeline_stages:
+      # Promtail mounts /var/log → /host_log so we use that prefix at scrape time.
+      # First, lift the source file basename into the `unit` label.
+      - regex:
+          source: filename
+          expression: '/var/log/(?P<unit>cff-[^/]+)\.log$'
+      - labels:
+          unit:
+      # Try JSON first (LOG_FORMAT=json case)
+      - json:
+          expressions:
+            level: level
+            trace_id: trace_id
+            task_id: task_id
+            logger: logger
+            message: message
+      - labels:
+          level:
+          trace_id:
+          task_id:
+      # Fallback: plain text format like
+      #   '2026-05-09 ... [trace=abc task=42] message'
+      - match:
+          selector: '{job="cff-files"} !~ "^\\{"'
+          stages:
+            - regex:
+                expression: 'trace=(?P<trace_id>[0-9a-f]{16,32}|-)'
+            - regex:
+                expression: 'task=(?P<task_id>\d+|-)'
+            - labels:
+                trace_id:
+                task_id:
+
   # systemd journal — picks up everything cff-* and stream-* via journald
   - job_name: systemd-journal
     journal:

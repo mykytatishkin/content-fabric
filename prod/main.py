@@ -40,24 +40,48 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 class TraceContextMiddleware(BaseHTTPMiddleware):
-    """Bind a trace_id to every incoming HTTP request.
+    """Bind a trace_id to every incoming HTTP request + log access.
 
-    Trace_id is taken from X-Trace-Id header (so external callers can correlate
-    their request with our logs) or generated fresh. The same id is echoed back
-    in the response, and is automatically attached to every log line emitted
-    while handling the request (via TraceContextFilter in logging_config).
+    Doing both in one middleware (instead of two) is critical: ContextVars
+    set in an inner middleware are NOT visible from an outer one, because
+    starlette wraps each middleware in its own asyncio Task scope. So we
+    set trace_id AND log the request from the same dispatch.
+
+    trace_id is taken from X-Trace-Id header (so external callers can
+    correlate their request with our logs) or generated fresh. The same id
+    is echoed back in X-Trace-Id response header and attached to every log
+    line emitted while handling the request.
     """
+
+    _request_logger = logging.getLogger("cff.requests")
 
     async def dispatch(self, request: Request, call_next):
         from shared.logging_context import new_trace_id, set_trace_id, set_worker
+        import time as _time
 
         incoming = request.headers.get("X-Trace-Id", "").strip()
         trace_id = incoming if incoming else new_trace_id()
         set_trace_id(trace_id)
         set_worker("cff-api")
-
         request.state.trace_id = trace_id
-        response: Response = await call_next(request)
+
+        start = _time.time()
+        try:
+            response: Response = await call_next(request)
+        except Exception:
+            duration_ms = int((_time.time() - start) * 1000)
+            self._request_logger.exception(
+                "%s %s → EXC (%dms)",
+                request.method, request.url.path, duration_ms,
+            )
+            raise
+
+        duration_ms = int((_time.time() - start) * 1000)
+        if not request.url.path.startswith("/health") and not request.url.path == "/metrics":
+            self._request_logger.info(
+                "%s %s → %d (%dms)",
+                request.method, request.url.path, response.status_code, duration_ms,
+            )
         response.headers["X-Trace-Id"] = trace_id
         return response
 
@@ -85,21 +109,10 @@ app.add_middleware(
 )
 
 
+# NB: request logging now happens inside TraceContextMiddleware so the
+# log line carries the trace_id ContextVar (which would be invisible from
+# an outer @app.middleware decorator).
 _request_logger = logging.getLogger("cff.requests")
-
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    import time
-    start = time.time()
-    response = await call_next(request)
-    duration_ms = int((time.time() - start) * 1000)
-    if not request.url.path.startswith("/health"):
-        _request_logger.info(
-            "%s %s → %d (%dms)",
-            request.method, request.url.path, response.status_code, duration_ms,
-        )
-    return response
 
 
 @app.exception_handler(RateLimitExceeded)
