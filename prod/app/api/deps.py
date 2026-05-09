@@ -1,10 +1,18 @@
-"""FastAPI dependencies — authentication."""
+"""FastAPI dependencies — authentication.
+
+Accepts either:
+  - Authorization: Bearer <jwt>   (machine clients, CLI, tests)
+  - Cookie cff_token=<jwt>        (browser pages — same cookie set by /app/login)
+
+When both are present, Bearer wins. CSRFMiddleware (see main.py) covers the
+cookie path so cross-site POSTs are still rejected.
+"""
 
 from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import decode_access_token
@@ -12,20 +20,25 @@ from shared.db.repositories import user_repo
 
 logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
+_COOKIE_NAME = "cff_token"
 
 
 async def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> dict:
-    """Validate Bearer token and return the authenticated user dict.
+    """Validate JWT (Bearer header OR cff_token cookie) and return the user dict."""
+    token: str | None = None
+    if creds is not None:
+        token = creds.credentials
+    else:
+        token = request.cookies.get(_COOKIE_NAME)
 
-    Raises 401 if token is missing/invalid or user not found.
-    """
-    if creds is None:
-        logger.debug("Auth failed: no credentials provided")
+    if not token:
+        logger.debug("Auth failed: no Bearer header and no cff_token cookie")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    payload = decode_access_token(creds.credentials)
+    payload = decode_access_token(token)
     if payload is None:
         logger.warning("Auth failed: invalid/expired JWT token")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
