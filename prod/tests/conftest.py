@@ -62,6 +62,22 @@ def app_client():
     with patch("shared.db.connection.get_connection", _fake_conn), \
          patch("shared.db.connection.get_engine", return_value=MagicMock()):
         from main import app
+        # Reset slowapi limiter state so each test starts with a fresh quota.
+        # Endpoint modules instantiate their own Limiter — reset those too.
+        try:
+            app.state.limiter.reset()
+        except Exception:
+            pass
+        try:
+            from app.api.endpoints import auth as _auth_ep
+            _auth_ep._limiter.reset()
+        except Exception:
+            pass
+        try:
+            from app.views import app_portal as _portal
+            _portal._limiter.reset()
+        except Exception:
+            pass
         yield TestClient(app)
 
 

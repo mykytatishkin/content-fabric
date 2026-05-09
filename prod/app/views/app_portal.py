@@ -167,6 +167,188 @@ async def logout(request: Request):
     return resp
 
 
+# ── Password Reset (public) ─────────────────────────────────────────
+#
+# Mirrors Yii frontend SiteController::actionRequestPasswordReset (172-188)
+# and actionResetPassword (197-214). Token format: <hex>_<unix_ts> with
+# 1h TTL (params.php passwordResetTokenExpire = 3600).
+
+
+@router.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request):
+    user = user_from_cookie(request)
+    if user:
+        return RedirectResponse("/app/", status_code=302)
+    return _template_response("app_forgot_password.html", {
+        "request": request, "error": None,
+    })
+
+
+@router.post("/forgot-password", response_class=HTMLResponse)
+@_limiter.limit("5/minute")
+async def forgot_password_submit(
+    request: Request,
+    email: str = Form(...),
+):
+    from shared.db.models import UserStatus
+    from shared.db.repositories import user_repo
+    from shared.notifications import email as email_sender
+    from app.core.tokens import make_reset_token
+    from app.core.audit import log as audit_log
+    from app.core.flash import flash
+
+    # Same generic flash regardless of outcome — don't leak which addresses
+    # are registered.
+    user = user_repo.get_user_by_email(email)
+    if user and int(user.get("status") or 0) == int(UserStatus.ACTIVE):
+        token = make_reset_token()
+        user_repo.set_password_reset_token(user["id"], token)
+        import os as _os
+        base = _os.environ.get("APP_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+        reset_url = f"{base}/app/reset-password/{token}"
+        email_sender.send_password_reset_email(
+            to=user["email"],
+            reset_url=reset_url,
+            user_name=user.get("display_name") or user.get("username"),
+        )
+        audit_log(
+            "password_reset.requested",
+            actor_id=user["id"], entity_type="user", entity_id=user["id"],
+        )
+        logger.info("Portal: password reset requested for user=%s", user["id"])
+    else:
+        logger.info("Portal: forgot-password — no active user for email=%s", email)
+
+    flash(request, "success", "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля.")
+    return RedirectResponse("/app/login", status_code=302)
+
+
+@router.get("/reset-password/{token}", response_class=HTMLResponse)
+async def reset_password_page(request: Request, token: str):
+    from app.core.tokens import PASSWORD_RESET_TTL_SEC, is_token_ts_expired, parse_token_ts
+    from app.core.flash import flash
+
+    if not token or parse_token_ts(token) is None or is_token_ts_expired(token, PASSWORD_RESET_TTL_SEC):
+        flash(request, "error", "Ссылка для сброса пароля недействительна или истекла.")
+        return RedirectResponse("/app/login", status_code=302)
+    return _template_response("app_reset_password.html", {
+        "request": request, "error": None, "token": token,
+    })
+
+
+@router.post("/reset-password/{token}", response_class=HTMLResponse)
+@_limiter.limit("5/minute")
+async def reset_password_submit(
+    request: Request,
+    token: str,
+    password: str = Form(...),
+    password_confirm: str = Form(""),
+):
+    from app.core.tokens import PASSWORD_RESET_TTL_SEC, is_token_ts_expired, parse_token_ts
+    from app.core.audit import log as audit_log
+    from app.core.flash import flash
+    from shared.db.repositories import user_repo
+
+    if not token or parse_token_ts(token) is None or is_token_ts_expired(token, PASSWORD_RESET_TTL_SEC):
+        flash(request, "error", "Ссылка для сброса пароля недействительна или истекла.")
+        return RedirectResponse("/app/login", status_code=302)
+
+    if len(password) < 8:
+        return _template_response("app_reset_password.html", {
+            "request": request, "error": "Пароль должен быть не короче 8 символов.", "token": token,
+        })
+    if password_confirm and password_confirm != password:
+        return _template_response("app_reset_password.html", {
+            "request": request, "error": "Пароли не совпадают.", "token": token,
+        })
+
+    user = user_repo.get_user_by_reset_token(token)
+    if not user:
+        flash(request, "error", "Ссылка для сброса пароля недействительна или истекла.")
+        return RedirectResponse("/app/login", status_code=302)
+
+    user_repo.change_password(user["id"], hash_password(password))
+    user_repo.set_password_reset_token(user["id"], None)
+    audit_log(
+        "password_reset.completed",
+        actor_id=user["id"], entity_type="user", entity_id=user["id"],
+    )
+    logger.info("Portal: password reset completed for user=%s", user["id"])
+    flash(request, "success", "Пароль успешно изменён. Войдите с новым паролем.")
+    return RedirectResponse("/app/login", status_code=302)
+
+
+# ── Email verification (public) ────────────────────────────────────
+#
+# Mirrors Yii frontend SiteController::actionVerifyEmail (223-258)
+# and actionResendVerificationEmail (lines 240-258). Token format
+# matches Yii's User::generateEmailVerificationToken (193-204):
+# <hex>_<unix_ts>, 24h TTL.
+
+
+@router.get("/verify-email/{token}", response_class=HTMLResponse)
+@_limiter.limit("10/minute")
+async def portal_verify_email(request: Request, token: str):
+    """Click-through verification: flips status INACTIVE→ACTIVE then redirects to /app/login."""
+    from app.api.endpoints.auth import _do_verify_email
+    from app.core.flash import flash
+    from fastapi import HTTPException
+
+    try:
+        _do_verify_email(token)
+        flash(request, "success", "Email подтверждён. Войдите в аккаунт.")
+    except HTTPException as exc:
+        logger.info("Portal verify-email failed: %s", exc.detail)
+        flash(request, "error", "Ссылка недействительна или истёк её срок.")
+    return RedirectResponse("/app/login", status_code=302)
+
+
+@router.get("/resend-verification", response_class=HTMLResponse)
+async def portal_resend_verification_page(request: Request):
+    user = user_from_cookie(request)
+    if user:
+        return RedirectResponse("/app/", status_code=302)
+    return _template_response("app_resend_verification.html", {
+        "request": request, "error": None,
+    })
+
+
+@router.post("/resend-verification", response_class=HTMLResponse)
+@_limiter.limit("5/minute")
+async def portal_resend_verification_submit(
+    request: Request,
+    email: str = Form(...),
+):
+    from shared.db.models import UserStatus
+    from shared.db.repositories import user_repo
+    from shared.notifications import email as email_sender
+    from app.core.flash import flash
+    from app.core.tokens import make_verification_token
+
+    user = user_repo.get_user_by_email(email)
+    # Always look like the same outcome to avoid user-enumeration via the form.
+    if user and int(user.get("status") or 0) == int(UserStatus.INACTIVE):
+        token = make_verification_token()
+        user_repo.set_verification_token(user["id"], token)
+        import os as _os
+        base = _os.environ.get("APP_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+        verify_url = f"{base}/app/verify-email/{token}"
+        try:
+            email_sender.send_verification_email(
+                to=user["email"],
+                verify_url=verify_url,
+                user_name=user.get("display_name") or user.get("username"),
+            )
+        except Exception:
+            logger.exception("Failed to resend verification email to %s", email)
+        logger.info("Portal: verification resent for user=%s", user["id"])
+    else:
+        logger.info("Portal: resend-verification — no inactive user for email=%s", email)
+
+    flash(request, "success", "Если аккаунт существует, мы отправили письмо со ссылкой подтверждения.")
+    return RedirectResponse("/app/login", status_code=302)
+
+
 # ── Dashboard ────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
