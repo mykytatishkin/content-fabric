@@ -43,14 +43,6 @@ def run_ingestion_job(payload: DleIngestionPayload) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    import shared.env  # noqa: F401 — load .env files
-
-    from rq import Worker
-
-    from shared.queue.config import get_redis, QUEUE_DLE_INGESTION
-
-    from shared.logging_config import setup_logging
-    setup_logging(service_name="cff-dle-ingestion")
-    redis_conn = get_redis()
-    worker = Worker([QUEUE_DLE_INGESTION], connection=redis_conn)
-    worker.work()
+    from shared.queue.config import QUEUE_DLE_INGESTION
+    from shared.queue.worker_runner import main
+    main([QUEUE_DLE_INGESTION], "cff-dle-ingestion")
