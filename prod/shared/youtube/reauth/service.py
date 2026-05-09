@@ -157,7 +157,12 @@ class YouTubeReauthService:
             print(f"  Авторизація каналу: {info.channel_name} (id={info.channel_id}){hint_msg}")
             print(f"{'='*60}")
 
-            can_automate = bool(info.login_hint and info.login_password)
+            # When --no-browser is requested (open_browser=False), skip Selenium
+            # automation since it launches a Chrome window. Fall back to manual
+            # flow which prints the auth URL and waits on the local callback.
+            can_automate = bool(
+                info.login_hint and info.login_password and self.config.open_browser
+            )
 
             if can_automate:
                 flow.redirect_uri = f"http://localhost:{port}/"
