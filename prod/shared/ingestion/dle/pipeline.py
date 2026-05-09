@@ -96,6 +96,11 @@ class DleIngestionPipeline:
             "dle_post_id": post["id"],
             "dle_post_url": f"https://{slug_to_host(self.source_slug)}/{post['id']}-{post['alt_name']}.html",
             "normalized": post["normalized"],
+            # Per-source URL builders (sources.py) need raw xfields + book_id
+            # to mirror the PHP controllers (e.g. tr_id, baza_knig_info_id,
+            # wallpaper, book_id for redirectto.cc playlist).
+            "xfields_parsed": post.get("xfields_parsed") or {},
+            "book_id": post.get("book_id"),
             "trace_id": trace_id,
         }
 

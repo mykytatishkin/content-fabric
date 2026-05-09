@@ -13,6 +13,14 @@ The legacy PHP stack (Yii2) has been fully integrated into the Content Fabric (C
 - **DLE Ingestion:** Automated fetching of content from 7 external MySQL databases.
   - *Module:* `shared/ingestion/dle/`
   - *Worker:* `cff-dle-ingestion-worker`
+  - **Asset fetching strategy** (1:1 port of Yii PHP controllers, see `shared/ingestion/dle/sources.py`):
+    - Public sites (audiokniga-one.com, knigi-audio.biz, club-books.ru, knigi-online.club, bazaknig.net) sit behind Cloudflare's "Managed Challenge" → bare HTTP cannot reach them. PHP never went through the public site for asset fetches and neither do we. Covers and audio playlists are fetched directly from origin CDN `vvoqhuz9dcid9zx9.redirectto.cc` (no Cloudflare).
+    - Path layouts mirror PHP exactly: `s01/{imgurl(book_id)}{book_id}.jpg|.pl.txt` for audiokniga/knigi-audio/bazaknig, `s20/{imgurl(tr_id)}{tr_id}.jpg` for club-books/knigi-online.
+    - `imgurl(id)` splits each digit with `/` (port of `MyFunction::imgurl`): `275374` → `2/7/5/3/7/4/`.
+    - books-online.info uses `cdn.my-library.info/{wallpaper}` (mirror, no Cloudflare).
+    - slushat-knigi.com is *not* behind Cloudflare and serves covers from its own `/uploads/posts/{cover}` path (PHP code points at `cdn.my-library.info` but that mirror is dead for new posts — verified 2026-05-09).
+    - audiokniga / knigi-audio audio: download `<book_id>.pl.txt` JSON playlist → parse `"file":"<URL>"` matches → fetch each MP3 with `Referer: redirectto.cc` → ffmpeg-concat into one source_audio.mp3.
+  - *DB columns expected:* `book_id` exists on 5 of 7 DLE installs (knigi-audio, audiokniga, club-books, slushat, bazaknig); books-online + knigi-online lack it. `client.py` auto-detects via `SHOW COLUMNS` and adapts the SELECT.
 - **Shorts Pipeline:** End-to-end automation from YouTube donor download to AI processing.
   - *Tools:* `yt-dlp`, OpenAI Whisper, GPT-4, FFmpeg VERT.
   - *Worker:* `cff-shorts-worker`
