@@ -378,49 +378,58 @@ async def logs_page(request: Request):
     if redirect:
         return redirect
 
-    available_services = [
-        "cff-api", "cff-scheduler", "cff-publishing-worker",
-        "cff-notification-worker", "cff-voice-worker",
-        "cff-dle-ingestion-worker", "cff-shorts-worker",
-        "cff-stats-worker", "cff-stream-control-worker"
-    ]
+    # Reuse the API's known list so panel UI ↔ /api/v1/logs/services stay in sync
+    # (was missing cff-dle-processor-worker before).
+    from app.api.endpoints.logs import KNOWN_CFF_SERVICES, _list_stream_units, _query_logs
+    available_services = list(KNOWN_CFF_SERVICES) + _list_stream_units()
 
     service = request.query_params.get("service", "cff-api")
     if service not in available_services:
         service = "cff-api"
     level = request.query_params.get("level", "all")
+    grep = request.query_params.get("grep") or None
+    since = request.query_params.get("since") or None
     try:
-        lines = min(int(request.query_params.get("lines", "200")), 1000)
+        lines = max(50, min(int(request.query_params.get("lines", "200")), 2000))
     except (ValueError, TypeError):
         lines = 200
 
-    log_lines = []
+    entries: list[dict] = []
+    error_msg: str | None = None
     try:
-        import subprocess
-        cmd = ["journalctl", "-u", service, "--no-pager", "-n", str(lines), "--output=short-iso"]
-        if level == "ERROR":
-            cmd.extend(["-p", "err"])
-        elif level == "WARNING":
-            cmd.extend(["-p", "warning"])
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        raw_lines = result.stdout.strip().split("\n") if result.stdout.strip() else []
-        # Filter by Python log level if needed (journalctl -p only filters syslog levels)
-        if level in ("ERROR", "WARNING", "INFO") and not any("-p" in c for c in cmd[4:]):
-            log_lines = [l for l in raw_lines if f" {level} " in l or (level == "WARNING" and " ERROR " in l)]
-        else:
-            log_lines = raw_lines
+        entries = _query_logs(
+            [service],
+            level=level if level != "all" else None,
+            grep=grep,
+            since=since,
+            lines=lines,
+        )
     except Exception as e:
-        log_lines = [f"Error reading logs: {e}"]
+        logger.exception("logs_page _query_logs failed: %s", e)
+        error_msg = f"Error reading logs: {e}"
 
-    error_count = sum(1 for l in log_lines if " ERROR " in l)
-    warning_count = sum(1 for l in log_lines if " WARNING " in l)
+    # Build display lines so a fallback rendering still works.
+    log_lines: list[str] = []
+    for e in entries:
+        ts = (e.get("timestamp") or "").replace("T", " ")[:19]
+        lvl = e.get("level") or "INFO"
+        msg = e.get("message") or ""
+        log_lines.append(f"{ts} {lvl} {msg}")
+    if error_msg:
+        log_lines.append(error_msg)
+
+    error_count = sum(1 for e in entries if e.get("level") in ("ERROR", "CRITICAL"))
+    warning_count = sum(1 for e in entries if e.get("level") == "WARNING")
 
     return templates.TemplateResponse("logs.html", {
         "request": request, "active": "logs",
         "log_lines": log_lines,
+        "entries": entries,
         "available_services": available_services,
         "current_service": service,
         "current_level": level,
+        "current_grep": grep or "",
+        "current_since": since or "",
         "lines": lines,
         "error_count": error_count,
         "warning_count": warning_count,
@@ -473,7 +482,7 @@ async def streams_page(request: Request):
         logger.error("Streams page error: %s", e)
 
     return templates.TemplateResponse("app_streams.html", {
-        "request": request, "active": "streams", "streams": streams,
+        "request": request, "user": user, "active": "streams", "streams": streams,
     })
 
 
@@ -500,7 +509,7 @@ async def streams_create_page(request: Request):
         logger.error("Streams create page error: %s", e)
 
     return templates.TemplateResponse("app_streams_create.html", {
-        "request": request, "active": "streams", "accounts": accounts,
+        "request": request, "user": user, "active": "streams", "accounts": accounts,
     })
 
 
@@ -535,7 +544,7 @@ async def dle_sources_page(request: Request):
         logger.error("DLE sources page error: %s", e)
 
     return templates.TemplateResponse("app_dle_sources.html", {
-        "request": request, "active": "dle_sources",
+        "request": request, "user": user, "active": "dle_sources",
         "sources": sources, "channels": channels,
     })
 
@@ -567,7 +576,7 @@ async def stats_overview_page(request: Request):
         logger.error("Stats page error: %s", e)
 
     return templates.TemplateResponse("app_stats_overview.html", {
-        "request": request, "active": "stats", "stats": stats,
+        "request": request, "user": user, "active": "stats", "stats": stats,
     })
 
 

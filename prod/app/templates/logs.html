@@ -3,8 +3,10 @@
 
 {% block head %}
 <style>
-    .log-controls { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; }
+    .log-controls { display: flex; gap: 0.6rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; }
     .log-controls select, .log-controls input { padding: 0.4rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.85rem; }
+    .log-controls button { padding: 0.45rem 0.9rem; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+    .log-controls label { font-size: 0.78rem; color: #475569; }
     .log-container { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 1rem; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.78rem; line-height: 1.6; max-height: 70vh; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
     .log-line { padding: 1px 0; }
     .log-line:hover { background: rgba(255,255,255,0.05); }
@@ -12,44 +14,75 @@
     .log-warning { color: #fde68a; }
     .log-info { color: #93c5fd; }
     .log-debug { color: #94a3b8; }
+    .log-line a.trace-link { color: #facc15; text-decoration: underline dotted; }
+    .log-line a.trace-link:hover { color: #fde68a; }
     .log-stats { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.8rem; color: #64748b; }
     .log-stats span { font-weight: 600; }
     .auto-refresh { font-size: 0.75rem; color: #94a3b8; float: right; }
+    .trace-panel { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: none; }
+    .trace-panel.open { display: block; }
+    .trace-panel h3 { color: #facc15; margin: 0 0 0.5rem 0; font-size: 0.95rem; }
+    .trace-panel pre { background: #1e293b; padding: 0.6rem; border-radius: 6px; max-height: 40vh; overflow: auto; font-size: 0.75rem; }
 </style>
 {% endblock %}
 
 {% block content %}
-<h2>Application Logs <span class="auto-refresh" id="refresh-timer">auto-refresh: 10s</span></h2>
+<h2>Application Logs <span class="auto-refresh" id="refresh-timer">auto-refresh: 30s</span></h2>
 
-<div class="log-controls">
-    <select id="service-select" onchange="location.href='/panel/logs?service='+this.value+'&level='+document.getElementById('level-select').value+'&lines='+document.getElementById('lines-input').value">
-        {% for svc in available_services %}
-        <option value="{{ svc }}" {{ 'selected' if svc == current_service }}>{{ svc }}</option>
-        {% endfor %}
-    </select>
-    <select id="level-select" onchange="location.href='/panel/logs?service='+document.getElementById('service-select').value+'&level='+this.value+'&lines='+document.getElementById('lines-input').value">
-        <option value="all" {{ 'selected' if current_level == 'all' }}>All levels</option>
-        <option value="ERROR" {{ 'selected' if current_level == 'ERROR' }}>ERROR only</option>
-        <option value="WARNING" {{ 'selected' if current_level == 'WARNING' }}>WARNING+</option>
-        <option value="INFO" {{ 'selected' if current_level == 'INFO' }}>INFO+</option>
-    </select>
-    <input type="number" id="lines-input" value="{{ lines }}" min="50" max="1000" style="width: 80px;"
-           onchange="location.href='/panel/logs?service='+document.getElementById('service-select').value+'&level='+document.getElementById('level-select').value+'&lines='+this.value">
-    <span style="font-size: 0.8rem; color: #64748b;">lines</span>
+<form class="log-controls" method="get" action="/panel/logs">
+    <label>Service
+        <select name="service">
+            {% for svc in available_services %}
+            <option value="{{ svc }}" {% if svc == current_service %}selected{% endif %}>{{ svc }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Level
+        <select name="level">
+            <option value="all" {% if current_level == 'all' %}selected{% endif %}>All</option>
+            <option value="ERROR" {% if current_level == 'ERROR' %}selected{% endif %}>ERROR only</option>
+            <option value="WARNING" {% if current_level == 'WARNING' %}selected{% endif %}>WARNING+</option>
+            <option value="INFO" {% if current_level == 'INFO' %}selected{% endif %}>INFO+</option>
+        </select>
+    </label>
+    <label>Search
+        <input type="text" name="grep" value="{{ current_grep }}" placeholder="substring or regex" style="width: 180px;">
+    </label>
+    <label>Since
+        <input type="text" name="since" value="{{ current_since }}" placeholder="1 hour ago" style="width: 130px;">
+    </label>
+    <label>Lines
+        <input type="number" name="lines" value="{{ lines }}" min="50" max="2000" style="width: 80px;">
+    </label>
+    <button type="submit">Apply</button>
+    <button type="button" onclick="document.getElementById('autorefresh-toggle').click()" id="pause-btn" style="background: #64748b; border-color: #64748b;">Pause refresh</button>
+    <input type="checkbox" id="autorefresh-toggle" checked style="display:none">
+</form>
+
+<div class="trace-panel" id="trace-panel">
+    <h3>Trace explorer: <span id="trace-id-label"></span> <a href="#" onclick="closeTrace();return false;" style="float:right;color:#94a3b8">close</a></h3>
+    <div id="trace-summary" style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.4rem;"></div>
+    <pre id="trace-events">loading…</pre>
 </div>
 
 <div class="log-stats">
-    <div>Total lines: <span>{{ log_lines|length }}</span></div>
+    <div>Total lines: <span>{{ entries|length if entries is defined else log_lines|length }}</span></div>
     <div>Errors: <span style="color: #dc2626;">{{ error_count }}</span></div>
     <div>Warnings: <span style="color: #f59e0b;">{{ warning_count }}</span></div>
 </div>
 
 <div class="log-container" id="log-container">
-{% for line in log_lines %}
-<div class="log-line {{ 'log-error' if ' ERROR ' in line else ('log-warning' if ' WARNING ' in line else ('log-info' if ' INFO ' in line else 'log-debug')) }}">{{ line }}</div>
-{% endfor %}
-{% if not log_lines %}
-<div class="log-line log-debug">No log entries found.</div>
+{% if entries is defined and entries %}
+    {% for e in entries %}
+    {% set lv = e.level or 'INFO' %}
+    <div class="log-line {% if lv in ['ERROR','CRITICAL'] %}log-error{% elif lv == 'WARNING' %}log-warning{% elif lv == 'INFO' %}log-info{% else %}log-debug{% endif %}" data-trace-id="{{ e.trace_id or '' }}">{{ (e.timestamp or '')[:19].replace('T',' ') }} {{ lv }} {{ e.message }}{% if e.trace_id %} <a class="trace-link" href="javascript:void(0)" onclick="openTrace('{{ e.trace_id }}')">[trace {{ e.trace_id[:8] }}]</a>{% endif %}</div>
+    {% endfor %}
+{% elif log_lines %}
+    {% for line in log_lines %}
+    <div class="log-line {% if ' ERROR ' in line or ' CRITICAL ' in line %}log-error{% elif ' WARNING ' in line %}log-warning{% elif ' INFO ' in line %}log-info{% else %}log-debug{% endif %}">{{ line }}</div>
+    {% endfor %}
+{% else %}
+    <div class="log-line log-debug">No log entries found.</div>
 {% endif %}
 </div>
 {% endblock %}
@@ -57,16 +90,59 @@
 {% block scripts %}
 <script>
     // Auto-scroll to bottom
-    const container = document.getElementById('log-container');
+    var container = document.getElementById('log-container');
     container.scrollTop = container.scrollHeight;
 
-    // Auto-refresh every 10 seconds
-    let countdown = 10;
-    const timer = document.getElementById('refresh-timer');
-    setInterval(() => {
+    // Auto-refresh every 30 seconds (was 10s — too aggressive for ad-hoc inspection)
+    var countdown = 30;
+    var timer = document.getElementById('refresh-timer');
+    var toggle = document.getElementById('autorefresh-toggle');
+    var pauseBtn = document.getElementById('pause-btn');
+    setInterval(function () {
+        if (!toggle.checked) { timer.textContent = 'auto-refresh: paused'; return; }
         countdown--;
         if (countdown <= 0) { location.reload(); return; }
         timer.textContent = 'auto-refresh: ' + countdown + 's';
     }, 1000);
+    pauseBtn.onclick = function () {
+        toggle.checked = !toggle.checked;
+        pauseBtn.textContent = toggle.checked ? 'Pause refresh' : 'Resume refresh';
+    };
+
+    // Trace explorer — fetches /api/v1/logs/trace/{trace_id} and renders inline.
+    function openTrace(traceId) {
+        var panel = document.getElementById('trace-panel');
+        var label = document.getElementById('trace-id-label');
+        var summary = document.getElementById('trace-summary');
+        var events = document.getElementById('trace-events');
+        panel.classList.add('open');
+        label.textContent = traceId;
+        events.textContent = 'loading…';
+        summary.textContent = '';
+        toggle.checked = false; // pause auto-refresh while inspecting
+        pauseBtn.textContent = 'Resume refresh';
+        fetch('/api/v1/logs/trace/' + encodeURIComponent(traceId), { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || data.detail) {
+                    events.textContent = 'Error: ' + (data && data.detail || 'no data');
+                    return;
+                }
+                var ps = data.per_service || {};
+                var parts = [];
+                for (var k in ps) parts.push(k + ': ' + ps[k]);
+                summary.textContent = (data.count || 0) + ' events | ' + parts.join(' • ');
+                var lines = (data.events || []).map(function (e) {
+                    return (e.timestamp || '').slice(0, 19).replace('T', ' ') +
+                        ' [' + (e.service || '?') + '] ' + (e.level || 'INFO') + ' ' +
+                        (e.message || '');
+                });
+                events.textContent = lines.length ? lines.join('\n') : 'No events for this trace_id.';
+            })
+            .catch(function (err) { events.textContent = 'Fetch failed: ' + err; });
+    }
+    function closeTrace() {
+        document.getElementById('trace-panel').classList.remove('open');
+    }
 </script>
 {% endblock %}
