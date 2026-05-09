@@ -21,7 +21,8 @@ class TestTaskStatus:
 
 class TestUserStatus:
     def test_values(self):
-        assert UserStatus.INACTIVE == 0
+        # Aligned with legacy Yii: INACTIVE was 9, ACTIVE was 10.
+        assert UserStatus.INACTIVE == 9
         assert UserStatus.ADMIN == 1
         assert UserStatus.ACTIVE == 10
 
