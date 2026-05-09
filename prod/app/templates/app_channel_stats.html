@@ -118,7 +118,7 @@
 {% endif %}
 
 <!-- Chart data passed via hidden element (no inline JS) -->
-<script type="application/json" id="channelChartData">{{ chart_json|safe }}</script>
+<script type="application/json" id="channelChartData">{{ chart_obj|tojson }}</script>
 <script src="/static/js/chart.umd.min.js?v=2"></script>
 <script src="/static/js/channel-stats.js?v=2"></script>
 {% endif %}

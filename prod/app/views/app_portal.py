@@ -412,8 +412,9 @@ async def analytics_page(request: Request):
         "summary": summary, "top_videos": top_videos,
         "daily_activity": daily_activity[:60],
         "upload_events": upload_events,
-        "chart_data_json": json.dumps(chart_data, default=str),
-        "upload_events_json": json.dumps(upload_events, default=str),
+        # XSS-safe: pass the object; template uses |tojson which escapes < > & for HTML.
+        "chart_data": chart_data,
+        "upload_events_json_obj": upload_events,
         "has_data": bool(channel_stats) or bool(top_videos),
     })
 
@@ -499,10 +500,10 @@ async def channels_page(request: Request):
         except Exception as e:
             logger.error("Channel tasks error: %s", e)
 
-    import json
     return _template_response("app_channels.html", {
         "request": request, "user": user, "active": "channels", "channels": channels,
-        "channel_tasks_json": json.dumps(channel_tasks, default=str),
+        # XSS-safe: pass dict, template uses |tojson which escapes </ for <script> safety.
+        "channel_tasks": channel_tasks,
     })
 
 
@@ -1019,13 +1020,12 @@ async def channel_stats_page(request: Request, channel_uuid: str):
     total_video_likes = sum(v.get("likes") or 0 for v in video_list)
     total_video_comments = sum(v.get("comments") or 0 for v in video_list)
 
-    import json
-    chart_json = json.dumps({
+    chart_data = {
         "dates": [str(d["snapshot_date"]) for d in channel_data],
         "subscribers": [d.get("subscribers") or 0 for d in channel_data],
         "views": [d.get("views") or 0 for d in channel_data],
         "videos": [d.get("videos") or 0 for d in channel_data],
-    }, default=str)
+    }
 
     return _template_response("app_channel_stats.html", {
         "request": request, "user": user, "active": "channels",
@@ -1035,7 +1035,8 @@ async def channel_stats_page(request: Request, channel_uuid: str):
         "total_video_views": total_video_views,
         "total_video_likes": total_video_likes,
         "total_video_comments": total_video_comments,
-        "chart_json": chart_json,
+        # XSS-safe: pass dict, template uses |tojson.
+        "chart_obj": chart_data,
         "has_data": bool(channel_data),
     })
 
@@ -1356,14 +1357,13 @@ async def task_detail(request: Request, task_uuid: str):
     task["channel_uuid"] = channel_uuid
 
     # Video stats for completed tasks
-    import json
     video_stats = []
-    video_stats_json = "[]"
+    video_stats_obj: list = []
     if task.get("upload_id") and task.get("status") == 1:
         from shared.db.repositories import stats_repo
         video_stats = stats_repo.get_video_stats(task["id"], days=90)
         if video_stats:
-            video_stats_json = json.dumps([
+            video_stats_obj = [
                 {
                     "date": str(s["snapshot_date"]),
                     "views": s.get("views") or 0,
@@ -1371,13 +1371,14 @@ async def task_detail(request: Request, task_uuid: str):
                     "comments": s.get("comments") or 0,
                 }
                 for s in video_stats
-            ], default=str)
+            ]
 
     return _template_response("app_task_detail.html", {
         "request": request, "user": user, "active": "tasks",
         "task": task, "error": None, "message": None,
         "video_stats": video_stats,
-        "video_stats_json": video_stats_json,
+        # XSS-safe: pass list, template uses |tojson.
+        "video_stats_obj": video_stats_obj,
     })
 
 

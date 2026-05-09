@@ -74,7 +74,7 @@
     </div>
 </div>
 
-<script type="application/json" id="channelTasksData">{{ channel_tasks_json|safe }}</script>
+<script type="application/json" id="channelTasksData">{{ channel_tasks|tojson }}</script>
 <script>
 var _channelTasks = {};
 try { _channelTasks = JSON.parse(document.getElementById('channelTasksData').textContent); } catch(e) {}
