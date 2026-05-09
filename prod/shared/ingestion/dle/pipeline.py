@@ -6,7 +6,7 @@ from typing import Any
 
 from shared.db.repositories.task_repo import create_task, get_task_by_dle_id
 from shared.ingestion.dle.client import DleClient
-from shared.logging_context import ensure_trace_id, get_trace_id, set_trace_id
+from shared.logging_context import ensure_trace_id
 from shared.queue.publisher import enqueue_job
 from shared.queue.types import DleProcessingPayload
 from app.core.config import dle_settings
@@ -87,11 +87,9 @@ class DleIngestionPipeline:
           - propagated into the DleProcessingPayload → all downstream workers
         """
         # One trace_id per CFF task — uniquely identifies the path through every worker.
-        trace_id = ensure_trace_id() if get_trace_id() else None
-        # Always start with a fresh trace_id per task to keep traces isolated.
-        from shared.logging_context import new_trace_id
-        trace_id = new_trace_id()
-        set_trace_id(trace_id)
+        # Reuse a parent trace_id (set by an upstream caller) if present; otherwise
+        # mint a new one. ensure_trace_id() handles both cases.
+        trace_id = ensure_trace_id()
 
         legacy_info = {
             "dle_source": self.source_slug,
