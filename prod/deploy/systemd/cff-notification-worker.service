@@ -1,6 +1,8 @@
 [Unit]
 Description=Content Fabric Notification Worker (Telegram/Email)
 After=network.target redis.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -11,8 +13,6 @@ EnvironmentFile=-/opt/content-fabric/prod/.env
 ExecStart=/opt/content-fabric/prod/venv/bin/python -m workers.notification_worker
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=10
 StandardOutput=append:/var/log/cff-notification-worker.log
 StandardError=append:/var/log/cff-notification-worker.log
 SyslogIdentifier=cff-notif

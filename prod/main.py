@@ -147,9 +147,26 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 
 from starlette.staticfiles import StaticFiles
+from starlette.responses import FileResponse, PlainTextResponse
 _static_dir = pathlib.Path(__file__).parent / "app" / "static"
 if _static_dir.is_dir():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def _favicon():
+    fav = _static_dir / "favicon.svg"
+    if fav.is_file():
+        return FileResponse(fav, media_type="image/svg+xml")
+    return PlainTextResponse("", status_code=204)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def _robots():
+    rb = _static_dir / "robots.txt"
+    if rb.is_file():
+        return FileResponse(rb, media_type="text/plain")
+    return PlainTextResponse("User-agent: *\nDisallow: /\n", media_type="text/plain")
 
 app.include_router(router, prefix="/api/v1")
 app.include_router(panel_router, prefix="/panel", tags=["panel"])
