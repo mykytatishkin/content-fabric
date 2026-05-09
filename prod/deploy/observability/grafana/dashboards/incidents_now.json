@@ -1,69 +1,120 @@
 {
   "uid": "cff-incidents",
-  "title": "CFF — Incidents Now",
-  "tags": ["cff", "alerts"],
+  "title": "🔥 CFF — Incidents Now",
+  "tags": ["cff", "alerts", "errors"],
   "timezone": "browser",
   "refresh": "30s",
   "schemaVersion": 39,
-  "time": {"from": "now-24h", "to": "now"},
+  "time": {"from": "now-1h", "to": "now"},
   "templating": {"list": []},
+  "links": [
+    {"title": "🏠 Now",        "url": "/d/cff-now", "type": "link", "targetBlank": false, "icon": "home"},
+    {"title": "📊 Overview",   "url": "/d/cff-system", "type": "link", "targetBlank": false},
+    {"title": "📈 Pipeline",   "url": "/d/cff-pipeline", "type": "link", "targetBlank": false},
+    {"title": "🔎 Trace",      "url": "/d/cff-trace", "type": "link", "targetBlank": false}
+  ],
   "panels": [
     {
-      "type": "alertlist",
-      "title": "Firing alerts",
-      "id": 1,
-      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8},
+      "type": "row", "id": 100,
+      "title": "🚨 Текущая ситуация",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "stat", "id": 1,
+      "title": "Алертов горит",
+      "description": "Правил Alerting в состоянии firing/pending.",
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "count(ALERTS{alertstate=~\"firing|pending\"}) or vector(0)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "red"}]}}}
+    },
+    {
+      "type": "stat", "id": 2,
+      "title": "Ошибок (5 мин)",
+      "description": "Ошибки в логах за последние 5 минут.",
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(increase(cff_log_events_total{level=~\"ERROR|CRITICAL\"}[5m]))", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 25, "color": "red"}]}}}
+    },
+    {
+      "type": "stat", "id": 3,
+      "title": "Failed tasks (1ч)",
+      "description": "Задач упало за последний час.",
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_tasks_failed_recent{window=\"1h\"}", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 25, "color": "red"}]}}}
+    },
+    {
+      "type": "stat", "id": 4,
+      "title": "Failure rate",
+      "description": "Процент failed/created за последний час.",
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "100 * cff_tasks_failed_recent{window=\"1h\"} / clamp_min(cff_tasks_created_recent{window=\"1h\"}, 1)", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 10, "color": "yellow"}, {"value": 30, "color": "red"}]}}}
+    },
+
+    {
+      "type": "row", "id": 200,
+      "title": "🚨 Активные алерты",
+      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "alertlist", "id": 5,
+      "title": "Firing & pending",
+      "gridPos": {"x": 0, "y": 7, "w": 24, "h": 8},
       "options": {
         "showOptions": "current",
-        "stateFilter": {"firing": true, "pending": true},
+        "stateFilter": {"firing": true, "pending": true, "noData": false, "normal": false},
         "maxItems": 50,
         "sortOrder": 1
       }
     },
+
     {
-      "type": "logs",
-      "title": "Last hour: ERROR + CRITICAL across CFF",
-      "id": 2,
-      "gridPos": {"x": 0, "y": 8, "w": 24, "h": 12},
+      "type": "row", "id": 300,
+      "title": "📈 Где ошибки",
+      "gridPos": {"x": 0, "y": 15, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 10,
+      "title": "Ошибок в минуту по сервису",
+      "description": "rate ERROR/CRITICAL в логах за 5-минутным окном.",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (worker) (rate(cff_log_events_total{level=~\"ERROR|CRITICAL\"}[5m])) * 60", "legendFormat": "{{worker}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 30, "stacking": {"mode": "normal"}}}}
+    },
+    {
+      "type": "bargauge", "id": 11,
+      "title": "Ошибки за час: топ сервисов",
+      "description": "Какой сервис нагенерил больше всего ошибок за последний час.",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "topk(10, sum by (worker) (increase(cff_log_events_total{level=~\"ERROR|CRITICAL\"}[1h])))", "legendFormat": "{{worker}}", "refId": "A"}],
+      "options": {"orientation": "horizontal", "displayMode": "gradient"},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 10, "color": "yellow"}, {"value": 50, "color": "red"}]}}}
+    },
+
+    {
+      "type": "row", "id": 400,
+      "title": "📋 Логи",
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "logs", "id": 20,
+      "title": "ERROR + CRITICAL за период",
+      "description": "Все ошибки из cff-* + stream-* + nginx за выбранный диапазон времени.",
+      "gridPos": {"x": 0, "y": 25, "w": 24, "h": 16},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-.*\"} |~ \"ERROR|CRITICAL\" | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A"}],
-      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
-    },
-    {
-      "type": "stat",
-      "title": "Tasks failed (1h)",
-      "id": 5,
-      "gridPos": {"x": 0, "y": 20, "w": 6, "h": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "cff_tasks_failed_recent{window=\"1h\"}", "refId": "A"}],
-      "options": {"reduceOptions": {"calcs": ["last"]}}
-    },
-    {
-      "type": "stat",
-      "title": "Tasks failed (24h)",
-      "id": 6,
-      "gridPos": {"x": 6, "y": 20, "w": 6, "h": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "cff_tasks_failed_recent{window=\"24h\"}", "refId": "A"}],
-      "options": {"reduceOptions": {"calcs": ["last"]}}
-    },
-    {
-      "type": "stat",
-      "title": "DLE sources up",
-      "id": 7,
-      "gridPos": {"x": 12, "y": 20, "w": 6, "h": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(cff_dle_source_up)", "refId": "A"}],
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 7, "color": "green"}]}}}
-    },
-    {
-      "type": "stat",
-      "title": "Streams running",
-      "id": 8,
-      "gridPos": {"x": 18, "y": 20, "w": 6, "h": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(cff_stream_active)", "refId": "A"}],
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 9, "color": "green"}]}}}
+      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*|nginx\", level=~\"ERROR|CRITICAL\"} | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A", "maxLines": 200}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "exact"}
     }
   ]
 }

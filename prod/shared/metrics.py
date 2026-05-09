@@ -133,6 +133,18 @@ errors_total = Counter(
     ["worker", "error_kind"],
 )
 
+# Every log record above WARNING goes here too via MetricsLogHandler.
+# Lets us compute real error rates without depending on `raise`.
+log_events_total = Counter(
+    "cff_log_events_total",
+    "Total log records emitted, by level/logger/worker.",
+    ["level", "logger", "worker"],
+)
+# Pre-warm labels so the metric appears in /metrics from the start with 0,
+# rather than only after the first WARNING fires.
+for _lvl in ("WARNING", "ERROR", "CRITICAL"):
+    log_events_total.labels(level=_lvl, logger="-", worker="-")
+
 # DB-backed gauges — sample_all() refreshes these from MySQL every 30s.
 # Useful even when Counter-based metrics are stuck at 0 (no new traffic yet).
 tasks_in_status = Gauge(

@@ -9,9 +9,9 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  # File-based logs — most cff-* services write to /var/log/cff-*.log
-  # via systemd StandardOutput=append:. Need to scrape the files because
-  # journald never sees them.
+  # ─── CFF application file logs ──────────────────────────────────────
+  # Most cff-* services write to /var/log/cff-*.log via systemd
+  # StandardOutput=append:. journald never sees them, so scrape direct.
   - job_name: cff-files
     static_configs:
       - targets:
@@ -20,14 +20,11 @@ scrape_configs:
           job: cff-files
           __path__: /var/log/cff-*.log
     pipeline_stages:
-      # Promtail mounts /var/log → /host_log so we use that prefix at scrape time.
-      # First, lift the source file basename into the `unit` label.
       - regex:
           source: filename
           expression: '/var/log/(?P<unit>cff-[^/]+)\.log$'
       - labels:
           unit:
-      # Try JSON first (LOG_FORMAT=json case)
       - json:
           expressions:
             level: level
@@ -39,8 +36,6 @@ scrape_configs:
           level:
           trace_id:
           task_id:
-      # Fallback: plain text format like
-      #   '2026-05-09 ... [trace=abc task=42] message'
       - match:
           selector: '{job="cff-files"} !~ "^\\{"'
           stages:
@@ -48,11 +43,14 @@ scrape_configs:
                 expression: 'trace=(?P<trace_id>[0-9a-f]{16,32}|-)'
             - regex:
                 expression: 'task=(?P<task_id>\d+|-)'
+            - regex:
+                expression: '\b(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\b'
             - labels:
                 trace_id:
                 task_id:
+                level:
 
-  # systemd journal — picks up everything cff-* and stream-* via journald
+  # ─── systemd journal — cff-* + stream-* ─────────────────────────────
   - job_name: systemd-journal
     journal:
       max_age: 12h
@@ -69,13 +67,10 @@ scrape_configs:
         target_label: host
       - source_labels: ['__journal_syslog_identifier']
         target_label: identifier
-      # Keep only what we care about
       - source_labels: ['unit']
         regex: '(cff-.*|stream-.*)'
         action: keep
     pipeline_stages:
-      # Try to parse the message body as JSON (we use python-json-logger in prod).
-      # If it parses, hoist trace_id / task_id / level into Loki labels for fast filtering.
       - json:
           expressions:
             level: level
@@ -88,7 +83,6 @@ scrape_configs:
           trace_id:
           task_id:
           logger:
-      # Fallback: if message wasn't JSON, regex out trace=... task=...
       - match:
           selector: '{job="systemd-journal"} !~ "^\\{"'
           stages:
@@ -99,3 +93,56 @@ scrape_configs:
             - labels:
                 trace_id:
                 task_id:
+      # FFmpeg in stream-* is extremely chatty (one INFO per frame). Drop the
+      # noise but keep anything that looks like an error or stream lifecycle event.
+      - match:
+          selector: '{unit=~"stream-.*"}'
+          stages:
+            - drop:
+                expression: '\bframe=\s*\d+'   # standard ffmpeg progress line
+                drop_counter_reason: ffmpeg_progress
+            - drop:
+                expression: 'speed=\s*[0-9.]+x'
+                drop_counter_reason: ffmpeg_progress
+      # Tag stream errors with a synthetic 'level' label so dashboards can
+      # filter the same way as cff-* errors.
+      - match:
+          selector: '{unit=~"stream-.*"} |~ "(?i)error|failed|cannot"'
+          stages:
+            - labels:
+                level: ERROR
+
+  # ─── nginx (web layer ahead of cff-api) ─────────────────────────────
+  - job_name: nginx-access
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: nginx
+          unit: nginx
+          stream: access
+          __path__: /var/log/nginx/*access*.log
+    pipeline_stages:
+      - regex:
+          # combined log format
+          expression: '^(?P<remote_ip>\S+) \S+ \S+ \[(?P<ts>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) [^"]*" (?P<status>\d+) (?P<bytes>\d+)'
+      - labels:
+          method:
+          status:
+      - match:
+          selector: '{job="nginx",stream="access"}'
+          stages:
+            - template:
+                source: level
+                template: '{{ if regexMatch "^(2|3)" .Value }}INFO{{ else if regexMatch "^4" .Value }}WARNING{{ else }}ERROR{{ end }}'
+            - labels:
+                level:
+
+  - job_name: nginx-error
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: nginx
+          unit: nginx
+          stream: error
+          level: ERROR
+          __path__: /var/log/nginx/*error*.log

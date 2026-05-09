@@ -1,99 +1,135 @@
 {
   "uid": "cff-pipeline",
-  "title": "CFF — Task Pipeline",
+  "title": "📈 CFF — Task Pipeline",
   "tags": ["cff", "tasks"],
   "timezone": "browser",
   "refresh": "30s",
   "schemaVersion": 39,
   "time": {"from": "now-6h", "to": "now"},
   "templating": {"list": []},
+  "links": [
+    {"title": "🏠 Now",         "url": "/d/cff-now", "type": "link", "targetBlank": false, "icon": "home"},
+    {"title": "📊 Overview",    "url": "/d/cff-system", "type": "link", "targetBlank": false},
+    {"title": "🔥 Incidents",   "url": "/d/cff-incidents", "type": "link", "targetBlank": false},
+    {"title": "🔎 Trace",       "url": "/d/cff-trace", "type": "link", "targetBlank": false}
+  ],
   "panels": [
     {
-      "type": "stat",
-      "title": "Created (1h)",
-      "id": 1,
-      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "type": "row", "id": 100,
+      "title": "📊 Объёмы (1 час)",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "stat", "id": 1,
+      "title": "Создано",
+      "description": "Новых задач в content_upload_queue_tasks за последний час.",
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 5},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "cff_tasks_created_recent{window=\"1h\"}", "refId": "A"}],
-      "options": {"reduceOptions": {"calcs": ["last"]}}
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "blue"}]}}}
     },
     {
-      "type": "stat",
-      "title": "Completed (1h)",
-      "id": 2,
-      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "type": "stat", "id": 2,
+      "title": "Завершено",
+      "description": "Задач status=completed за последний час.",
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 5},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "cff_tasks_completed_recent{window=\"1h\"}", "refId": "A"}],
-      "options": {"reduceOptions": {"calcs": ["last"]}}
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}]}}}
     },
     {
-      "type": "stat",
-      "title": "Failed (1h)",
-      "id": 3,
-      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "type": "stat", "id": 3,
+      "title": "Упало",
+      "description": "Задач status=failed за последний час.",
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 5},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "cff_tasks_failed_recent{window=\"1h\"}", "refId": "A"}],
-      "options": {"reduceOptions": {"calcs": ["last"]}},
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 20, "color": "red"}]}}}
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 25, "color": "red"}]}}}
     },
     {
-      "type": "stat",
-      "title": "Failure rate (1h)",
-      "id": 4,
-      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "type": "stat", "id": 4,
+      "title": "% Failure rate",
+      "description": "failed / created за последний час.",
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 5},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "100 * cff_tasks_failed_recent{window=\"1h\"} / clamp_min(cff_tasks_created_recent{window=\"1h\"}, 1)", "refId": "A"}],
-      "options": {"reduceOptions": {"calcs": ["last"]}},
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
       "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 10, "color": "yellow"}, {"value": 30, "color": "red"}]}}}
     },
 
     {
-      "type": "timeseries",
-      "title": "Tasks by status (live from DB)",
-      "id": 10,
-      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "cff_tasks_in_status", "legendFormat": "{{status}}", "refId": "A"}]
+      "type": "row", "id": 200,
+      "title": "🌊 Воронка задач во времени",
+      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 1}, "collapsed": false, "panels": []
     },
     {
-      "type": "timeseries",
-      "title": "Worker job duration p95 by worker",
-      "id": 11,
-      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "type": "timeseries", "id": 10,
+      "title": "Задачи по статусам (live из БД)",
+      "description": "Распределение задач по статусам (PENDING/PROCESSING/COMPLETED/FAILED/CANCELLED).",
+      "gridPos": {"x": 0, "y": 7, "w": 24, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_tasks_in_status", "legendFormat": "{{status}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 30, "stacking": {"mode": "normal"}}}}
+    },
+
+    {
+      "type": "row", "id": 300,
+      "title": "⏱ Производительность воркеров",
+      "gridPos": {"x": 0, "y": 15, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 20,
+      "title": "Длительность job p95 по воркеру",
+      "description": "95-й перцентиль времени выполнения одного job. Растёт = воркер тормозит.",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "histogram_quantile(0.95, sum by (worker, le) (rate(cff_worker_job_duration_seconds_bucket[10m])))", "legendFormat": "{{worker}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "s"}}
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 10}}}
     },
-
     {
-      "type": "timeseries",
+      "type": "timeseries", "id": 21,
       "title": "Worker outcomes (jobs/min)",
-      "id": 20,
-      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "description": "Сколько job/мин завершилось ok / fail / exception, по воркерам.",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum by (worker, outcome) (rate(cff_worker_jobs_total[5m])) * 60", "legendFormat": "{{worker}} • {{outcome}}", "refId": "A"}]
-    },
-    {
-      "type": "table",
-      "title": "YouTube tokens — hours to expiry",
-      "id": 21,
-      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "cff_youtube_token_expires_in_seconds / 3600", "refId": "A", "format": "table", "instant": true}],
-      "fieldConfig": {"defaults": {"unit": "h", "thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 24, "color": "yellow"}, {"value": 72, "color": "green"}]}}},
-      "transformations": [
-        {"id": "organize", "options": {"excludeByName": {"Time": true, "instance": true, "job": true, "service": true, "host": true}}}
-      ]
+      "targets": [{"expr": "sum by (worker, outcome) (rate(cff_worker_jobs_total[5m])) * 60", "legendFormat": "{{worker}} • {{outcome}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 20}}}
     },
 
     {
-      "type": "logs",
-      "title": "Recent ERRORS in pipeline",
-      "id": 30,
-      "gridPos": {"x": 0, "y": 20, "w": 24, "h": 10},
+      "type": "row", "id": 400,
+      "title": "🔑 OAuth токены и логи",
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "table", "id": 30,
+      "title": "YouTube tokens — часов до истечения",
+      "description": "Отрицательные = токен уже истёк. Жёлтым < 24ч. Запусти reauth для красных каналов.",
+      "gridPos": {"x": 0, "y": 25, "w": 12, "h": 10},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sort(cff_youtube_token_expires_in_seconds / 3600)", "refId": "A", "format": "table", "instant": true}],
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true, "instance": true, "job": true, "service": true, "host": true, "__name__": true}, "indexByName": {"channel": 0, "Value": 1}}},
+        {"id": "renameByRegex", "options": {"regex": "Value", "renamePattern": "Hours"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "h"}, "overrides": [
+        {"matcher": {"id": "byName", "options": "Hours"}, "properties": [
+          {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}},
+          {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"value": null, "color": "red"}, {"value": 24, "color": "yellow"}, {"value": 168, "color": "green"}]}}
+        ]}
+      ]}
+    },
+    {
+      "type": "logs", "id": 31,
+      "title": "Последние ERROR в pipeline",
+      "description": "ERROR/CRITICAL только из pipeline-воркеров.",
+      "gridPos": {"x": 12, "y": 25, "w": 12, "h": 10},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-.*\"} |~ \"ERROR|CRITICAL\" | json | line_format \"{{.MESSAGE}}\"", "refId": "A"}],
-      "options": {"showTime": true, "wrapLogMessage": true, "dedupStrategy": "none", "sortOrder": "Descending"}
+      "targets": [{"expr": "{unit=~\"cff-(scheduler|publishing-worker|voice-worker|dle-ingestion-worker|dle-processor-worker|shorts-worker|stats-worker)\", level=~\"ERROR|CRITICAL\"} | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A", "maxLines": 100}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "exact"}
     }
   ]
 }

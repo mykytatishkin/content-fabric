@@ -1,6 +1,6 @@
 {
   "uid": "cff-trace",
-  "title": "CFF — Trace Explorer",
+  "title": "🔎 CFF — Trace Explorer",
   "tags": ["cff", "trace"],
   "timezone": "browser",
   "refresh": "10s",
@@ -11,20 +11,66 @@
       {
         "name": "trace",
         "type": "textbox",
-        "label": "trace_id",
+        "label": "trace_id (32 hex chars)",
         "current": {"value": "", "text": ""}
       }
     ]
   },
+  "links": [
+    {"title": "🏠 Now",         "url": "/d/cff-now", "type": "link", "targetBlank": false, "icon": "home"},
+    {"title": "📊 Overview",    "url": "/d/cff-system", "type": "link", "targetBlank": false},
+    {"title": "📈 Pipeline",    "url": "/d/cff-pipeline", "type": "link", "targetBlank": false},
+    {"title": "🔥 Incidents",   "url": "/d/cff-incidents", "type": "link", "targetBlank": false}
+  ],
   "panels": [
     {
-      "type": "logs",
-      "title": "Timeline: every log line for trace_id=$trace",
-      "id": 1,
-      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 28},
+      "type": "row", "id": 100,
+      "title": "🛤 Путь задачи через все сервисы",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "stat", "id": 1,
+      "title": "Сервисов задействовано",
+      "description": "Сколько разных cff-* видели этот trace_id.",
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 4},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*\"} |~ \"$trace\" | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A"}],
-      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Ascending"}
+      "targets": [{"expr": "count(count by (unit) (count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"}[$__range])))", "refId": "A", "instant": true}]
+    },
+    {
+      "type": "stat", "id": 2,
+      "title": "Записей в логе",
+      "description": "Всего log lines за время жизни задачи.",
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 4},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum(count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"}[$__range]))", "refId": "A", "instant": true}]
+    },
+    {
+      "type": "stat", "id": 3,
+      "title": "Ошибок",
+      "description": "ERROR + CRITICAL для этой задачи.",
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 4},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum(count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\", level=~\"ERROR|CRITICAL\"}[$__range]))", "refId": "A", "instant": true}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "red"}]}, "color": {"mode": "thresholds"}}}
+    },
+    {
+      "type": "stat", "id": 4,
+      "title": "Длительность",
+      "description": "Время между первой и последней записью.",
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 4},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "max(last_over_time({unit=~\"cff-.*\", trace_id=\"$trace\"}[$__range])) - min(first_over_time({unit=~\"cff-.*\", trace_id=\"$trace\"}[$__range]))", "refId": "A", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+
+    {
+      "type": "logs", "id": 10,
+      "title": "Timeline (по времени, ascending)",
+      "description": "Каждая строка лога с этим trace_id, упорядочена по времени. [unit] message.",
+      "gridPos": {"x": 0, "y": 5, "w": 24, "h": 28},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"} | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A", "maxLines": 1000}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Ascending", "dedupStrategy": "none"}
     }
   ]
 }

@@ -6,6 +6,10 @@ Every log record automatically carries:
   - worker    (service name)
 
 Toggle JSON via LOG_FORMAT=json (recommended for production / Loki ingestion).
+
+Side effect: MetricsLogHandler is attached so that every WARNING+ record
+becomes a Prometheus counter sample. Gives us real error rates that don't
+depend on whether the code re-raises.
 """
 
 from __future__ import annotations
@@ -14,7 +18,34 @@ import logging
 import os
 import sys
 
-from shared.logging_context import TraceContextFilter
+from shared.logging_context import TraceContextFilter, get_worker
+
+
+class MetricsLogHandler(logging.Handler):
+    """Mirror every WARNING+ log record into a Prometheus counter.
+
+    Lazy-imports cff metrics module so importing logging_config.py before
+    metrics.py is safe (avoids circular imports during early bootstrap).
+    """
+
+    LEVEL_MIN = logging.WARNING
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if record.levelno < self.LEVEL_MIN:
+                return
+            try:
+                from shared.metrics import log_events_total
+            except Exception:
+                return
+            log_events_total.labels(
+                level=record.levelname,
+                logger=record.name[:60],
+                worker=get_worker() or "?",
+            ).inc()
+        except Exception:
+            # logging handlers must NEVER raise
+            pass
 
 
 _JSON_EXTRA_FIELDS = ["trace_id", "task_id", "worker"]
@@ -72,6 +103,14 @@ def setup_logging(service_name: str = "cff") -> None:
 
     handler.setFormatter(formatter)
     root.addHandler(handler)
+
+    # Mirror WARNING+ records into a Prometheus counter for proper
+    # error-rate dashboards. Filter is shared with the main handler so
+    # every record gets trace_id labels too.
+    metrics_handler = MetricsLogHandler()
+    metrics_handler.setLevel(logging.WARNING)
+    metrics_handler.addFilter(trace_filter)
+    root.addHandler(metrics_handler)
 
     # Quiet noisy libraries
     for name in ("urllib3", "sqlalchemy.engine", "googleapiclient", "httpcore", "httpx"):
