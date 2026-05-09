@@ -91,14 +91,54 @@ class TestCancelTask:
 class TestListTasks:
     def test_empty(self, app_client, auth_headers):
         with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
-             patch("shared.db.repositories.task_repo.get_all_tasks", return_value=[]):
+             patch("shared.db.repositories.task_repo.get_all_tasks", return_value=[]), \
+             patch("shared.db.repositories.task_repo.count_tasks", return_value=0):
             resp = app_client.get("/api/v1/tasks/", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["total"] == 0
 
     def test_with_items(self, app_client, auth_headers):
         with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
-             patch("shared.db.repositories.task_repo.get_all_tasks", return_value=[_task(i) for i in range(3)]):
+             patch("shared.db.repositories.task_repo.get_all_tasks", return_value=[_task(i) for i in range(3)]), \
+             patch("shared.db.repositories.task_repo.count_tasks", return_value=3):
             resp = app_client.get("/api/v1/tasks/", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["total"] == 3
+
+    def test_total_reflects_global_count_not_page_size(self, app_client, auth_headers):
+        """Regression: total must come from count_tasks(), not len(items)."""
+        page = [_task(i) for i in range(50)]  # one page of 50
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.task_repo.get_all_tasks", return_value=page), \
+             patch("shared.db.repositories.task_repo.count_tasks", return_value=8908):
+            resp = app_client.get("/api/v1/tasks/?limit=50", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["items"]) == 50
+        assert body["total"] == 8908  # global count, NOT len(items)
+
+
+class TestTaskProgress:
+    def test_progress_completed_defaults_to_100(self, app_client, auth_headers):
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=1)):
+            resp = app_client.get("/api/v1/tasks/1/progress", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["progress_pct"] == 100
+        assert body["stage"] == "completed"
+        assert body["status"] == 1
+
+    def test_progress_failed(self, app_client, auth_headers):
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=2)):
+            resp = app_client.get("/api/v1/tasks/1/progress", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["stage"] == "failed"
+
+    def test_progress_pending(self, app_client, auth_headers):
+        with patch("shared.db.repositories.user_repo.get_user_by_id", return_value=TEST_USER), \
+             patch("shared.db.repositories.task_repo.get_task", return_value=_task(status=0)):
+            resp = app_client.get("/api/v1/tasks/1/progress", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["stage"] == "pending"
