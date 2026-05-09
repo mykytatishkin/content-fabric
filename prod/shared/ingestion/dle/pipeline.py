@@ -14,6 +14,18 @@ from app.core.config import dle_settings
 logger = logging.getLogger(__name__)
 
 
+def slug_to_host(slug: str) -> str:
+    """Convert source_slug to its host: 'audiokniga_one_com' → 'audiokniga-one.com'.
+
+    Last underscore-separated part is the TLD (joined with '.'); the rest is
+    joined with '-'. Single-token slugs are returned as-is.
+    """
+    parts = slug.split("_")
+    if len(parts) < 2:
+        return slug
+    return "-".join(parts[:-1]) + "." + parts[-1]
+
+
 class DleIngestionPipeline:
     def __init__(self, source_slug: str):
         self.source_slug = source_slug
@@ -84,7 +96,7 @@ class DleIngestionPipeline:
         legacy_info = {
             "dle_source": self.source_slug,
             "dle_post_id": post["id"],
-            "dle_post_url": f"https://{self.source_slug.replace('_', '.')}/{post['id']}-{post['alt_name']}.html",
+            "dle_post_url": f"https://{slug_to_host(self.source_slug)}/{post['id']}-{post['alt_name']}.html",
             "normalized": post["normalized"],
             "trace_id": trace_id,
         }
