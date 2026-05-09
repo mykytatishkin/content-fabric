@@ -1,0 +1,105 @@
+{
+  "uid": "cff-pipeline",
+  "title": "CFF — Task Pipeline",
+  "tags": ["cff", "tasks"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "channel",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "query": "label_values(cff_tasks_created_total, channel)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Created (1h)",
+      "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(increase(cff_tasks_created_total{channel=~\"$channel\"}[1h]))", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Completed (1h)",
+      "id": 2,
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(increase(cff_tasks_completed_total{channel=~\"$channel\"}[1h]))", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Failed (1h)",
+      "id": 3,
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(increase(cff_tasks_failed_total{channel=~\"$channel\"}[1h]))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 20, "color": "red"}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Failure rate (1h)",
+      "id": 4,
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "100 * sum(rate(cff_tasks_failed_total{channel=~\"$channel\"}[1h])) / clamp_min(sum(rate(cff_tasks_created_total{channel=~\"$channel\"}[1h])), 0.0001)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 10, "color": "yellow"}, {"value": 30, "color": "red"}]}}}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Stage duration p95 (sec)",
+      "id": 10,
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (stage, le) (rate(cff_task_stage_duration_seconds_bucket[10m])))", "legendFormat": "{{stage}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Worker job duration p95 by worker",
+      "id": 11,
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (worker, le) (rate(cff_worker_job_duration_seconds_bucket[10m])))", "legendFormat": "{{worker}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+
+    {
+      "type": "table",
+      "title": "Errors by worker × kind (last 1h)",
+      "id": 20,
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (worker, error_kind) (increase(cff_errors_total[1h])) > 0", "refId": "A", "format": "table", "instant": true}]
+    },
+    {
+      "type": "table",
+      "title": "YouTube tokens — time to expiry",
+      "id": 21,
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_youtube_token_expires_in_seconds / 3600", "refId": "A", "format": "table", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "h", "thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 24, "color": "yellow"}, {"value": 72, "color": "green"}]}}}
+    },
+
+    {
+      "type": "logs",
+      "title": "Recent ERRORS in pipeline",
+      "id": 30,
+      "gridPos": {"x": 0, "y": 20, "w": 24, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{unit=~\"cff-.*\"} |~ \"ERROR|CRITICAL\"", "refId": "A"}],
+      "options": {"showTime": true, "wrapLogMessage": true, "dedupStrategy": "none"}
+    }
+  ]
+}

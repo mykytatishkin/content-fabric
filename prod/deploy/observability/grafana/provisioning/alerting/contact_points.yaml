@@ -1,0 +1,32 @@
+apiVersion: 1
+
+# Notifications stay inside Grafana for now.
+# Email is wired but disabled until SMTP creds + recipient address are filled in .env.
+
+contactPoints:
+  - orgId: 1
+    name: cff-grafana-inbox
+    receivers:
+      - uid: grafana-inbox-default
+        type: webhook
+        # Loopback into Grafana itself — turns the alert into a dashboard
+        # annotation + entry in Alerting → History. No external endpoint.
+        settings:
+          url: http://127.0.0.1:3000/api/annotations
+          httpMethod: POST
+          username: admin
+          # No password — webhook is internal; replaced once Grafana inits.
+          maxAlerts: 0
+        disableResolveMessage: false
+
+  - orgId: 1
+    name: cff-email-stub
+    receivers:
+      - uid: email-stub
+        type: email
+        settings:
+          # Real address provided later; keep stub so policies validate.
+          addresses: ${ALERT_EMAIL_TO}
+          singleEmail: true
+          subject: "[CFF Alert] {{ .CommonLabels.alertname }}"
+        disableResolveMessage: false

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from shared.metrics import instrument_job
 from shared.notifications.manager import notify
 from shared.queue.types import NotificationPayload
 from workers._job_bootstrap import bootstrap_job
@@ -11,6 +12,7 @@ from workers._job_bootstrap import bootstrap_job
 logger = logging.getLogger(__name__)
 
 
+@instrument_job("notification")
 def send_notification(payload: NotificationPayload) -> bool:
     """Job handler called by rq. Returns True on success."""
     bootstrap_job(payload, "cff-notification")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from shared.metrics import instrument_job
 from shared.queue.types import VideoUploadPayload
 from shared.youtube.upload import process_upload
 from workers._job_bootstrap import bootstrap_job
@@ -12,6 +13,7 @@ from workers._job_bootstrap import bootstrap_job
 logger = logging.getLogger(__name__)
 
 
+@instrument_job("publishing")
 def process_upload_job(payload: VideoUploadPayload) -> dict[str, Any]:
     """Job handler called by rq."""
     bootstrap_job(payload, "cff-publishing")

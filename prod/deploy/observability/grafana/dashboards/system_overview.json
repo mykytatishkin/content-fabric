@@ -1,0 +1,113 @@
+{
+  "uid": "cff-system",
+  "title": "CFF — System Overview",
+  "tags": ["cff", "overview"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "time": {"from": "now-3h", "to": "now"},
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "stat",
+      "title": "API up",
+      "id": 1,
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "up{job=\"cff-api\"}", "refId": "A"}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Workers active",
+      "id": 2,
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "count(namedprocess_namegroup_num_procs{groupname=~\"cff-.*-worker\"} > 0)", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Streams running",
+      "id": 3,
+      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(cff_stream_active)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 5, "color": "yellow"}, {"value": 9, "color": "green"}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Disk free %",
+      "id": 4,
+      "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "100 * node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"steps": [{"value": null, "color": "red"}, {"value": 15, "color": "yellow"}, {"value": 30, "color": "green"}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "RAM used %",
+      "id": 5,
+      "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percent"}}
+    },
+    {
+      "type": "stat",
+      "title": "Active alerts",
+      "id": 6,
+      "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "count(ALERTS{alertstate=\"firing\"})", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "red"}]}}}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Worker memory (RSS)",
+      "id": 10,
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "namedprocess_namegroup_memory_bytes{groupname=~\"cff-.*\", memtype=\"resident\"}", "legendFormat": "{{groupname}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue depth",
+      "id": 11,
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_queue_depth", "legendFormat": "{{queue}}", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tasks per minute (created vs completed vs failed)",
+      "id": 20,
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(cff_tasks_created_total[5m])) * 60", "legendFormat": "created/min", "refId": "A"},
+        {"expr": "sum(rate(cff_tasks_completed_total[5m])) * 60", "legendFormat": "completed/min", "refId": "B"},
+        {"expr": "sum(rate(cff_tasks_failed_total[5m])) * 60", "legendFormat": "failed/min", "refId": "C"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "DLE source up (1=connected, 0=down)",
+      "id": 30,
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_dle_source_up", "legendFormat": "{{source}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"max": 1, "min": 0}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Stream uptime",
+      "id": 31,
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "cff_stream_uptime_seconds / 60", "legendFormat": "{{stream}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "m"}}
+    }
+  ]
+}

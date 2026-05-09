@@ -6,23 +6,27 @@ import logging
 import time
 from typing import Any
 
+from shared.metrics import instrument_job
 from shared.queue.types import VoiceChangePayload
 from shared.voice.changer import process_voice_change
 from shared.notifications import telegram
 from shared.db.repositories import task_repo
 from shared.db.models import TaskStatus
+from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
+@instrument_job("voice")
 def process_voice_change_job(payload: VoiceChangePayload) -> dict[str, Any]:
     """Job handler called by rq.
-    
+
     Includes retry logic for missing source files: 3 attempts before failure.
     """
+    bootstrap_job(payload, "cff-voice")
     task_id = payload.task_id
     source_path = payload.source_file_path
-    
+
     logger.info("Processing voice change: task_id=%d source=%s", task_id, source_path)
     
     max_retries = 3

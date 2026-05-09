@@ -14,12 +14,14 @@ from shared.shorts.highlight import find_highlights
 from shared.shorts.cutter import cut_segment
 from shared.shorts.thumbnail import extract_frames, pick_best_thumbnail
 from shared.db.repositories.task_repo import create_task
+from shared.metrics import instrument_job
 from shared.notifications import telegram
 from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
+@instrument_job("shorts")
 def run_shorts_job(payload: ShortsPayload) -> dict[str, Any]:
     """Job handler called by rq.
 

@@ -6,6 +6,7 @@ import logging
 import subprocess
 from typing import Any
 
+from shared.metrics import instrument_job
 from shared.queue.types import StreamControlPayload
 from shared.notifications import telegram
 from workers._job_bootstrap import bootstrap_job
@@ -13,6 +14,7 @@ from workers._job_bootstrap import bootstrap_job
 logger = logging.getLogger(__name__)
 
 
+@instrument_job("stream-control")
 def run_stream_control_job(payload: StreamControlPayload) -> dict[str, Any]:
     """Job handler called by rq.
 

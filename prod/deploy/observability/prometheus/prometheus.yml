@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: prod
+    site: cff
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Host metrics
+  - job_name: node
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+        labels:
+          host: cff-prod
+
+  # Per-process metrics for systemd-managed cff-* and stream-*
+  - job_name: process
+    static_configs:
+      - targets: ["host.docker.internal:9256"]
+
+  # Pushgateway for short-lived rq workers
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+
+  # CFF API exposes /metrics directly
+  - job_name: cff-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          service: cff-api
+
+# alerting rules and contact points are managed in Grafana (Phase 5).
+# We deliberately don't run Alertmanager — Grafana Alerting handles it,
+# and the user wants notifications inside Grafana only (plus future email
+# stub) without Telegram.

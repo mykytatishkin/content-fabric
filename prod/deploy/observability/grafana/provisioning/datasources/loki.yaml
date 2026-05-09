@@ -1,0 +1,21 @@
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: false
+    jsonData:
+      maxLines: 5000
+      derivedFields:
+        # Click on trace_id in any log line → opens "trace explorer" dashboard
+        - matcherRegex: 'trace_id["=:]+([0-9a-f]{16,32})'
+          name: trace_id
+          datasourceUid: loki
+          url: '/d/cff-trace?var-trace=$${__value.raw}'
+        - matcherRegex: 'task_id["=:]+(\d+)'
+          name: task_id
+          datasourceUid: loki
+          url: '/d/cff-task?var-task=$${__value.raw}'

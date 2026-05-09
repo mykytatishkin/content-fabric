@@ -2,8 +2,10 @@ import logging
 import os
 
 from shared.logging_config import setup_logging
+from shared.error_tracking import init as init_error_tracking
 
 setup_logging(service_name="cff-api")
+init_error_tracking(service_name="cff-api")
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -139,6 +141,42 @@ if _static_dir.is_dir():
 app.include_router(router, prefix="/api/v1")
 app.include_router(panel_router, prefix="/panel", tags=["panel"])
 app.include_router(app_portal_router, prefix="/app", tags=["portal"])
+
+
+# ─── Prometheus /metrics — opt-in HTTP instrumentation + custom gauges ───
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    from shared.metrics import sample_all  # noqa: F401  side-effect: register metrics
+
+    _instrumentator = Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        should_respect_env_var=False,
+        excluded_handlers=["/metrics", "/health"],
+    )
+    _instrumentator.instrument(app).expose(
+        app, endpoint="/metrics", include_in_schema=False, should_gzip=True,
+    )
+
+    @app.on_event("startup")
+    async def _kick_metrics_sampler():
+        """Refresh sampled gauges every 30s in the background."""
+        import asyncio
+
+        async def _loop():
+            while True:
+                try:
+                    sample_all()
+                except Exception:
+                    logging.getLogger("cff.metrics").exception("sample_all failed")
+                await asyncio.sleep(30)
+
+        asyncio.create_task(_loop())
+
+except ImportError:
+    logging.getLogger("cff.metrics").warning(
+        "prometheus_fastapi_instrumentator not installed — /metrics disabled"
+    )
 
 
 @app.get("/")

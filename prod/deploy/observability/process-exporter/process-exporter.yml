@@ -1,0 +1,46 @@
+process_names:
+  # CFF Python services — match by `python -m workers.X` / `uvicorn main:app`
+  - name: "cff-api"
+    cmdline:
+      - 'uvicorn main:app'
+
+  - name: "cff-scheduler"
+    cmdline:
+      - 'python.* -m scheduler\.run'
+
+  - name: "cff-publishing-worker"
+    cmdline:
+      - 'python.* -m workers\.publishing_worker'
+
+  - name: "cff-notification-worker"
+    cmdline:
+      - 'python.* -m workers\.notification_worker'
+
+  - name: "cff-voice-worker"
+    cmdline:
+      - 'python.* -m workers\.voice_worker'
+
+  - name: "cff-dle-ingestion-worker"
+    cmdline:
+      - 'python.* -m workers\.dle_ingestion_worker'
+
+  - name: "cff-dle-processor-worker"
+    cmdline:
+      - 'python.* -m workers\.dle_processor_worker'
+
+  - name: "cff-shorts-worker"
+    cmdline:
+      - 'python.* -m workers\.shorts_worker'
+
+  - name: "cff-stats-worker"
+    cmdline:
+      - 'python.* -m workers\.stats_worker'
+
+  - name: "cff-stream-control-worker"
+    cmdline:
+      - 'python.* -m workers\.stream_worker'
+
+  # ffmpeg processes that drive each YouTube live stream
+  - name: "{{.ExeBase}}-{{.PID}}"
+    exe:
+      - ffmpeg

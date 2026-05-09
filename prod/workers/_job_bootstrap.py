@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from shared.error_tracking import init as init_error_tracking
 from shared.logging_context import (
     new_trace_id,
     set_task_id,
@@ -18,6 +19,8 @@ from shared.logging_context import (
 )
 
 logger = logging.getLogger(__name__)
+
+_error_tracking_inited: set[str] = set()
 
 
 def bootstrap_job(payload: Any, worker_name: str) -> str:
@@ -30,6 +33,14 @@ def bootstrap_job(payload: Any, worker_name: str) -> str:
     Returns:
         The active trace_id (always non-empty).
     """
+    # Lazy-init error tracking once per worker process
+    if worker_name not in _error_tracking_inited:
+        try:
+            init_error_tracking(service_name=worker_name)
+        except Exception:
+            pass  # Sentry must never break the job
+        _error_tracking_inited.add(worker_name)
+
     set_worker(worker_name)
 
     tid = getattr(payload, "trace_id", None)
