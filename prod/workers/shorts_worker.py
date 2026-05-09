@@ -15,13 +15,14 @@ from shared.shorts.cutter import cut_segment
 from shared.shorts.thumbnail import extract_frames, pick_best_thumbnail
 from shared.db.repositories.task_repo import create_task
 from shared.notifications import telegram
+from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
 def run_shorts_job(payload: ShortsPayload) -> dict[str, Any]:
     """Job handler called by rq.
-    
+
     1. Download donor video.
     2. Transcribe using Whisper.
     3. Find highlights using GPT-4.
@@ -30,6 +31,7 @@ def run_shorts_job(payload: ShortsPayload) -> dict[str, Any]:
        - Pick thumbnail.
        - Create CFF task (ready for upload).
     """
+    bootstrap_job(payload, "cff-shorts")
     logger.info("Running shorts job for channel %d", payload.channel_id)
     
     tmp_dir = f"/tmp/shorts_{uuid.uuid4()}"

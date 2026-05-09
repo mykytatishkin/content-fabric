@@ -6,12 +6,14 @@ import logging
 
 from shared.notifications.manager import notify
 from shared.queue.types import NotificationPayload
+from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
 def send_notification(payload: NotificationPayload) -> bool:
     """Job handler called by rq. Returns True on success."""
+    bootstrap_job(payload, "cff-notification")
     logger.info(
         "Processing notification: channel=%s recipient=%s",
         payload.channel,

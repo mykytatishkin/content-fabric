@@ -8,15 +8,17 @@ from typing import Any
 from shared.queue.types import StatsPayload
 from scheduler.jobs import collect_channel_stats, collect_video_stats
 from shared.notifications import telegram
+from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
 def run_stats_job(payload: StatsPayload) -> dict[str, Any]:
     """Job handler called by rq.
-    
+
     Collect YouTube stats for channels and videos.
     """
+    bootstrap_job(payload, "cff-stats")
     logger.info("Running daily stats collection")
     try:
         ch_ok, ch_fail = collect_channel_stats()

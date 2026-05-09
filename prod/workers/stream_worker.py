@@ -8,16 +8,18 @@ from typing import Any
 
 from shared.queue.types import StreamControlPayload
 from shared.notifications import telegram
+from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
 
 
 def run_stream_control_job(payload: StreamControlPayload) -> dict[str, Any]:
     """Job handler called by rq.
-    
+
     action: "start" | "stop" | "restart" | "status"
     stream_id: ID from live_stream_configurations
     """
+    bootstrap_job(payload, "cff-stream-control")
     logger.info("Running stream control: action=%s stream=%s", payload.action, payload.stream_id)
     
     # Map stream_id to systemd unit name
