@@ -472,3 +472,72 @@ def run_periodic_yii_jobs() -> int:
         except Exception:
             logger.exception("Yii cron job failed: %s", job_name)
     return fired
+
+
+# ── stream reconcile loop ────────────────────────────────────────────
+
+# Per-stream throttle: don't poke a stream more than once every N seconds.
+# YouTube's liveBroadcasts.transition is rate-limited and noisy reconciliations
+# can also step on a healthy ffmpeg that's mid-handshake.
+_RECONCILE_COOLDOWN_SEC = 300  # 5 min
+_last_reconcile_at: dict[int, float] = {}
+
+
+def reconcile_streams() -> tuple[int, int]:
+    """Heal any enabled streams whose systemd unit isn't `active running`.
+
+    Mirrors the periodic supervisor loop the PHP stack used to run as a cron.
+    Returns ``(checked, healed)`` so the caller can log/expose metrics.
+
+    Throttled per-stream by `_RECONCILE_COOLDOWN_SEC` so a flapping unit
+    doesn't burn YouTube API quota.
+    """
+    import time as _time
+    from sqlalchemy import text as _text
+
+    from shared.db.connection import get_connection as _get_conn
+    from shared.streams import lifecycle as _lifecycle
+
+    sql = """
+        SELECT id, name, service_name, workdir, stream_key, duration_sec,
+               rtmp_host, rtmp_base, channel_id, streaming_account_id,
+               platform_broadcast_id, platform_stream_id,
+               title, description, tags, thumbnail_path, enabled
+        FROM live_stream_configurations
+        WHERE enabled = 1
+        ORDER BY id ASC
+    """
+    try:
+        with _get_conn() as conn:
+            rows = conn.execute(_text(sql)).mappings().all()
+    except Exception:
+        logger.exception("[STREAM RECONCILE] failed to load streams")
+        return (0, 0)
+
+    now = _time.time()
+    checked = 0
+    healed = 0
+    for r in rows:
+        s = dict(r)
+        sid = int(s["id"])
+        last = _last_reconcile_at.get(sid, 0.0)
+        if now - last < _RECONCILE_COOLDOWN_SEC:
+            continue
+        checked += 1
+        try:
+            res = _lifecycle.reconcile(s)
+        except Exception:
+            logger.exception("[STREAM RECONCILE] reconcile crashed for stream=%s", sid)
+            continue
+        _last_reconcile_at[sid] = now
+        action = res.get("action")
+        if action == "started":
+            healed += 1
+            logger.info(
+                "[STREAM RECONCILE] healed stream=%s (%s) — broadcast=%s prep_err=%s live_err=%s",
+                sid, res.get("reason"), res.get("broadcast_id"),
+                res.get("prep_error"), res.get("live_error"),
+            )
+        else:
+            logger.debug("[STREAM RECONCILE] noop stream=%s", sid)
+    return (checked, healed)

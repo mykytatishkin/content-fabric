@@ -29,7 +29,17 @@ The legacy PHP stack (Yii2) has been fully integrated into the Content Fabric (C
 - **Daily Stats:** Collection of YouTube channel and video metrics.
   - *Worker:* `cff-stats-worker`
 - **Stream Control:** Management of 9 ongoing YouTube live streams via systemd.
-  - *Worker:* `cff-stream-control-worker`
+  - *Worker:* `cff-stream-control-worker` — RQ handler for `start`/`stop`/`restart`/`reconcile` actions.
+  - *Lifecycle module:* `shared/streams/lifecycle.py` — single source of truth shared by API, worker, and scheduler:
+    - `prepare_broadcast(stream)` → ensure broadcast (reuse if reusable, else create) + bind ingest + push meta + thumbnail.
+    - `go_live(stream, broadcast_id)` → `liveBroadcasts.transition(live)`.
+    - `complete_broadcast(stream)` → `liveBroadcasts.transition(complete)` on stop.
+    - `start_stream(s)` / `stop_stream(s)` → full prep + systemd + go-live (and the reverse).
+    - `reconcile(s)` → idempotent heal: noop if unit `active running` with broadcast id; otherwise `reset-failed` → `start_stream`.
+  - *Reconcile loop:* `scheduler/jobs.py:reconcile_streams()` runs every 60s tick (per-stream cooldown 300s to spare YouTube quota). The PHP stack used a cron for this; here it's in-process.
+  - *Why this matters:* systemd's `Restart=on-failure` re-bounces ffmpeg but never re-runs the YouTube broadcast lifecycle, so a stream whose broadcast went stale stays in RTMP `Input/output error` forever. The reconcile loop is what unsticks that.
+  - *Dashboard parity:* `/panel/streams` exposes per-row `🩺 Heal` (POST `/api/v1/streams/reconcile`) and toolbar `🩺 Heal ALL` (POST `/api/v1/streams/reconcile-all`) — same code path as the periodic loop, runnable manually for triage.
+  - *Operational caveat:* lifecycle calls fail with `RefreshError: invalid_grant` when a streaming-account OAuth token is revoked — the reconciler logs and continues, but the stream cannot go live until reauth is run for the affected account (`python -m cli.reauth --all-failed`). Duplicate systemd units (case-mismatched aliases like `stream-Readbooks-online.service` vs `stream-readbooks-online.service`) are a separate cleanup item.
 
 ### 2.2 Web User Interface (Admin Panel)
 New administrative routes added to `/panel/`:

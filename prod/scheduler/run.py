@@ -15,6 +15,7 @@ from scheduler.jobs import (
     collect_channel_stats,
     collect_video_stats,
     run_periodic_yii_jobs,
+    reconcile_streams,
 )
 from shared.logging_config import setup_logging
 
@@ -53,6 +54,16 @@ def main() -> None:
             run_periodic_yii_jobs()
         except Exception:
             logger.exception("Yii periodic jobs failed")
+
+        # Stream reconcile — heal streams whose systemd unit drops out of
+        # `active running`. Per-stream throttle inside reconcile_streams()
+        # keeps this cheap on a healthy fleet (no-op when nothing is broken).
+        try:
+            checked, healed = reconcile_streams()
+            if healed:
+                logger.info("Stream reconcile: %d checked, %d healed", checked, healed)
+        except Exception:
+            logger.exception("Stream reconcile failed")
 
         # Daily token validation — run once per calendar day
         today = date.today()

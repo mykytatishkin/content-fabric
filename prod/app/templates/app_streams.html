@@ -47,6 +47,7 @@
   <button class="btn btn-primary btn-sm" id="btnStartAll">▶️ Start ALL</button>
   <button class="btn btn-danger btn-sm" id="btnStopAll">⏹️ Stop ALL</button>
   <button class="btn btn-sm" id="btnRestartAll">🔄 Restart ALL</button>
+  <button class="btn btn-sm" id="btnHealAll" title="Run lifecycle reconcile on every stream — heals failing units">🩺 Heal ALL</button>
 </div>
 
 <div class="table-wrap">
@@ -69,12 +70,14 @@
 <script>
 (() => {
   const URLs = {
-    status:   "/api/v1/streams/status",
-    start:    "/api/v1/streams/start",
-    stop:     "/api/v1/streams/stop",
-    restart:  "/api/v1/streams/restart",
-    sync:     "/api/v1/streams/sync",
-    tail:     "/api/v1/streams/tail",
+    status:        "/api/v1/streams/status",
+    start:         "/api/v1/streams/start",
+    stop:          "/api/v1/streams/stop",
+    restart:       "/api/v1/streams/restart",
+    sync:          "/api/v1/streams/sync",
+    tail:          "/api/v1/streams/tail",
+    reconcile:     "/api/v1/streams/reconcile",
+    reconcileAll:  "/api/v1/streams/reconcile-all",
   };
 
   let paused = false;
@@ -186,6 +189,7 @@
             ${r.yid ? `<a class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener" href="/panel/streaming-accounts/${r.yid}/authorize" title="Re-auth Google account #${r.yid}">🔑 Auth</a>` : ''}
             <button class="btn btn-sm act-sync" data-id="${r.id}">Sync</button>
             <button class="btn btn-sm act-log" data-id="${r.id}">Log</button>
+            <button class="btn btn-sm act-heal" data-id="${r.id}" title="Run YouTube broadcast lifecycle and start unit">🩺 Heal</button>
             <button class="btn btn-sm act-restart" data-id="${r.id}">Restart</button>
             <button class="btn btn-sm act-stop" data-id="${r.id}">Stop</button>
             <button class="btn btn-primary btn-sm act-start" data-id="${r.id}">Start</button>
@@ -281,9 +285,26 @@
       else if (btn.classList.contains('act-stop'))    { await unitAction('stop', id); await refreshStatus(); }
       else if (btn.classList.contains('act-restart')) { await unitAction('restart', id); await refreshStatus(); }
       else if (btn.classList.contains('act-sync'))    { await unitAction('sync', id); await refreshStatus(); }
+      else if (btn.classList.contains('act-heal'))    { await unitAction('reconcile', id); await refreshStatus(); }
       else if (btn.classList.contains('act-log'))     { openLog(id); }
     } catch (e2) { window.toast('Error: ' + e2.message, 'error'); }
   });
+
+  const btnHealAll = document.getElementById('btnHealAll');
+  if (btnHealAll) {
+    btnHealAll.addEventListener('click', async () => {
+      if (!confirm('Run lifecycle reconcile across all enabled streams?')) return;
+      try {
+        const json = await httpJson(URLs.reconcileAll, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const healed = (json.results || []).filter(r => r.action === 'started').length;
+        window.toast(`Heal ALL: ${healed} healed of ${(json.results || []).length} checked`,
+          json.ok ? 'info' : 'error');
+        await refreshStatus();
+      } catch (e) { window.toast('Heal ALL: ' + e.message, 'error'); }
+    });
+  }
 
   btnRefresh.addEventListener('click', refreshStatus);
   btnPause.addEventListener('click', () => {
