@@ -115,13 +115,23 @@ class TestChannelRepo:
             assert channel_repo.get_channel_by_id(999) is None
 
     def test_get_channel_found(self):
-        row = (1, "Ch", "UC123", 5, 1, 1, "at", "rt", None, 9, datetime(2026, 1, 1), datetime(2026, 1, 1))
+        # Columns now include uuid at index 1 plus access_token/refresh_token
+        # for has_tokens computation: id, uuid, name, platform_channel_id,
+        # console_id, enabled, project_id, access_token, refresh_token,
+        # token_expires_at, created_by, created_at, updated_at
+        row = (
+            1, "u-1", "Ch", "UC123", 5, 1, 1,
+            "at", "rt", None, 9,
+            datetime(2026, 1, 1), datetime(2026, 1, 1),
+        )
         conn = _make_conn(fetchone=row)
         with _patch_repo(CH_MOD, conn):
             from shared.db.repositories import channel_repo
             result = channel_repo.get_channel_by_id(1)
         assert result["name"] == "Ch"
         assert result["enabled"] is True
+        assert result["uuid"] == "u-1"
+        assert result["has_tokens"] is True
 
     def test_list_channels_empty(self):
         conn = _make_conn(fetchall=[])
