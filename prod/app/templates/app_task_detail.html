@@ -119,7 +119,7 @@
 
 <script src="/static/js/chart.umd.min.js?v=2"></script>
 <script>
-var vStats = {{ video_stats_json|safe }};
+var vStats = {{ video_stats_obj|tojson }};
 new Chart(document.getElementById('videoChart'), {
     type: 'line',
     data: {

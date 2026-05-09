@@ -165,8 +165,8 @@
 </div>
 {% endif %}
 
-<script type="application/json" id="analyticsChartData">{{ chart_data_json|safe }}</script>
-<script type="application/json" id="uploadEventsData">{{ upload_events_json|safe }}</script>
+<script type="application/json" id="analyticsChartData">{{ chart_data|tojson }}</script>
+<script type="application/json" id="uploadEventsData">{{ upload_events_json_obj|tojson }}</script>
 <script src="/static/js/chart.umd.min.js?v=9"></script>
 <script src="/static/js/analytics.js?v=9"></script>
 {% endif %}
