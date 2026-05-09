@@ -1,0 +1,178 @@
+{
+  "uid": "cff-security",
+  "title": "🛡 CFF — Security Audit",
+  "tags": ["cff", "security", "audit"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "time": {"from": "now-24h", "to": "now"},
+  "templating": {"list": []},
+  "links": [
+    {"title": "🏠 Now",         "url": "/d/cff-now", "type": "link", "targetBlank": false, "icon": "home"},
+    {"title": "📊 Overview",    "url": "/d/cff-system", "type": "link", "targetBlank": false},
+    {"title": "📈 Pipeline",    "url": "/d/cff-pipeline", "type": "link", "targetBlank": false},
+    {"title": "🔥 Incidents",   "url": "/d/cff-incidents", "type": "link", "targetBlank": false},
+    {"title": "🔎 Trace",       "url": "/d/cff-trace", "type": "link", "targetBlank": false}
+  ],
+  "panels": [
+    {
+      "type": "row", "id": 100,
+      "title": "🔐 Безпека за останні 24 год",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "stat", "id": 1,
+      "title": "Усього audit-подій",
+      "description": "Усі записи auditd (всі тег'и cff-*) за вікно.",
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum(count_over_time({job=\"auditd\"}[$__range]))", "refId": "A", "instant": true}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "blue"}]}}}
+    },
+    {
+      "type": "stat", "id": 2,
+      "title": "Зміни identity",
+      "description": "Запис в /etc/passwd /etc/shadow /etc/sudoers.",
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum(count_over_time({job=\"auditd\", audit_key=~\"cff-identity|cff-sudoers\"}[$__range]))", "refId": "A", "instant": true}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "yellow"}, {"value": 5, "color": "red"}]}}}
+    },
+    {
+      "type": "stat", "id": 3,
+      "title": "Зміни SSH/keys",
+      "description": "/etc/ssh/sshd_config + /root/.ssh/.",
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum(count_over_time({job=\"auditd\", audit_key=~\"cff-ssh-config|cff-ssh-keys\"}[$__range]))", "refId": "A", "instant": true}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "yellow"}, {"value": 3, "color": "red"}]}}}
+    },
+    {
+      "type": "stat", "id": 4,
+      "title": "Зміни firewall/cron",
+      "description": "iptables + cron — головні persistence-вектори.",
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum(count_over_time({job=\"auditd\", audit_key=~\"cff-firewall|cff-cron|cff-systemd\"}[$__range]))", "refId": "A", "instant": true}],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["last"]}},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 25, "color": "red"}]}}}
+    },
+
+    {
+      "type": "row", "id": 200,
+      "title": "🚪 SSH автентифікація",
+      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 10,
+      "title": "SSH login (успішних) по IP",
+      "description": "USER_ACCT/CRED_ACQ події з addr=… — хто і коли логінився як root.",
+      "gridPos": {"x": 0, "y": 7, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum by (src_ip) (count_over_time({job=\"auditd\"} |~ \"type=USER_ACCT.*res=success\" | regexp `addr=(?P<src_ip>[0-9.]+)` [5m]))", "legendFormat": "{{src_ip}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 25}}}
+    },
+    {
+      "type": "logs", "id": 11,
+      "title": "Свіжі SSH login events",
+      "description": "Таймлайн USER_ACCT / CRED_ACQ / USER_LOGIN.",
+      "gridPos": {"x": 12, "y": 7, "w": 12, "h": 8},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{job=\"auditd\"} |~ \"type=(USER_ACCT|USER_LOGIN|CRED_ACQ)\"", "refId": "A", "maxLines": 100}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    },
+
+    {
+      "type": "row", "id": 300,
+      "title": "📜 Зміни критичних файлів",
+      "gridPos": {"x": 0, "y": 15, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "table", "id": 20,
+      "title": "Кількість змін по тег'у",
+      "description": "Розподіл подій по тег'у audit-правила (-k).",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "sum by (audit_key) (count_over_time({job=\"auditd\", audit_key!=\"\"}[$__range]))", "refId": "A", "instant": true, "format": "table"}],
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true}, "indexByName": {"audit_key": 0, "Value": 1}}},
+        {"id": "renameByRegex", "options": {"regex": "Value", "renamePattern": "Events"}}
+      ]
+    },
+    {
+      "type": "logs", "id": 21,
+      "title": "Останні зміни identity / sudoers / SSH",
+      "description": "Будь-який запис на /etc/passwd /etc/shadow /etc/sudoers /etc/ssh /root/.ssh.",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{job=\"auditd\", audit_key=~\"cff-identity|cff-sudoers|cff-ssh-config|cff-ssh-keys\"}", "refId": "A", "maxLines": 100}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    },
+
+    {
+      "type": "row", "id": 400,
+      "title": "🛠 Зміни firewall / cron / systemd",
+      "gridPos": {"x": 0, "y": 26, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "logs", "id": 30,
+      "title": "Cron + systemd зміни (persistence vectors)",
+      "description": "Persistence-вектори, які використовував Redis-RCE інцидент травня 2026.",
+      "gridPos": {"x": 0, "y": 27, "w": 12, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{job=\"auditd\", audit_key=~\"cff-cron|cff-systemd\"}", "refId": "A", "maxLines": 100}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    },
+    {
+      "type": "logs", "id": 31,
+      "title": "Firewall / network зміни",
+      "description": "Зміни iptables, /etc/network, /etc/hosts, /etc/resolv.conf.",
+      "gridPos": {"x": 12, "y": 27, "w": 12, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{job=\"auditd\", audit_key=~\"cff-firewall|cff-network\"}", "refId": "A", "maxLines": 100}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    },
+
+    {
+      "type": "row", "id": 500,
+      "title": "🚨 Виконання привілейованих бінарників + код CFF",
+      "gridPos": {"x": 0, "y": 37, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "logs", "id": 40,
+      "title": "Privilege escalation (sudo/su/passwd)",
+      "description": "Кожен виклик sudo/su/passwd/chsh/newgrp.",
+      "gridPos": {"x": 0, "y": 38, "w": 12, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{job=\"auditd\", audit_key=~\"cff-priv-exec|cff-priv-launch\"}", "refId": "A", "maxLines": 100}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    },
+    {
+      "type": "logs", "id": 41,
+      "title": "CFF code modifications",
+      "description": "Зміни main.py, security.py, deps.py, .env — все що міняло б safety-критичні шляхи.",
+      "gridPos": {"x": 12, "y": 38, "w": 12, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{job=\"auditd\", audit_key=~\"cff-code-critical|cff-secrets|cff-nginx\"}", "refId": "A", "maxLines": 100}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    },
+
+    {
+      "type": "row", "id": 600,
+      "title": "🛑 Failed events (попередження)",
+      "gridPos": {"x": 0, "y": 48, "w": 24, "h": 1}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "logs", "id": 50,
+      "title": "Усі res=failed події",
+      "description": "Невдалі спроби (логін, sudo, etc.). Також module/mount/time-зміни.",
+      "gridPos": {"x": 0, "y": 49, "w": 24, "h": 12},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{job=\"auditd\"} |~ \"res=failed|cff-module|cff-time|cff-mount\"", "refId": "A", "maxLines": 200}],
+      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+    }
+  ]
+}

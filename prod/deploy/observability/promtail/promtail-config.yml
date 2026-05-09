@@ -146,3 +146,41 @@ scrape_configs:
           stream: error
           level: ERROR
           __path__: /var/log/nginx/*error*.log
+
+  # ─── auditd security log ───────────────────────────────────────────
+  # /var/log/audit/audit.log entries look like:
+  #   type=SYSCALL msg=audit(1234567890.123:NNN): arch=... key="cff-cron"
+  # We extract the audit key (-k tag) and the type so dashboards can
+  # filter by class of event without scanning the message body.
+  - job_name: auditd
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: auditd
+          unit: auditd
+          __path__: /var/log/audit/audit.log
+    pipeline_stages:
+      - regex:
+          expression: 'type=(?P<audit_type>\S+)\s+msg=audit\([^)]+\):'
+      - regex:
+          expression: 'key="(?P<audit_key>cff-[a-z-]+)"'
+      - regex:
+          expression: 'comm="(?P<comm>[^"]+)"'
+      - regex:
+          expression: 'addr=(?P<src_ip>[0-9.]+|\?)'
+      - labels:
+          audit_type:
+          audit_key:
+          comm:
+      # Synthesize a level label so it integrates with our dashboards.
+      # Anything tagged cff-* is at minimum NOTICE; failures escalate.
+      - match:
+          selector: '{job="auditd"} |~ "res=failed"'
+          stages:
+            - static_labels:
+                level: ERROR
+      - match:
+          selector: '{job="auditd"} |~ "type=USER_ACCT|type=USER_LOGIN|type=CRED_ACQ"'
+          stages:
+            - static_labels:
+                level: NOTICE
