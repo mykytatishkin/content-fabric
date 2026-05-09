@@ -113,7 +113,7 @@
       "description": "Все ошибки из cff-* + stream-* + nginx за выбранный диапазон времени.",
       "gridPos": {"x": 0, "y": 25, "w": 24, "h": 16},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*|nginx\", level=~\"ERROR|CRITICAL\"} | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A", "maxLines": 200}],
+      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*|nginx\", level=~\"ERROR|CRITICAL\"} | line_format \"[{{.unit}}] {{__line__}}\"", "refId": "A", "maxLines": 200}],
       "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "exact"}
     }
   ]

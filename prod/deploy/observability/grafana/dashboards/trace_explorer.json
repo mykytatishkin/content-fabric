@@ -31,45 +31,44 @@
     {
       "type": "stat", "id": 1,
       "title": "Сервисов задействовано",
-      "description": "Сколько разных cff-* видели этот trace_id.",
+      "description": "Сколько разных cff-* видели этот trace_id. Пусто, пока не введён trace_id в textbox сверху.",
       "gridPos": {"x": 0, "y": 1, "w": 6, "h": 4},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "count(count by (unit) (count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"}[$__range])))", "refId": "A", "instant": true}]
+      "targets": [{"expr": "count(count by (unit) (count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"}[$__range]))) or vector(0)", "refId": "A", "instant": true}]
     },
     {
       "type": "stat", "id": 2,
       "title": "Записей в логе",
-      "description": "Всего log lines за время жизни задачи.",
+      "description": "Всего log lines за время жизни задачи. Пусто, пока не введён trace_id.",
       "gridPos": {"x": 6, "y": 1, "w": 6, "h": 4},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "sum(count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"}[$__range]))", "refId": "A", "instant": true}]
+      "targets": [{"expr": "sum(count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"}[$__range])) or vector(0)", "refId": "A", "instant": true}]
     },
     {
       "type": "stat", "id": 3,
       "title": "Ошибок",
-      "description": "ERROR + CRITICAL для этой задачи.",
+      "description": "ERROR + CRITICAL для этой задачи. Пусто, пока не введён trace_id.",
       "gridPos": {"x": 12, "y": 1, "w": 6, "h": 4},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "sum(count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\", level=~\"ERROR|CRITICAL\"}[$__range]))", "refId": "A", "instant": true}],
+      "targets": [{"expr": "sum(count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\", level=~\"ERROR|CRITICAL\"}[$__range])) or vector(0)", "refId": "A", "instant": true}],
       "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": null, "color": "green"}, {"value": 1, "color": "red"}]}, "color": {"mode": "thresholds"}}}
     },
     {
       "type": "stat", "id": 4,
-      "title": "Длительность",
-      "description": "Время между первой и последней записью.",
+      "title": "Логеров задействовано",
+      "description": "Сколько разных logger-имён писали для этого trace_id (audit.worker, scheduler.jobs, и т.д.). Пусто, пока не введён trace_id. Раньше тут была попытка показать длительность через last_over_time/first_over_time, но это требует unwrap числового поля — а timestamp в строке текстовый, поэтому LogQL парсер падал.",
       "gridPos": {"x": 18, "y": 1, "w": 6, "h": 4},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "max(last_over_time({unit=~\"cff-.*\", trace_id=\"$trace\"}[$__range])) - min(first_over_time({unit=~\"cff-.*\", trace_id=\"$trace\"}[$__range]))", "refId": "A", "instant": true}],
-      "fieldConfig": {"defaults": {"unit": "s"}}
+      "targets": [{"expr": "count(count by (logger) (count_over_time({unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"}[$__range]))) or vector(0)", "refId": "A", "instant": true}]
     },
 
     {
       "type": "logs", "id": 10,
       "title": "Timeline (по времени, ascending)",
-      "description": "Каждая строка лога с этим trace_id, упорядочена по времени. [unit] message.",
+      "description": "Каждая строка лога с этим trace_id, упорядочена по времени. [unit] message. Пусто, пока не введён trace_id в textbox сверху.",
       "gridPos": {"x": 0, "y": 5, "w": 24, "h": 28},
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"} | json | line_format \"[{{.unit}}] {{.MESSAGE}}\"", "refId": "A", "maxLines": 1000}],
+      "targets": [{"expr": "{unit=~\"cff-.*|stream-.*\", trace_id=\"$trace\"} | line_format \"[{{.unit}}] {{__line__}}\"", "refId": "A", "maxLines": 1000}],
       "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Ascending", "dedupStrategy": "none"}
     }
   ]
