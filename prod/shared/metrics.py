@@ -211,6 +211,26 @@ def push_job_metrics(job_name: str, grouping: dict[str, str], registry: Collecto
         logger.debug("Pushgateway send failed for %s: %s", job_name, exc)
 
 
+def push_worker_global_metrics(worker_name: str) -> None:
+    """Push the worker's process-wide REGISTRY (log_events_total + python_*).
+
+    Pushgateway groups by {job=cff-<worker>, worker=<name>} so each worker
+    overwrites its own slot on every push, and rate() queries see real
+    progress. Without this, log_events_total samples from MetricsLogHandler
+    in worker processes never reach Prometheus (workers don't expose /metrics).
+    """
+    try:
+        push_to_gateway(
+            PUSHGATEWAY_URL,
+            job=f"cff-{worker_name}",
+            registry=REGISTRY,
+            grouping_key={"worker": worker_name},
+            timeout=5,
+        )
+    except Exception as exc:
+        logger.debug("Worker-global metrics push failed for %s: %s", worker_name, exc)
+
+
 # ─── Decorator for rq job handlers ──────────────────────────────────
 
 
@@ -262,6 +282,10 @@ def instrument_job(worker_name: str) -> Callable:
                     if tid is not None:
                         grouping["task_id"] = str(tid)
                 push_job_metrics(f"cff-{worker_name}", grouping, registry)
+                # Also push the worker process's global REGISTRY so
+                # log_events_total (incremented by MetricsLogHandler during
+                # the job) reaches Prometheus.
+                push_worker_global_metrics(worker_name)
 
         return wrapper
     return decorator
