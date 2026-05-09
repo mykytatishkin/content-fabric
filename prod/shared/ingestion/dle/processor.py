@@ -25,6 +25,7 @@ from typing import Any, Literal
 
 import requests
 
+from shared.ingestion.dle import sources as dle_sources
 from shared.voice.changer import process_voice_change
 
 logger = logging.getLogger(__name__)
@@ -35,19 +36,6 @@ logger = logging.getLogger(__name__)
 #                  Used by knigi_online_club / books_online_info "TXT-flavour"
 #                  posts that ship long-form text rather than a ready audiofile.
 AudioSource = Literal["mp3", "tts_openai"]
-
-
-# Cover URL templates per source. Если cover в xfields — это просто имя файла,
-# нужно собрать полный URL.
-COVER_URL_TEMPLATES = {
-    "knigi_audio_biz":     "https://knigi-audio.biz/uploads/posts/{cover}",
-    "audiokniga_one_com":  "https://audiokniga-one.com/uploads/{cover}",
-    "club_books_ru":       "https://club-books.ru/uploads/posts/{cover}",
-    "books_online_info":   "https://books-online.info/uploads/{cover}",
-    "slushat_knigi_com":   "https://slushat-knigi.com/uploads/{cover}",
-    "knigi_online_club":   "https://knigi-online.club/uploads/posts/{cover}",
-    "bazaknig_net":        "https://bazaknig.net/uploads/posts/{cover}",
-}
 
 
 class DleProcessor:
@@ -85,8 +73,29 @@ class DleProcessor:
         os.makedirs(task_dir, exist_ok=True)
 
         try:
-            # 1. Cover
-            cover_path = self._fetch_cover(task_dir, source_slug, normalized.get("cover"))
+            # 1. Cover (per-source builder, 1:1 PHP port via sources.py)
+            xfields_parsed = legacy.get("xfields_parsed") or {}
+            book_id = legacy.get("book_id")
+
+            # Backfill xfields/book_id from the source DLE DB for tasks created
+            # before pipeline started persisting them (otherwise per-source URL
+            # builders can't run and we'd fall back to the CF-walled public site).
+            if (not xfields_parsed or not book_id) and dle_id and source_slug:
+                fresh = self._refetch_dle_post(source_slug, int(dle_id))
+                if fresh:
+                    xfields_parsed = fresh.get("xfields_parsed") or xfields_parsed
+                    book_id = fresh.get("book_id") or book_id
+
+            cover_post = {
+                "id": task.get("id"),
+                "xfields_parsed": xfields_parsed,
+                "normalized": normalized,
+                "book_id": book_id,
+            }
+            cover_path = self._fetch_cover(task_dir, source_slug, cover_post)
+            # Re-export back into legacy so audio resolver below sees them.
+            legacy["xfields_parsed"] = xfields_parsed
+            legacy["book_id"] = book_id
 
             # 2. YouTube background image (1920x1080)
             bg_path = os.path.join(task_dir, "youtube_image.jpg")
@@ -130,6 +139,34 @@ class DleProcessor:
 
     # ── Internals ────────────────────────────────────────────────
 
+    # Slug → env-var name for the DLE source DSN. Used by `_refetch_dle_post`
+    # to backfill xfields/book_id for tasks created before the pipeline started
+    # persisting those fields into legacy_add_info.
+    _DSN_ENV_BY_SLUG = {
+        "knigi_audio_biz":     "DLE_KNIGI_AUDIO_DSN",
+        "audiokniga_one_com":  "DLE_AUDIOKNIGA_DSN",
+        "club_books_ru":       "DLE_CLUB_BOOKS_DSN",
+        "books_online_info":   "DLE_BOOKS_ONLINE_DSN",
+        "slushat_knigi_com":   "DLE_SLUSHAT_DSN",
+        "knigi_online_club":   "DLE_KNIGI_ONLINE_DSN",
+        "bazaknig_net":         "DLE_BAZAKNIG_DSN",
+    }
+
+    def _refetch_dle_post(self, source_slug: str, post_id: int) -> dict[str, Any] | None:
+        env_var = self._DSN_ENV_BY_SLUG.get(source_slug)
+        if not env_var:
+            return None
+        dsn = os.environ.get(env_var)
+        if not dsn:
+            return None
+        try:
+            from shared.ingestion.dle.client import DleClient
+            return DleClient(dsn=dsn, source_slug=source_slug).get_post_by_id(post_id)
+        except Exception as exc:
+            logger.warning("[DLE PROCESSOR] re-fetch failed for %s/%s: %s",
+                           source_slug, post_id, exc)
+            return None
+
     @staticmethod
     def _parse_legacy(raw: Any) -> dict[str, Any]:
         if not raw:
@@ -144,29 +181,57 @@ class DleProcessor:
                 return {}
         return {}
 
-    def _fetch_cover(self, task_dir: str, source_slug: str, cover: str | None) -> str | None:
-        if not cover:
+    def _fetch_cover(self, task_dir: str, source_slug: str, post: dict[str, Any]) -> str | None:
+        """Build per-source cover URL via `sources.build_cover_url` (1:1 PHP port).
+
+        Falls back to `normalized['cover']` if the per-source builder returned
+        nothing — so callers that only have a normalized URL still work.
+        """
+        url, referer = dle_sources.build_cover_url(source_slug, post)
+        if not url:
+            normalized = post.get("normalized") or {}
+            cover = normalized.get("cover")
+            if cover and cover.startswith(("http://", "https://")):
+                url, referer = cover, ""
+        if not url:
+            logger.warning("[DLE PROCESSOR] No cover URL resolvable for source=%s post=%s",
+                           source_slug, post.get("id"))
             return None
-        # Если уже полный URL — берём как есть
-        if cover.startswith(("http://", "https://")):
-            url = cover
-        else:
-            tmpl = COVER_URL_TEMPLATES.get(source_slug)
-            if not tmpl:
-                logger.warning("[DLE PROCESSOR] No cover URL template for source=%s", source_slug)
-                return None
-            url = tmpl.format(cover=cover.lstrip("/"))
 
         out_path = os.path.join(task_dir, "cover.jpg")
-        return self._download(url, out_path, timeout=20)
+        return self._download(url, out_path, timeout=20, referer=referer or None)
 
-    @staticmethod
-    def _download(url: str, dest: str, timeout: int = 30,
+    # Real Chrome 120 fingerprint — DLE sites started returning 403 for bare
+    # "Mozilla/5.0" on 2026-05-09 (likely Cloudflare/anti-bot challenge). Full
+    # browser headers + auto-Referer recover ~100% of cover/audio fetches.
+    _BROWSER_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Sec-Fetch-Dest": "image",
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Site": "same-origin",
+    }
+
+    @classmethod
+    def _download(cls, url: str, dest: str, timeout: int = 30,
                   referer: str | None = None) -> str | None:
         try:
-            headers = {"User-Agent": "Mozilla/5.0"}
+            headers = dict(cls._BROWSER_HEADERS)
             if referer:
                 headers["Referer"] = referer
+            else:
+                try:
+                    from urllib.parse import urlparse as _urlparse
+                    _p = _urlparse(url)
+                    headers["Referer"] = f"{_p.scheme}://{_p.netloc}/"
+                except Exception:
+                    pass
             r = requests.get(url, stream=True, timeout=timeout, headers=headers)
             r.raise_for_status()
             with open(dest, "wb") as f:
@@ -247,26 +312,36 @@ class DleProcessor:
                        normalized: dict[str, Any], legacy: dict[str, Any]) -> str | None:
         """Найти и скачать MP3 для книги.
 
-        Стратегия по источникам:
-        - Yii использует разные форматы хранения: m3u8 playlist, JSON {file: ...},
-          или прямую ссылку в xfields. Для MVP — три попытки:
-          1. Готовый URL в normalized.audio_url или legacy.audio_url
-          2. mp3 в xfields_parsed (mp3, audio, file)
-          3. NotImplemented для конкретного источника — TODO для следующих итераций
+        Strategy:
+          A. audiokniga_one_com / knigi_audio_biz: download `<book_id>.pl.txt`
+             playlist from redirectto.cc → fetch each MP3 → concat with ffmpeg.
+             Mirrors PHP Audiokniga_one_comController / Unique_audioController.
+          B. otherwise: try ready URL in normalized/legacy → xfields fields →
+             HTML scrape (last resort).
         """
-        # 1. Готовый URL
+        # A. Playlist sources (audiokniga + knigi_audio_biz)
+        if source_slug in dle_sources.PLAYLIST_SOURCES:
+            book_id = legacy.get("book_id")
+            if book_id:
+                pl_audio = self._fetch_playlist_audio(task_dir, book_id)
+                if pl_audio:
+                    return pl_audio
+                logger.warning("[DLE PROCESSOR] playlist audio failed for source=%s book_id=%s — falling through",
+                               source_slug, book_id)
+
+        # B.1 Готовый URL
         url = normalized.get("audio_url") or legacy.get("audio_url")
         if url:
             return self._download(url, os.path.join(task_dir, "source_audio.mp3"), timeout=300)
 
-        # 2. xfields fields
+        # B.2 xfields fields
         xfields = legacy.get("xfields_parsed") or {}
         for key in ("mp3", "audio", "file", "audio_file"):
             v = xfields.get(key)
             if v and isinstance(v, str) and v.startswith(("http://", "https://")):
                 return self._download(v, os.path.join(task_dir, "source_audio.mp3"), timeout=300)
 
-        # 3. Не нашли — попробовать найти на странице поста (HTML scrape)
+        # B.3 HTML scrape (last resort)
         post_url = legacy.get("dle_post_url")
         if post_url:
             mp3_url = self._scrape_mp3_from_page(post_url)
@@ -274,9 +349,70 @@ class DleProcessor:
                 return self._download(mp3_url, os.path.join(task_dir, "source_audio.mp3"),
                                        timeout=300, referer=post_url)
 
-        logger.warning("[DLE PROCESSOR] Could not resolve audio for source=%s. "
-                       "Add specific logic in _resolve_audio_for_source_<slug>().", source_slug)
+        logger.warning("[DLE PROCESSOR] Could not resolve audio for source=%s.",
+                       source_slug)
         return None
+
+    def _fetch_playlist_audio(self, task_dir: str, book_id: int | str) -> str | None:
+        """Download MP3s referenced by `<book_id>.pl.txt` and concat them into one file.
+
+        1:1 with the PHP loop in Audiokniga_one_comController:
+          1. download .pl.txt
+          2. parse `"file":"<URL>"` matches
+          3. download each MP3 (referer=redirectto.cc)
+          4. ffmpeg concat → source_audio.mp3
+        """
+        mp3_urls = dle_sources.fetch_playlist_mp3s(book_id, task_dir)
+        if not mp3_urls:
+            return None
+
+        local_paths: list[str] = []
+        for i, url in enumerate(mp3_urls):
+            local = os.path.join(task_dir, f"part_{i:03d}.mp3")
+            got = self._download(url, local, timeout=300, referer=dle_sources.CDN_REDIRECTTO)
+            if got:
+                local_paths.append(local)
+
+        if not local_paths:
+            return None
+        if len(local_paths) == 1:
+            final = os.path.join(task_dir, "source_audio.mp3")
+            try:
+                os.replace(local_paths[0], final)
+            except OSError as exc:
+                logger.warning("[DLE PROCESSOR] could not rename single MP3: %s", exc)
+                return None
+            return final
+
+        # ffmpeg concat using a list file (avoids re-encode by using `-c copy`)
+        list_file = os.path.join(task_dir, "concat_list.txt")
+        with open(list_file, "w", encoding="utf-8") as f:
+            for p in local_paths:
+                # ffmpeg concat-demuxer needs single-quoted absolute paths
+                f.write(f"file '{p}'\n")
+        out = os.path.join(task_dir, "source_audio.mp3")
+        cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", list_file, "-c", "copy", out,
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=1800)
+        except subprocess.CalledProcessError as exc:
+            logger.error("[DLE PROCESSOR] ffmpeg concat failed: %s", exc.stderr[:1500])
+            return None
+        if not os.path.isfile(out) or os.path.getsize(out) == 0:
+            return None
+        # cleanup parts to save disk
+        for p in local_paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        try:
+            os.unlink(list_file)
+        except OSError:
+            pass
+        return out
 
     def _render_tts(self, task_dir: str, source_slug: str,
                     normalized: dict[str, Any], legacy: dict[str, Any]) -> str | None:
@@ -326,11 +462,21 @@ class DleProcessor:
                              source_slug, exc)
             return None
 
-    @staticmethod
-    def _scrape_mp3_from_page(url: str) -> str | None:
+    @classmethod
+    def _scrape_mp3_from_page(cls, url: str) -> str | None:
         """Last resort — скачать HTML и найти .mp3 ссылку regexp'ом."""
         try:
-            r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            headers = dict(cls._BROWSER_HEADERS)
+            headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            headers["Sec-Fetch-Dest"] = "document"
+            headers["Sec-Fetch-Mode"] = "navigate"
+            try:
+                from urllib.parse import urlparse as _urlparse
+                _p = _urlparse(url)
+                headers["Referer"] = f"{_p.scheme}://{_p.netloc}/"
+            except Exception:
+                pass
+            r = requests.get(url, timeout=15, headers=headers)
             r.raise_for_status()
             html = r.text
             # Найти первую mp3 ссылку
