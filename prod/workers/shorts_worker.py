@@ -35,15 +35,29 @@ def run_shorts_job(payload: ShortsPayload) -> dict[str, Any]:
     """
     bootstrap_job(payload, "cff-shorts")
     logger.info("Running shorts job for channel %d", payload.channel_id)
-    
+
+    # Validate input early — `donor_video_url` is Optional in the payload
+    # (channels may store a default), but if neither the payload nor any
+    # fallback supplied a URL we must abort cleanly rather than letting
+    # subprocess.run() raise `expected str, bytes or os.PathLike, not NoneType`.
+    donor_url = payload.donor_video_url
+    if not donor_url or not isinstance(donor_url, str) or not donor_url.strip():
+        msg = (
+            f"donor_video_url is missing for channel {payload.channel_id}; "
+            "configure a default donor URL on the channel or pass one in the payload"
+        )
+        logger.error("Shorts job aborted: %s", msg)
+        telegram.send(f"Shorts job for channel {payload.channel_id} skipped: {msg}")
+        return {"ok": False, "error": msg, "skipped": True}
+
     tmp_dir = f"/tmp/shorts_{uuid.uuid4()}"
     os.makedirs(tmp_dir, exist_ok=True)
-    
+
     video_path = os.path.join(tmp_dir, "donor_video.mp4")
-    
+
     try:
         # 1. Download
-        if not download_video(payload.donor_video_url, video_path):
+        if not download_video(donor_url, video_path):
             raise Exception("Failed to download donor video")
             
         # 2. Transcribe
@@ -76,7 +90,7 @@ def run_shorts_job(payload: ShortsPayload) -> dict[str, Any]:
                     media_type="shorts",
                     thumbnail_path=thumb_path,
                     description=h.get("reason", "Generated short"),
-                    legacy_add_info={"donor_url": payload.donor_video_url, "highlight_index": i}
+                    legacy_add_info={"donor_url": donor_url, "highlight_index": i}
                 )
                 if task_id:
                     created_tasks += 1
@@ -94,14 +108,6 @@ def run_shorts_job(payload: ShortsPayload) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    import shared.env  # noqa: F401 — load .env files
-
-    from rq import Worker
-
-    from shared.queue.config import get_redis, QUEUE_SHORTS
-
-    from shared.logging_config import setup_logging
-    setup_logging(service_name="cff-shorts")
-    redis_conn = get_redis()
-    worker = Worker([QUEUE_SHORTS], connection=redis_conn)
-    worker.work()
+    from shared.queue.config import QUEUE_SHORTS
+    from shared.queue.worker_runner import main
+    main([QUEUE_SHORTS], "cff-shorts")
