@@ -22,6 +22,8 @@ from shared.queue.config import (
     QUEUE_SORA,
     QUEUE_STATS,
     QUEUE_STREAM_CONTROL,
+    QUEUE_DLE_QUOTES_SHORTS,
+    QUEUE_NEWS,
 )
 from shared.queue.types import (
     VideoUploadPayload,
@@ -32,6 +34,8 @@ from shared.queue.types import (
     SoraPayload,
     StatsPayload,
     StreamControlPayload,
+    DleQuotesShortsPayload,
+    NewsPayload,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,4 +184,34 @@ def enqueue_stream_control(payload: StreamControlPayload, **kwargs) -> str:
     )
     logger.info("Enqueued stream control: job=%s action=%s stream=%s trace_id=%s",
                 job.id, payload.action, payload.stream_id, tid)
+    return job.id
+
+
+def enqueue_dle_quotes_shorts(payload: DleQuotesShortsPayload, **kwargs) -> str:
+    """Enqueue 1 цитата → ASS subs → 1080×1920 short."""
+    tid = _attach_trace(payload)
+    q = _get_queue(QUEUE_DLE_QUOTES_SHORTS)
+    job = q.enqueue(
+        "workers.dle_quotes_shorts_worker.run_dle_quotes_shorts_job",
+        payload,
+        job_timeout="15m",
+        **kwargs,
+    )
+    logger.info("Enqueued DLE quotes shorts: job=%s source=%s channel=%s trace_id=%s",
+                job.id, payload.source_slug, payload.channel_id, tid)
+    return job.id
+
+
+def enqueue_news(payload: NewsPayload, **kwargs) -> str:
+    """Enqueue RBC RSS → Ken Burns slideshow / vertical short."""
+    tid = _attach_trace(payload)
+    q = _get_queue(QUEUE_NEWS)
+    job = q.enqueue(
+        "workers.news_worker.run_news_job",
+        payload,
+        job_timeout="20m",
+        **kwargs,
+    )
+    logger.info("Enqueued news: job=%s channel=%s media=%s trace_id=%s",
+                job.id, payload.channel_id, payload.media_type, tid)
     return job.id

@@ -107,3 +107,36 @@ class DleProcessingPayload:
     task_id: int                         # ID завдання в content_upload_queue_tasks
     trace_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DleQuotesShortsPayload:
+    """1 цитата з quotes.txt → 1080×1920 short з ASS-субтитрами + bg_music.
+
+    1:1 порт всіх 7 Yii ``actionShorts`` (Audiokniga, Bazaknig, Books_online_info,
+    Club_books_ru, Knigi_online_club, Slushat_knigi_com, Unique_audio).
+    """
+    source_slug: str             # "audiokniga_one_com" / "bazaknig_net" / etc.
+    channel_id: int              # Цільовий YouTube-канал
+    quotes_file: str             # Шлях до quotes.txt (per-source)
+    backgrounds_dir: str         # Папка з фоновими картинками
+    bg_music_dir: str            # Папка з bg_music/*.mp3
+    language: str = "ru"         # TTS мова
+    trace_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class NewsPayload:
+    """RBC RSS → 5 фото SerpAPI → TTS → Ken Burns slideshow або vertical shorts.
+
+    1:1 порт Yii ``NewsController::actionUpload_to_youtube`` /
+    ``NewsController::actionShorts``.
+    """
+    channel_id: int                              # Цільовий YouTube-канал
+    media_type: str = "video"                    # "video" (long) або "shorts"
+    rss_url: str = "https://www.rbc.ua/static/rss/all.ukr.rss.xml"
+    language: str = "uk"                         # TTS мова
+    images_count: int = 5                        # Скільки фото для slideshow
+    trace_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)

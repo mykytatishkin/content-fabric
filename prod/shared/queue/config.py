@@ -31,6 +31,8 @@ QUEUE_SHORTS = "shorts"                     # YouTube Shorts pipeline (yt-dlp + 
 QUEUE_SORA = "sora"                         # Sora AI scraping через zenrows
 QUEUE_STATS = "stats"                       # Daily YouTube channel statistics
 QUEUE_STREAM_CONTROL = "stream_control"     # Управление 9 RTMP стримами через systemd
+QUEUE_DLE_QUOTES_SHORTS = "dle_quotes_shorts"  # Quote → ASS-subs → 1080×1920 short
+QUEUE_NEWS = "news"                            # RBC RSS → Ken Burns slideshow / shorts
 
 
 def get_redis() -> Redis:
