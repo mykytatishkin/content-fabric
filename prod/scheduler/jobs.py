@@ -12,6 +12,8 @@ from shared.queue.publisher import (
     enqueue_shorts,
     enqueue_sora,
     enqueue_voice_change,
+    enqueue_dle_quotes_shorts,
+    enqueue_news,
 )
 from shared.queue.types import (
     VideoUploadPayload,
@@ -19,6 +21,8 @@ from shared.queue.types import (
     ShortsPayload,
     SoraPayload,
     VoiceChangePayload,
+    DleQuotesShortsPayload,
+    NewsPayload,
 )
 from shared.youtube.token_refresh import build_credentials, ensure_fresh_credentials
 
@@ -341,6 +345,40 @@ SORA_DAILY_CHANNELS: list[tuple[int, int, str]] = [
     (19, 3, "shorts"),
 ]
 
+# DLE quotes shorts: 1 quote per source per day → 1080×1920 vertical short.
+# 1:1 port of all 7 Yii actionShorts. Each source has its own quotes.txt file
+# in /var/www/.../data/{source-slug}/shorts/quotes.txt — that path is mounted
+# read-write into CFF as DLE_QUOTES_BASE_DIR (defaults below).
+import os as _os
+DLE_QUOTES_BASE_DIR = _os.environ.get(
+    "DLE_QUOTES_BASE_DIR",
+    "/var/www/fastuser/data/www/aiyoutube.pbnbots.com/data",
+)
+# (source_slug, channel_id, language)
+DLE_QUOTES_SHORTS_SOURCES: list[tuple[str, int, str]] = [
+    ("audiokniga_one_com",  5,  "ru"),
+    ("knigi_audio_biz",     6,  "ru"),
+    ("club_books_ru",       21, "ru"),
+    ("books_online_info",   23, "ru"),
+    ("slushat_knigi_com",   25, "ru"),
+    ("knigi_online_club",   12, "ru"),
+    ("bazaknig_net",        26, "ru"),
+]
+
+# News pipeline: RBC RSS → long video (id_yt_acc=55 in Yii).
+# Scheduled at 03:00 daily (after dle_nightly @ 02:00 finished).
+NEWS_LONG_CHANNELS: list[tuple[int, str]] = [(55, "uk")]
+
+# News shorts: vertical 1080×1920 with subtitle burn-in. shel_youtube_news.sh.
+NEWS_SHORTS_CHANNELS: list[tuple[int, str]] = [(55, "uk")]
+
+# Sora MEME mode (Yii classic actionShorts) — separate from SORA_DAILY_CHANNELS
+# which uses the standard Whisper-highlights pipeline.
+# (channel_id, limit)
+SORA_MEME_CHANNELS: list[tuple[int, int]] = [
+    (20, 3),
+]
+
 
 def enqueue_dle_nightly() -> int:
     """Запустить ночные DLE-ingestion (видео). Соответствует shel_youtube.sh@02:00."""
@@ -429,6 +467,109 @@ def enqueue_sora_daily() -> int:
     return count
 
 
+def enqueue_sora_meme_daily() -> int:
+    """Sora pipeline в meme-mode (Yii classic actionShorts).
+
+    GPT Vision frame descriptions → meme caption → JSON metadata →
+    ffmpeg drawtext overlay. Insert directly to Tasks (skips Whisper).
+    """
+    count = 0
+    for channel_id, limit in SORA_MEME_CHANNELS:
+        try:
+            enqueue_sora(SoraPayload(
+                channel_id=channel_id,
+                limit=limit,
+                media_type="shorts",
+                metadata={"mode": "meme"},
+            ))
+            count += 1
+        except Exception:
+            logger.exception("Sora meme enqueue failed: channel=%s", channel_id)
+    logger.info("Sora meme: enqueued %d", count)
+    return count
+
+
+def enqueue_dle_quotes_shorts_daily() -> int:
+    """1 quote per DLE source per day → 1080×1920 short.
+
+    Replaces all 7 Yii actionShorts shel_youtube_time*.sh cron entries.
+    Each source has its own quotes.txt; we pop one quote per call.
+    """
+    count = 0
+    for source_slug, channel_id, language in DLE_QUOTES_SHORTS_SOURCES:
+        # Yii path layout:
+        #   data/{source-with-dots}/shorts/quotes.txt
+        #   data/{source-with-dots}/shorts/backgrounds/
+        #   data/{source-with-dots}/shorts/bg_music/
+        # Source slugs use _ in CFF but . in Yii filesystem (audiokniga-one.com
+        # vs audiokniga_one_com). We map back via a static dict.
+        slug_to_dir = {
+            "audiokniga_one_com": "audiokniga-one.com",
+            "knigi_audio_biz":    "unique_audio",   # Yii: data/unique_audio
+            "club_books_ru":      "club-books.ru",
+            "books_online_info":  "books-online.info",
+            "slushat_knigi_com":  "slushat-knigi.com",
+            "knigi_online_club":  "knigi-online.club",
+            "bazaknig_net":       "bazaknig.net",
+        }
+        dir_name = slug_to_dir.get(source_slug, source_slug)
+        base = f"{DLE_QUOTES_BASE_DIR}/{dir_name}/shorts"
+        quotes_file = f"{base}/quotes.txt"
+        if source_slug == "knigi_audio_biz":
+            # Yii: quotes_popadanci.txt — different file name for the unique_audio
+            # / попаданцы flow.
+            quotes_file = f"{base}/quotes_popadanci.txt"
+
+        try:
+            enqueue_dle_quotes_shorts(DleQuotesShortsPayload(
+                source_slug=source_slug,
+                channel_id=channel_id,
+                quotes_file=quotes_file,
+                backgrounds_dir=f"{base}/backgrounds",
+                bg_music_dir=f"{base}/bg_music",
+                language=language,
+            ))
+            count += 1
+        except Exception:
+            logger.exception("DLE quotes shorts enqueue failed: %s", source_slug)
+    logger.info("DLE quotes shorts: enqueued %d sources", count)
+    return count
+
+
+def enqueue_news_long_daily() -> int:
+    """RBC RSS → 5 SerpAPI photos + TTS + Ken Burns 1920×1080. Yii shel_youtube.sh."""
+    count = 0
+    for channel_id, language in NEWS_LONG_CHANNELS:
+        try:
+            enqueue_news(NewsPayload(
+                channel_id=channel_id,
+                media_type="video",
+                language=language,
+            ))
+            count += 1
+        except Exception:
+            logger.exception("News long enqueue failed: channel=%s", channel_id)
+    logger.info("News long: enqueued %d", count)
+    return count
+
+
+def enqueue_news_shorts_daily() -> int:
+    """RBC RSS → vertical 1080×1920 + burn-in subtitles. Yii shel_youtube_news.sh."""
+    count = 0
+    for channel_id, language in NEWS_SHORTS_CHANNELS:
+        try:
+            enqueue_news(NewsPayload(
+                channel_id=channel_id,
+                media_type="shorts",
+                language=language,
+            ))
+            count += 1
+        except Exception:
+            logger.exception("News shorts enqueue failed: channel=%s", channel_id)
+    logger.info("News shorts: enqueued %d", count)
+    return count
+
+
 # ─── Cron-эмулятор для Yii pipelines (in-memory tracking) ────────────
 #
 # Каждый ключ → (hour, minute) когда срабатывает.
@@ -439,14 +580,18 @@ _yii_last_run: dict[str, str] = {}  # job_name → "YYYY-MM-DD HH:MM"
 
 _YII_CRON: list[tuple[str, int, int, callable]] = [
     # (job_name, hour, minute, callable_returning_int)
-    ("dle_nightly",        2, 0,  enqueue_dle_nightly),       # shel_youtube.sh
-    ("dle_shorts_1",      14, 15, enqueue_dle_shorts),         # shel_youtube_time.sh
-    ("dle_shorts_2",      16, 15, enqueue_dle_shorts),
-    ("dle_shorts_3",      21, 15, enqueue_dle_shorts),
-    ("slushat_shorts_1",  17, 15, enqueue_slushat_shorts),     # shel_youtube_time_2.sh
-    ("slushat_shorts_2",  20, 15, enqueue_slushat_shorts),
-    ("shorts_from_video", 13, 20, enqueue_shorts_from_video),  # shel_youtube_shorts_from_video.sh
-    ("sora_daily",        11, 0,  enqueue_sora_daily),          # Yii sora/get_video, ранее вручную
+    ("dle_nightly",         2, 0,  enqueue_dle_nightly),         # shel_youtube.sh
+    ("news_long_daily",     3, 0,  enqueue_news_long_daily),     # RBC long video
+    ("dle_quotes_shorts",   9, 0,  enqueue_dle_quotes_shorts_daily),  # all 7 sources
+    ("sora_daily",         11, 0,  enqueue_sora_daily),           # standard mode
+    ("sora_meme_daily",    11, 30, enqueue_sora_meme_daily),      # Yii classic mode
+    ("news_shorts_daily",  11, 30, enqueue_news_shorts_daily),    # shel_youtube_news.sh
+    ("shorts_from_video",  13, 20, enqueue_shorts_from_video),    # shel_youtube_shorts_from_video.sh
+    ("dle_shorts_1",       14, 15, enqueue_dle_shorts),           # shel_youtube_time.sh
+    ("dle_shorts_2",       16, 15, enqueue_dle_shorts),
+    ("slushat_shorts_1",   17, 15, enqueue_slushat_shorts),       # shel_youtube_time_2.sh
+    ("slushat_shorts_2",   20, 15, enqueue_slushat_shorts),
+    ("dle_shorts_3",       21, 15, enqueue_dle_shorts),
 ]
 
 

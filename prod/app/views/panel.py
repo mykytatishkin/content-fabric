@@ -549,6 +549,155 @@ async def dle_sources_page(request: Request):
     })
 
 
+# ── DLE Quotes Shorts ────────────────────────────────────────────
+
+@router.get("/dle-quotes-shorts", response_class=HTMLResponse)
+async def dle_quotes_shorts_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    import os
+    from shared.ingestion.dle.quotes_shorts import _SITE_TEMPLATES
+
+    base = os.environ.get(
+        "DLE_QUOTES_BASE_DIR",
+        "/var/www/fastuser/data/www/aiyoutube.pbnbots.com/data",
+    )
+    slug_to_dir = {
+        "audiokniga_one_com": "audiokniga-one.com",
+        "knigi_audio_biz":    "unique_audio",
+        "club_books_ru":      "club-books.ru",
+        "books_online_info":  "books-online.info",
+        "slushat_knigi_com":  "slushat-knigi.com",
+        "knigi_online_club":  "knigi-online.club",
+        "bazaknig_net":       "bazaknig.net",
+    }
+    default_channels = {
+        "audiokniga_one_com": 5, "knigi_audio_biz": 6, "club_books_ru": 21,
+        "books_online_info": 23, "slushat_knigi_com": 25, "knigi_online_club": 12,
+        "bazaknig_net": 26,
+    }
+
+    sources = []
+    for slug in _SITE_TEMPLATES.keys():
+        dir_name = slug_to_dir.get(slug, slug)
+        shorts_dir = f"{base}/{dir_name}/shorts"
+        quotes_file = (
+            f"{shorts_dir}/quotes_popadanci.txt" if slug == "knigi_audio_biz"
+            else f"{shorts_dir}/quotes.txt"
+        )
+        try:
+            quotes_count = (
+                sum(1 for ln in open(quotes_file, encoding="utf-8", errors="replace") if ln.strip())
+                if os.path.isfile(quotes_file) else 0
+            )
+        except Exception:
+            quotes_count = 0
+        try:
+            bg_count = (
+                len([f for f in os.listdir(f"{shorts_dir}/backgrounds")
+                     if f.lower().endswith((".jpg", ".jpeg", ".png"))])
+                if os.path.isdir(f"{shorts_dir}/backgrounds") else 0
+            )
+        except Exception:
+            bg_count = 0
+        try:
+            music_count = (
+                len([f for f in os.listdir(f"{shorts_dir}/bg_music")
+                     if f.lower().endswith(".mp3")])
+                if os.path.isdir(f"{shorts_dir}/bg_music") else 0
+            )
+        except Exception:
+            music_count = 0
+
+        sources.append({
+            "slug": slug,
+            "site_name": _SITE_TEMPLATES[slug]["site_name"],
+            "default_channel_id": default_channels.get(slug),
+            "quotes_remaining": quotes_count,
+            "backgrounds_count": bg_count,
+            "bg_music_count": music_count,
+            "shorts_dir": shorts_dir,
+        })
+
+    return templates.TemplateResponse("app_dle_quotes_shorts.html", {
+        "request": request, "user": user, "active": "dle_quotes_shorts",
+        "sources": sources,
+    })
+
+
+# ── News (RBC RSS) ───────────────────────────────────────────────
+
+@router.get("/news", response_class=HTMLResponse)
+async def news_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    processed_count = 0
+    last_at = None
+    recent = []
+    try:
+        with get_connection() as conn:
+            row = conn.execute(sql_text(
+                "SELECT COUNT(*), MAX(processed_at) FROM news_processed_urls"
+            )).fetchone()
+            processed_count = int(row[0] or 0) if row else 0
+            last_at = row[1] if row else None
+            rows = conn.execute(sql_text(
+                "SELECT link, source, processed_at FROM news_processed_urls "
+                "ORDER BY processed_at DESC LIMIT 30"
+            )).fetchall()
+            recent = [{"link": r[0], "source": r[1], "processed_at": r[2]} for r in rows]
+    except Exception as e:
+        logger.error("News page DB error: %s (likely migration 007 not applied)", e)
+
+    return templates.TemplateResponse("app_news.html", {
+        "request": request, "user": user, "active": "news",
+        "processed_count": processed_count, "last_at": last_at,
+        "recent": recent, "default_channel_id": 55,
+    })
+
+
+# ── Sora ──────────────────────────────────────────────────────────
+
+@router.get("/sora", response_class=HTMLResponse)
+async def sora_page(request: Request):
+    user, redirect = require_admin(request)
+    if redirect:
+        return redirect
+
+    from shared.db.connection import get_connection
+    from sqlalchemy import text as sql_text
+
+    used_count = 0
+    last_at = None
+    recent = []
+    try:
+        with get_connection() as conn:
+            row = conn.execute(sql_text(
+                "SELECT COUNT(*), MAX(fetched_at) FROM sora_used_posts"
+            )).fetchone()
+            used_count = int(row[0] or 0) if row else 0
+            last_at = row[1] if row else None
+            rows = conn.execute(sql_text(
+                "SELECT post_id, fetched_at, channel_id FROM sora_used_posts "
+                "ORDER BY fetched_at DESC LIMIT 30"
+            )).fetchall()
+            recent = [{"post_id": r[0], "fetched_at": r[1], "channel_id": r[2]} for r in rows]
+    except Exception as e:
+        logger.error("Sora page DB error: %s", e)
+
+    return templates.TemplateResponse("app_sora.html", {
+        "request": request, "user": user, "active": "sora",
+        "used_count": used_count, "last_at": last_at, "recent": recent,
+    })
+
+
 # ── Stats ─────────────────────────────────────────────────────────
 
 @router.get("/stats", response_class=HTMLResponse)

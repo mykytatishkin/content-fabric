@@ -1,0 +1,106 @@
+{% extends "app_base.html" %}
+{% block title %}News (RBC RSS) — aiyoutube{% endblock %}
+{% block content %}
+<style>
+  .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .small-muted { color: #858587; font-size: 11px; }
+  .stream-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .stat-card { padding: 1rem; background: #f7f7f8; border-radius: 8px; display: inline-block; min-width: 220px; margin-right: 1rem; }
+  .stat-num { font-size: 28px; font-weight: 600; color: #36b37e; }
+  .stat-label { font-size: 12px; color: #858587; }
+  .form-row { display: flex; gap: 1rem; align-items: center; margin: 1rem 0; }
+  .form-row label { font-size: 12px; }
+  .form-row input, .form-row select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; }
+</style>
+
+<div class="header-row">
+  <h2>📰 News Pipeline (RBC RSS)</h2>
+</div>
+
+<p class="small-muted" style="margin-bottom: 1rem;">
+  Replaces Yii <code>NewsController</code>. Fetches first unprocessed RSS item
+  from rbc.ua → 5 SerpAPI Google Images (≥1200px, jpg) → TTS narration →
+  Whisper-1 word-level SRT → Ken Burns slideshow (long 1920×1080 OR shorts
+  1080×1920 with subtitle burn-in) → INSERT Tasks.
+</p>
+
+<div style="margin-bottom: 1.5rem;">
+  <div class="stat-card">
+    <div class="stat-num">{{ processed_count }}</div>
+    <div class="stat-label">Processed URLs total</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-num" style="font-size: 18px;">{{ last_at or 'never' }}</div>
+    <div class="stat-label">Last processed at</div>
+  </div>
+</div>
+
+<h3>Manual run</h3>
+<div class="form-row">
+  <label>Channel ID:
+    <input id="channel-id" type="number" value="{{ default_channel_id }}" style="width: 100px;">
+  </label>
+  <label>Media type:
+    <select id="media-type">
+      <option value="video">Long video (1920×1080 Ken Burns)</option>
+      <option value="shorts">Vertical short (1080×1920 + subs)</option>
+    </select>
+  </label>
+  <label>Language:
+    <select id="lang">
+      <option value="uk">uk</option>
+      <option value="ru">ru</option>
+    </select>
+  </label>
+  <button class="btn btn-primary" onclick="runNews()">▶ Run now</button>
+</div>
+
+<div id="result-box" style="margin: 1rem 0;"></div>
+
+<h3>Recent processed (last 30)</h3>
+{% if recent %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Link</th><th>Source</th><th>Processed at</th></tr></thead>
+  <tbody>
+    {% for r in recent %}
+    <tr>
+      <td><a href="{{ r.link }}" target="_blank" rel="noopener">{{ r.link[:80] }}…</a></td>
+      <td>{{ r.source }}</td>
+      <td class="stream-mono">{{ r.processed_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="small-muted">No processed URLs yet (or migration 007 not applied — run
+<code>mysql ... &lt; database/DDL/migrations/007_news_processed_urls.sql</code>).</p>
+{% endif %}
+
+<script>
+async function runNews() {
+    const channelId = parseInt(document.getElementById('channel-id').value);
+    const mediaType = document.getElementById('media-type').value;
+    const lang = document.getElementById('lang').value;
+    const out = document.getElementById('result-box');
+    out.innerHTML = `<div class="small-muted">Enqueuing ${mediaType} for channel ${channelId}...</div>`;
+    try {
+        const resp = await fetch('/api/v1/news/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({channel_id: channelId, media_type: mediaType, language: lang}),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            out.innerHTML = `<div style="color:#36b37e;">✅ Job ${data.job_id} enqueued (${data.media_type})</div>`;
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            out.innerHTML = `<div style="color:#ff5050;">❌ ${data.detail || JSON.stringify(data)}</div>`;
+        }
+    } catch (e) {
+        out.innerHTML = `<div style="color:#ff5050;">❌ ${e}</div>`;
+    }
+}
+</script>
+{% endblock %}
