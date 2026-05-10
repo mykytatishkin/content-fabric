@@ -2,7 +2,12 @@
 
 Replaces Yii's `php yii sora/get_video --channel-id=N`. Fetches the Sora public
 feed, filters out already-seen posts (tracked in `sora_used_posts`), downloads
-each new video to /tmp, and enqueues a ShortsPayload for downstream processing.
+each new video to /tmp.
+
+Two modes (via ``payload.metadata['mode']``):
+- ``"shorts"`` (default): enqueue ShortsPayload — Whisper highlights pipeline.
+- ``"meme"``: full Yii ``actionShorts`` port — 3 GPT-Vision frame descriptions
+  → meme caption → JSON metadata → ffmpeg drawtext overlay → INSERT Tasks.
 """
 
 from __future__ import annotations
@@ -10,14 +15,17 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from datetime import datetime, timedelta
 from typing import Any
 
 from shared.db.repositories import sora_repo
+from shared.db.repositories.task_repo import create_task
 from shared.metrics import instrument_job
 from shared.notifications import telegram
 from shared.queue.publisher import enqueue_shorts
 from shared.queue.types import ShortsPayload, SoraPayload
 from shared.sora import scraper
+from shared.sora.meme import build_meme_short
 from workers._job_bootstrap import bootstrap_job
 
 logger = logging.getLogger(__name__)
@@ -101,23 +109,63 @@ def run_sora_job(payload: SoraPayload) -> dict[str, Any]:
             logger.warning("Sora: download failed for post %s (%s)", post_id, video_url)
             continue
 
+        # Two modes: meme overlay (Yii classic) or standard Shorts pipeline.
+        mode = (payload.metadata or {}).get("mode", "shorts")
+
         try:
-            enqueue_shorts(ShortsPayload(
-                channel_id=payload.channel_id,
-                donor_video_url=out_path,
-                limit=1,
-                metadata={
-                    "source": "sora",
-                    "sora_post_id": post_id,
-                    "media_type": payload.media_type,
-                },
-            ))
-            queued += 1
-            sora_repo.mark_post_used(post_id, channel_id=payload.channel_id)
-            logger.info("Sora: queued shorts job for post %s (channel=%d)",
-                        post_id, payload.channel_id)
+            if mode == "meme":
+                # Yii classic: GPT Vision + meme caption + drawtext overlay
+                output_mp4 = os.path.join(tmp_dir, f"sora_{post_id}_shorts.mp4")
+                meta = build_meme_short(out_path, output_mp4, tmp_dir)
+                if not meta:
+                    logger.warning("Sora meme build failed for post %s", post_id)
+                    continue
+
+                # Schedule per Yii: 3 slots/day [12:00, 14:00, 17:00]
+                # — but we don't have day-context here, so spread by queued index.
+                slot_hours = [12, 14, 17]
+                hour = slot_hours[min(queued, len(slot_hours) - 1)]
+                today = datetime.now().replace(hour=hour, minute=0, second=0, microsecond=0)
+                if today < datetime.now():
+                    today = today + timedelta(days=1)
+
+                task_id = create_task(
+                    channel_id=payload.channel_id,
+                    source_file_path=output_mp4,
+                    title=meta["title"],
+                    scheduled_at=today,
+                    media_type="shorts",
+                    description=meta["description"],
+                    keywords=meta["keywords"],
+                    post_comment=meta["first_comment"],
+                    legacy_add_info={
+                        "source": "sora_meme",
+                        "sora_post_id": post_id,
+                        "trace_id": payload.trace_id,
+                    },
+                )
+                queued += 1
+                sora_repo.mark_post_used(post_id, channel_id=payload.channel_id)
+                logger.info("Sora meme: created task=%s for post %s (channel=%d)",
+                            task_id, post_id, payload.channel_id)
+            else:
+                # Standard mode: enqueue Shorts (Whisper highlights pipeline)
+                enqueue_shorts(ShortsPayload(
+                    channel_id=payload.channel_id,
+                    donor_video_url=out_path,
+                    limit=1,
+                    metadata={
+                        "source": "sora",
+                        "sora_post_id": post_id,
+                        "media_type": payload.media_type,
+                    },
+                ))
+                queued += 1
+                sora_repo.mark_post_used(post_id, channel_id=payload.channel_id)
+                logger.info("Sora: queued shorts job for post %s (channel=%d)",
+                            post_id, payload.channel_id)
         except Exception:
-            logger.exception("Sora: enqueue_shorts failed for post %s", post_id)
+            logger.exception("Sora: processing failed for post %s", post_id)
 
     logger.info("Sora job done: fetched=%d new=%d queued=%d",
                 fetched, new_count, queued)
