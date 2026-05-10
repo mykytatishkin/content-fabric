@@ -120,3 +120,7 @@ CLAUDE.md
 
 # Legacy Yii reference (not committed - 4MB UI extracted from server for porting)
 .legacy/
+_yii_research/
+
+# Bundle exports
+*.bundle
